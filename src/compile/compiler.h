@@ -198,6 +198,11 @@ private:
     /// Susun uji pola: menyisakan `bener`/`salah` di stack; bila cocok, nama
     /// yang di-binding ditulis ke slot lokalnya.
     void susun_pola(const ast::Pola* p, std::size_t s_subj, std::vector<std::size_t>& lompat_gagal);
+    /// Uji tipe untuk pola `n: Tipe`. `sumber` = slot lokal berisi nilai subjek;
+    /// menyisakan `bener`/`salah` di stack. `bind` (boleh kosong) diisi dengan
+    /// nilai subjek.
+    void susun_uji_tipe(const ast::Node* tipe, std::size_t s_subj, std::string_view bind);
+    void susun_uji_tipe_dasar(const ast::Node* tipe, std::size_t sumber);
     /// Pola dengan subjek di PUNCAK stack (pola anak dari `[a, b]` / `{x: p}`).
     void susun_pola_stack(const ast::Pola* p, std::vector<std::size_t>& lompat_gagal);
     /// Slot untuk nama pola: pakai yang ada kalau sudah pernah dialingokasikan.

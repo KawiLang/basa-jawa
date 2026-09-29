@@ -1,0 +1,141 @@
+// Pola `cocog` bertipe: `kasus n: Tipe => ...`.
+//
+// BUG LAMA: `Pola::Jenis::Tipe` meng-emit `TYPEOF` lalu langsung `BENER`
+// tanpa perbandingan -- jadi pola ini SELALU cocok apa pun nilainya, dan klausula
+// pertama yang bertipe langsung menutup seluruhnya. Contoh: `cocog (1) {
+// kasus n: teks => "T" }` mengembalikan `"T"` untuk angka.
+
+gawe label(x) {
+    bali cocog (x) {
+        kasus n: teks => "teks";
+        kasus n: angka => "angka";
+        kasus n: dhaptar => "dhaptar";
+        kasus n: peta => "peta";
+        kasus _ => "lain";
+    };
+}
+
+pratelas(label(1), "angka");
+pratelas(label("hi"), "teks");
+pratelas(label([1, 2]), "dhaptar");
+pratelas(label(bener), "lain");
+pratelas(label(mboh), "lain");
+pratelas(label(3.5), "angka");
+
+// Klausula bertipe yang lebih spesifik harus diperiksa lebih dulu.
+ana urutan = [];
+kanggo (ana s saka [1, "a", [1], bener]) {
+    cocog (s) {
+        kasus n: angka => urutan.tambah("angka");
+        kasus n: teks => urutan.tambah("teks");
+        kasus n: dhaptar => urutan.tambah("dhaptar");
+        kasus _ => urutan.tambah("lain");
+    };
+}
+pratelas(urutan, ["angka", "teks", "dhaptar", "lain"]);
+
+// Binding: nama pola berisi NILAI subjek, bukan nama tipenya.
+ana nilai = "";
+cocog ("halo") {
+    kasus s: teks => nilai = s;
+}
+pratelas(nilai, "halo");
+
+// Pola bertipe untuk CLASS: instans class itu atau salah satu induknya.
+golongan KucingT {}
+golongan KucingTPriba turunan KucingT {}
+golongan KucingTNgurum turunan KucingTPriba {}
+golongan AnjingT {}
+
+gawe label_kucing(x) {
+    bali cocog (x) {
+        kasus n: KucingTPriba => "priba";
+        kasus n: KucingT => "kucing";
+        kasus _ => "bukan";
+    };
+}
+pratelas(label_kucing(anyar KucingT()), "kucing");
+pratelas(label_kucing(anyar KucingTPriba()), "priba");
+pratelas(label_kucing(anyar KucingTNgurum()), "priba");
+pratelas(label_kucing(anyar AnjingT()), "bukan");
+
+// Union: `Tipe | Tipe` cocok kalau salah satunya cocok.
+gawe label_union(x) {
+    bali cocog (x) {
+        kasus n: teks | angka => "teks-atau-angka";
+        kasus n: dhaptar | peta => "kumpulan";
+        kasus _ => "lain";
+    };
+}
+pratelas(label_union("x"), "teks-atau-angka");
+pratelas(label_union(7), "teks-atau-angka");
+pratelas(label_union([1]), "kumpulan");
+pratelas(label_union(bener), "lain");
+
+// Union di tengah daftar: klausula SETELAHNYA tidak boleh ikut dieksekusi
+// kalau union-nya cocok. Kalau lompatan union salah sasaran, klausula
+// berikutnya ikut jalan dan hasilnya berdua.
+ana tengah = [];
+cocog ("teks") {
+    kasus n: teks | dhaptar => tengah.tambah("union");
+    kasus n: teks => tengah.tambah("teks");
+    kasus _ => tengah.tambah("lain");
+}
+pratelas(tengah, ["union"]);
+
+// Union yang tidak cocok harus jatuh ke klausula berikutnya, bukan berhenti.
+ana gagal_union = [];
+cocog (42) {
+    kasus n: teks | dhaptar => gagal_union.tambah("union");
+    kasus n: angka => gagal_union.tambah("angka");
+    kasus _ => gagal_union.tambah("lain");
+}
+pratelas(gagal_union, ["angka"]);
+
+// Union tiga varian: varian kedua yang cocok harus berhenti di sana.
+ana tiga = [];
+cocog (bener) {
+    kasus n: teks | dhaptar | boole => tiga.tambah("tiga");
+    kasus n: angka => tiga.tambah("angka");
+}
+pratelas(tiga, ["tiga"]);
+
+// Tipe opsional: `T?` = `T` atau `mboh`.
+gawe label_opsional(x) {
+    bali cocog (x) {
+        kasus n: dhaptar? => "dhaptar-atau-mboh";
+        kasus _ => "lain";
+    };
+}
+pratelas(label_opsional([1]), "dhaptar-atau-mboh");
+pratelas(label_opsional(mboh), "dhaptar-atau-mboh");
+pratelas(label_opsional("teks"), "lain");
+pratelas(label_opsional(0), "lain");
+
+// `apa_wae` cocok dengan apa saja.
+gawe label_apa_wae(x) {
+    bali cocog (x) {
+        kasus n: apa_wae => "apa_wae";
+        kasus _ => "tidak tercapai";
+    };
+}
+pratelas(label_apa_wae(1), "apa_wae");
+pratelas(label_apa_wae("teks"), "apa_wae");
+pratelas(label_apa_wae(mboh), "apa_wae");
+
+// Pola bertipe di dalam pola dhaptar.
+ana dalam_dhaptar = [];
+cocog ([1, "a"]) {
+    kasus [n: angka, s: teks] => dalam_dhaptar.tambah(`${n}:${s}`);
+    kasus _ => dalam_dhaptar.tambah("gagal");
+}
+pratelas(dalam_dhaptar, ["1:a"]);
+
+// Pola bertipe yang tidak cocok harus membuat seluruh pola gagal, bukan
+// dianggap cocok.
+ana dalam_gagal = [];
+cocog ([1, bener]) {
+    kasus [n: angka, s: teks] => dalam_gagal.tambah("cocok");
+    kasus _ => dalam_gagal.tambah("gagal");
+}
+pratelas(dalam_gagal, ["gagal"]);

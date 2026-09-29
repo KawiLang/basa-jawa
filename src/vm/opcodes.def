@@ -83,6 +83,10 @@ JAWA_OP(INSTANCEOF, 0, "a b - r", "perbandingan")
 // class. Dorong true kalau class instans itu ATAU salah satu induknya bernama
 // sama. Dipakai `kasus <Kelas>:` pada `pilih` dan pola `cocog`.
 JAWA_OP(INSTAN_DARI, 1, "o - b", "perbandingan")
+// `COCOK_TIPE n`: pop nilainya, dorong true kalau `rt::nama_jenis` nilainya
+// sama dengan `nama_properti[n]`. Berbeda dari `CEK_TIPE` (yang melempar
+// galat), ini untuk pola `cocog` yang harus bisa gagal.
+JAWA_OP(COCOK_TIPE, 1, "v - > b", "perbandingan")
 JAWA_OP(IN,         0, "a b - r", "perbandingan")
 JAWA_OP(TYPEOF_KIND,1, "- -> t", "perbandingan")
 

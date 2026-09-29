@@ -174,7 +174,8 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 | 99 | `LOOP` | 1 | `- > ` | Alias `JUMP`. |
 | 100 | `TEST_TRUTHY` | 0 | `c - >` | Dorong kebenaran puncak. |
 | 100b | `PARAM_HADAH` | 1 | `- > b` | Dorong true bila argumen indeks `a` benar-benar diberikan pemanggil (`Frame::n_argumen > a`). Dipakai prolog parameter default supaya `f(mboh)` tidak tertukar dengan `f()` (D-036). |
-| 100c | `INSTAN_DARI` | 1 | `o - b` | Dorong true kalau nilai puncak adalah instans class bernama `nama[a]` **atau** salah satu induknya. Dipakai `kasus <Kelas>:` pada `pilih` (D-039). |
+| 100c | `INSTAN_DARI` | 1 | `o - b` | Dorong true kalau nilai puncak adalah instans class bernama `nama[a]` **atau** salah satu induknya. Dipakai `kasus <Kelas>:` pada `pilih` (D-039) dan pola bertipe `cocog`. |
+| 100d | `COCOK_TIPE` | 1 | `v - > b` | Pop nilainya, dorong true kalau `rt::nama_jenis`-nya sama dengan `nama[a]`. Berbeda dari `CEK_TIPE` (yang melempar galat), ini untuk pola `cocog` yang harus bisa gagal. |
 
 ## Galat & handler  (`galat`, 4 opcode)
 

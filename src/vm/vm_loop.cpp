@@ -1341,6 +1341,13 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
             // `kasus <Kelas>:` pada `pilih` & pola `cocog`: instans dari class
             // itu atau dari salah satu induknya. Rantai induk ditelusuri sampai
             // habis supaya `kasus Kucing:` juga cocok untuk `KucingPriba`.
+            // `COCOK_TIPE n`: bandingkan jenis nilai dengan nama tipe. Dipakai
+            // pola bertipe `cocog` (`kasus n: teks => ...`).
+            case Op::COCOK_TIPE: {
+                const Value v = ambil();
+                dorong(Value::boolean(rt::nama_jenis(v) == sv(c->nama_properti[ins.a])));
+                break;
+            }
             case Op::INSTAN_DARI: {
                 const std::string_view cari = sv(c->nama_properti[ins.a]);
                 Obj* o = objek(puncak());

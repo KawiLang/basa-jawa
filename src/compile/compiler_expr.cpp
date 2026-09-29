@@ -529,14 +529,122 @@ void Compiler::susun_pola(const ast::Pola* p, std::size_t s_subj, std::vector<st
             return;
         }
         case ast::Pola::Jenis::Tipe: {
-            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subj));
-            emit(Op::TYPEOF);
-            if (!p->nama.empty()) emit_tulis_nama_statement(p->nama);
-            emit(Op::BENER);
+            // Pola bertipe: `kasus n: teks => ...` atau `kasus n: Kucing => ...`.
+            //
+            // BUG LAMA: sebelumnya `emit(Op::TYPEOF)` lalu langsung `BENER`,
+            // tanpa perbandingan -- jadi pola ini SELALU cocok apa pun nilainya.
+            //
+            // Nama yang di-binding adalah NILAI subjek, bukan nama tipenya.
+            susun_uji_tipe(p->tipe, s_subj, p->nama);
             return;
         }
     }
     emit(Op::SALAH);
+}
+
+// Susun uji tipe untuk pola `n: Tipe`. `sumber` adalah slot lokal yang memuat
+// nilai subjek; hasilnya `bener`/`salah` di stack.
+//
+// Bentuk yang didukung:
+//   `teks`, `angka`, `dhaptar`, ... -> bandingkan `rt::nama_jenis` (COCOK_TIPE)
+//   `dhaptar<T>`                    -> hanya memeriksa jenisnya
+//   `T?`                            -> `T` ATAU `mboh`
+//   `T | U`                         -> salah satunya
+//   `{ ... }` (TipeObjek)           -> IS_OBJECT
+//   `Kucing` (huruf kapital)        -> instans class itu atau induknya
+//   `apa_wae` / bentuk tak dikenal  -> selalu cocok
+void Compiler::susun_uji_tipe_dasar(const ast::Node* tipe, std::size_t sumber) {
+    if (tipe == nullptr) {
+        emit(Op::BENER);
+        return;
+    }
+    switch (tipe->kind) {
+        case NK::TipeAnotasi: {
+            const std::string_view nama = static_cast<const ast::TipeAnotasi*>(tipe)->nama;
+            if (nama.empty() || nama == "apa_wae") {
+                emit(Op::BENER);
+                return;
+            }
+            const bool kapital = nama[0] >= 'A' && nama[0] <= 'Z';
+            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(sumber));
+            if (kapital) {
+                emit(Op::INSTAN_DARI,
+                     static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, nama)))));
+            } else {
+                emit(Op::COCOK_TIPE,
+                     static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, nama)))));
+            }
+            return;
+        }
+        case NK::TipeArray: {
+            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(sumber));
+            emit(Op::COCOK_TIPE,
+                 static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, "dhaptar")))));
+            return;
+        }
+        case NK::TipeOpsional: {
+            // `T?` = `T` atau `mboh`.
+            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(sumber));
+            emit(Op::COCOK_TIPE,
+                 static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, "mboh")))));
+            const std::size_t sudah = emit(Op::JUMP_IF_TRUE, 0);
+            emit(Op::POP);
+            susun_uji_tipe_dasar(static_cast<const ast::TipeOpsional*>(tipe)->dasar, sumber);
+            patch(sudah, fn().chunk->ukuran_kode());
+            return;
+        }
+        case NK::TipeReferensi: {
+            // `dhaptar<angka>` sudah ditangani `TipeArray`; bentuk referensi
+            // lain (mis. `Janji<angka>`) belum dinilai -- selalu cocok.
+            emit(Op::BENER);
+            return;
+        }
+        case NK::TipeUnion: {
+            // Semua varian diuji berurutan; yang cocok langsung lompat ke
+            // `L_akhir` (setelah semua varian), bukan ke varian berikutnya --
+            // kalau dilompat ke varian berikutnya, emission-nya ikut dijalankan
+            // dan sisanya menumpuk boolean di stack.
+            const auto* un = static_cast<const ast::TipeUnion*>(tipe);
+            std::vector<std::size_t> lompat;
+            for (const ast::Node* v : un->varian) {
+                susun_uji_tipe_dasar(v, sumber);
+                lompat.push_back(emit(Op::JUMP_IF_TRUE, 0));
+                emit(Op::POP);
+            }
+            emit(Op::SALAH);
+            const std::size_t akhir = fn().chunk->ukuran_kode();
+            for (std::size_t l : lompat) patch(l, akhir);
+            return;
+        }
+        case NK::TipeObjek: {
+            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(sumber));
+            emit(Op::IS_OBJECT);
+            return;
+        }
+        default:
+            // Bentuk yang belum dinilai (referensi generics, tipe fungsi):
+            // belum diperiksa -- selalu cocok, sama seperti `CEK_TIPE` untuk
+            // tipe kustom.
+            emit(Op::BENER);
+            return;
+    }
+}
+
+void Compiler::susun_uji_tipe(const ast::Node* tipe, std::size_t s_subj, std::string_view bind) {
+    // `bind` diisi dengan NILAI subjek (bukan nama tipenya). Nilai disalin ke
+    // slot temporer lebih dulu supaya uji tipe tetap bisa membacanya, lalu
+    // ditulis ke nama pengikat.
+    if (bind.empty()) {
+        susun_uji_tipe_dasar(tipe, s_subj);
+        return;
+    }
+    emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subj));
+    const std::size_t tmp = fn().n_slot_terpakai++;
+    fn().n_slot_maks = std::max(fn().n_slot_maks, fn().n_slot_terpakai);
+    emit(Op::SET_LOCAL, static_cast<std::uint16_t>(tmp));
+    emit(Op::GET_LOCAL, static_cast<std::uint16_t>(tmp));
+    emit_tulis_nama_statement(bind);
+    susun_uji_tipe_dasar(tipe, tmp);
 }
 
 void Compiler::susun_pola_stack(const ast::Pola* p, std::vector<std::size_t>& lompat_gagal) {
