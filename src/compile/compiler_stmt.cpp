@@ -1,5 +1,7 @@
 // Kompiler Basa Jawa bagian 2: statement.
 #include <algorithm>
+#include <cstdint>
+#include <functional>
 
 #include "compile/compiler.h"
 
@@ -452,6 +454,8 @@ void Compiler::stmt_golongan(const ast::GolonganDeklarasi* n) {
     //   CLASS                    -> objek class
     //   DEFINE_METHOD k 0|1      -> method (0 = prototipe, 1 = statis)
     //   DEFINE_FIELD k           -> nama field instance
+    //   DEFINE_STATIC k          -> field statis bernilai
+    //   DEFINE_FIELD_INIT        -> closure inisialisasi field instance
     const std::size_t s_kelas = fn().n_slot_terpakai++;
     fn().n_slot_maks = std::max(fn().n_slot_maks, fn().n_slot_terpakai);
 
@@ -465,6 +469,7 @@ void Compiler::stmt_golongan(const ast::GolonganDeklarasi* n) {
     emit(Op::CLASS, 0);
     emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s_kelas));
 
+    std::vector<const ast::FieldKelas*> field_init;
     for (const ast::Node* m : n->badan) {
         if (m == nullptr) continue;
         if (m->kind == NK::MetodeDeklarasi) {
@@ -487,10 +492,29 @@ void Compiler::stmt_golongan(const ast::GolonganDeklarasi* n) {
                  static_cast<std::uint16_t>(ac->getter ? 1u : 0u));
         } else if (m->kind == NK::FieldKelas) {
             const auto* fk = static_cast<const ast::FieldKelas*>(m);
+            if (fk->komputat) continue;  // kunci komputat `[...]` belum didukung
+            if (fk->statis) {
+                // Field statis: nilainya dievaluasi sekali saat definisi kelas.
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_kelas));
+                if (fk->nilai != nullptr) {
+                    ekspresi(fk->nilai);
+                } else {
+                    emit(Op::MBOH);
+                }
+                emit(Op::DEFINE_STATIC,
+                     static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, fk->nama)))));
+                continue;
+            }
             emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_kelas));
             emit(Op::DEFINE_FIELD, static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, fk->nama)))),
                  static_cast<std::uint16_t>(fk->privat ? 1u : 0u));
+            if (fk->nilai != nullptr) field_init.push_back(fk);
         }
+    }
+    if (!field_init.empty()) {
+        emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_kelas));
+        eks_inisial_field(field_init);
+        emit(Op::DEFINE_FIELD_INIT);
     }
 
     for (const ast::Node* st : n->statis_blok) statement(st);
@@ -500,6 +524,78 @@ void Compiler::stmt_golongan(const ast::GolonganDeklarasi* n) {
         const std::size_t g = slot_baru(n->nama);
         emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(g));
     }
+}
+
+void Compiler::eks_inisial_field(const std::vector<const ast::FieldKelas*>& field) {
+    // Closure tanpa parameter: slot 0 = `this` (instans baru). Badan:
+    //   iki.<f1> = <init1>; iki.<f2> = <init2>; ...
+    // Inisialisasi berjalan dalam scope method, jadi `iki` sah dan nama luar
+    // ditangkap sebagai upvalue seperti method biasa.
+    FungsiKonteks f;
+    f.chunk = std::make_shared<vm::Chunk>();
+    f.chunk->nama = std::string_view("<field_init>");
+    f.info = FungsiInfo{};
+    f.info.nama = f.chunk->nama;
+    f.info.method = true;
+    f.info.ini_boleh = true;
+    f.dalam_fungsi = true;
+    f.n_slot_terpakai = 1;  // hanya `this`
+    f.n_slot_maks = 1;
+    f.info.arity = 0;
+    fungsi_stack_.push_back(std::move(f));
+    FungsiKonteks& ctx = fn();
+    for (const ast::FieldKelas* fk : field) {
+        if (fk == nullptr || fk->nilai == nullptr) continue;
+        emit(Op::GET_LOCAL, 0);  // iki
+        ekspresi(fk->nilai);
+        emit(Op::SET_PROP, static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, fk->nama)))));
+        emit(Op::POP);
+    }
+    emit(Op::MBOH);
+    emit(Op::RETURN_UNDEF);
+    ctx.chunk->jumlah_slot = static_cast<std::uint8_t>(std::min<std::size_t>(ctx.n_slot_maks, 250));
+    ctx.chunk->jumlah_param = 0;
+    ctx.chunk->n_argumen_tetap = 0;
+    ctx.chunk->variadic = false;
+    ctx.chunk->panah = false;
+    ctx.chunk->mengko = false;
+    ctx.chunk->generator = false;
+    ctx.chunk->peta_baris.finalize();
+
+    // Resolusi upvalue — salinan ringkas dari `eks_fungsi` (Lox).
+    constexpr std::int32_t kSentinelGlobal = -0x40000000;
+    std::function<std::int32_t(std::size_t, std::string_view)> petakan_upvalue;
+    petakan_upvalue = [&](std::size_t idx, std::string_view nama) -> std::int32_t {
+        if (idx == 0) return kSentinelGlobal;
+        FungsiKonteks& induk = fungsi_stack_[idx - 1];
+        const auto it = induk.lokal.find(std::string(nama));
+        if (it != induk.lokal.end() && it->second != 0) {
+            return static_cast<std::int32_t>(it->second);
+        }
+        for (std::size_t k = 0; k < induk.info.ambil_upvalue.size(); ++k) {
+            if (induk.info.ambil_upvalue[k].second == nama) {
+                return -static_cast<std::int32_t>(k) - 1;
+            }
+        }
+        petakan_upvalue(idx - 1, nama);
+        induk.info.ambil_upvalue.emplace_back(0, nama);
+        return -static_cast<std::int32_t>(induk.info.ambil_upvalue.size());
+    };
+    std::vector<std::int32_t> sumber;
+    const std::size_t ini = fungsi_stack_.size() - 1;
+    for (const auto& up : ctx.info.ambil_upvalue) {
+        sumber.push_back(petakan_upvalue(ini, up.second));
+    }
+    for (const auto& up : ctx.info.ambil_upvalue) ctx.chunk->tambah_nama_upvalue(up.second);
+    ctx.chunk->jumlah_upvalue = static_cast<std::uint8_t>(sumber.size());
+    ctx.chunk->upvalue_sumber = sumber;
+
+    vm::ChunkPtr anak = ctx.chunk;
+    semua_chunk_.push_back(anak);
+    fungsi_stack_.pop_back();
+    const std::size_t idx_anak = fn().chunk->anak.size();
+    fn().chunk->anak.push_back(anak);
+    emit(Op::CLOSURE, static_cast<std::uint16_t>(idx_anak));
 }
 
 const ast::Node* Compiler::deklarasi_ekspor(const ast::Node* n) {

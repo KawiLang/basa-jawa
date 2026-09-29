@@ -379,6 +379,18 @@ void VM::set_index_value(Value obj, Value kunci, Value nilai) {
         // deklarasi eksplisit, mis. `iki.x = 1`).
         inst->nama_slot.push_back(std::string(nama));
         inst->slot.push_back(nilai);
+    } else if (o->h.kind == OK::Golongan) {
+        // Penugasan statis (`Kelas.x = v`): perbarui atau tambah entri statis.
+        auto* kls = static_cast<ClassObj*>(o);
+        const std::string_view nama = sv(kunci);
+        for (std::size_t i = 0; i < kls->nama_statis.size(); ++i) {
+            if (kls->nama_statis[i] == nama) {
+                kls->nilai_statis[i] = nilai;
+                return;
+            }
+        }
+        kls->nama_statis.push_back(std::string(nama));
+        kls->nilai_statis.push_back(nilai);
     }
 }
 

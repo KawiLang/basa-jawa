@@ -132,6 +132,8 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 | 69 | `DEFINE_METHOD` | 2 | `o k f - >` | Tambah method `nama[a]`; `b=1` berarti statis. Method bernama `wiwit` menjadi konstruktor. |
 | 70 | `DEFINE_ACCESSOR` | 2 | `o k f - >` | Tambah accessor `nama[a]`; `b=1` berarti getter (`nampa`). |
 | 71 | `DEFINE_FIELD` | 1 | `v - >` | Daftarkan nama field instance `nama[a]`; `b=1` berarti privat. |
+| 71b | `DEFINE_FIELD_INIT` | 0 | `c f - c` | Simpan closure inisialisasi field instance (`y = <ekspresi>`) ke kelas. Dijalankan di `NEW` sebelum `wiwit`, induk-ke-anak. |
+| 71c | `DEFINE_STATIC` | 1 | `c v - c` | Simpan field statis bernilai `nama[a]` ke kelas (dievaluasi sekali saat definisi). |
 | 72 | `DELETE` | 0 | `o k - r` | Hapus properti; dorong boolean berhasil/tidak. |
 | 73 | `GET_PROTO` | 0 | `o - p` | Dorong prototipe objek. |
 | 74 | `SET_PROTO` | 0 | `o p - o` | Ganti prototipe objek. |

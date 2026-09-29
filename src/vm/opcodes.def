@@ -93,6 +93,12 @@ JAWA_OP(DEFINE,     2, "o k v - v", "objek")
 JAWA_OP(DEFINE_METHOD, 2, "o k f - >", "objek")
 JAWA_OP(DEFINE_ACCESSOR, 2, "o k f - >", "objek")
 JAWA_OP(DEFINE_FIELD,   1, "v - >", "objek")
+// `DEFINE_FIELD_INIT`: stack [kelas, closure] -> [kelas]. Menyimpan closure
+// inisialisasi field instance (`y = <ekspresi>`) ke `ClassObj::inisial_field`.
+JAWA_OP(DEFINE_FIELD_INIT, 0, "c f - c", "objek")
+// `DEFINE_STATIC k`: stack [kelas, nilai] -> [kelas]. Menyimpan field/method
+// statis bernilai (`statis x = <ekspresi>`) ke `nama_statis`/`nilai_statis`.
+JAWA_OP(DEFINE_STATIC, 1, "c v - c", "objek")
 JAWA_OP(DELETE,     0, "o k - r", "objek")
 JAWA_OP(GET_PROTO,  0, "o - p", "objek")
 JAWA_OP(SET_PROTO,  0, "o p - o", "objek")

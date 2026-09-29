@@ -143,6 +143,10 @@ private:
     void stmt_pilih(const ast::PilihStmt* n);
     void stmt_coba(const ast::CobaStmt* n);
     void stmt_golongan(const ast::GolonganDeklarasi* n);
+    /// Sintesis closure inisialisasi field instance (`iki.f = <init>` berurutan).
+    /// Dipanggil dengan daftar field instance yang punya `nilai`; menerbitkan
+    /// `CLOSURE` untuk fungsi tanpa parameter itu di chunk induk.
+    void eks_inisial_field(const std::vector<const ast::FieldKelas*>& field);
     void stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist);
     void stmt_impor(const ast::ImporDeklarasi* n);
     /// `ekspor { x, y }` yang ditunda sampai akhir modul (lihat `Compiler::compile`).

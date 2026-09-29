@@ -14,12 +14,12 @@ lokal, pustaka standar lengkap, dan tooling (REPL, `fmt`, `bench`).
 | Metrik | Nilai |
 |---|---|
 | Baris kode C++ (`src/` + `tests/`) | 21.260 |
-| Opcode bytecode | 124 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL` baru) |
+| Opcode bytecode | 126 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC` baru) |
 | Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 3 berkas, 152 cek, 81 test |
-| Uji bahasa (`jawa tes`) | 5 berkas, 250 assertion (regex, `Tanggal`, live binding modul, ...) |
+| Uji bahasa (`jawa tes`) | 5 berkas, 257 assertion (regex, `Tanggal`, live binding modul, field kelas, ...) |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di ketiganya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
@@ -161,18 +161,22 @@ Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
 - Tidak ada korpus crash fuzzing yang tersimpan, dan `fuzz_parser` belum
   memeriksa rentang setiap node anak (butuh penelusur AST per-jenis-node).
   Lihat `docs/fuzzing.md`.
-- **Field kelas dengan inisialisasi, field publik, dan `nampa` masih rusak.**
-  Ditemukan tak sengaja saat menulis contoh `Tanggal` (dibawah 0.11.0, bukan
-  regresi dari perubahan mana pun -- sudah diperiksa pada `165cae9`):
-  - `golongan A { #x = 1; wiwit() { iki.#x = 2; } }` ->
-    `Ora bisa nulis properti "x" saka nilai undefined` (`iki` belum ada).
-  - `golongan B { y; ... }` (field publik) -> *stack overflow*
-    (`KleruRentang [R003]`, 10.000 frame).  Ini yang paling serius: bukan pesan
-    galat, tapi proses mati.
-  - `nampa x() { ... }` -> `Ora bisa nelep nilai: dudu fungsi`; accessor
-    getter sama sekali tidak terdaftar sebagai method pada instans.
-  Yang bekerja: field privat **tanpa** inisialisasi (`#jeneng;`), seperti pada
-  `examples/golongan.jw`.
+- **Field kelas berinisialisasi SELESAI (tahap 1).** `y = <ekspresi>`,
+  `#x = <ekspresi>`, dan `statis x = <ekspresi>` kini dievaluasi: instance
+  lewat closure `inisial_field` (`DEFINE_FIELD_INIT`, dijalankan di `NEW`
+  sebelum `wiwit`, induk-ke-anak), statis lewat `DEFINE_STATIC` sekali saat
+  definisi. Catatan lama di bawah ini sudah tidak berlaku — diverifikasi
+  `tests/tes/bahasa.tes.jw` (+7 assertion) + `--gc-stress` + ASan/UBSan:
+  - ~~`golongan A { #x = 1; ... }` -> `iki` undefined~~ (salah ketik `anyaar`
+    di laporan; kata kuncinya `anyar`).
+  - ~~field publik -> stack overflow~~ (tidak terreproduksi pada `165cae9`;
+    yang nyata: inisialisasi diabaikan -> `mboh`).
+  - ~~getter tidak terdaftar~~ (tidak terreproduksi; `nampa` bekerja).
+- **Bug arena laten DIPERBAIKI (tahap 1).** `Arena::allocate` memakai offset
+  blok lama untuk blok baru, menulis lewat akhir blok bila berkas cukup besar
+  untuk butuh blok kedua (meledak tepat saat `bahasa.tes.jw` + 5 baris field
+  ditambahkan; ASan: `unknown-crash` di `Arena::create`). Kini offset blok
+  baru selalu 0, dan `bytes_used_` ikut dihitung.
 - Parameter default memakai `JUMP_IF_NOT_NULLISH`, jadi argumen yang sengaja
   dilewatkan sebagai `mboh` juga akan digantikan nilai default. Membedakan
   keduanya butuh opcode baru yang membaca `Frame::n_argumen`.

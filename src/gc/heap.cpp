@@ -267,8 +267,10 @@ void Heap::tandai_anak(Obj* o, Worklist& wl) {
             mark(c->induk);
             mark(c->konstruktor);
             mark(c->wiwit_pabrik);
+            mark(c->inisial_field);
             mark(c->privat);
             for (const Value& v : c->field_statis) mark(v);
+            for (const Value& v : c->nilai_statis) mark(v);
             break;
         }
         case rt::OK::Instance: {

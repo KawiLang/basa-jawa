@@ -160,6 +160,41 @@ golongan KotakPriba {
 }
 pratelas(anyar KotakPriba(3).sisi, 3);
 
+// Field berinisialisasi: `= <ekspresi>` berjalan sebelum `wiwit`.
+golongan KotakIsi {
+    sisi = 5;
+}
+pratelas(anyar KotakIsi().sisi, 5);
+golongan KotakTiban {
+    sisi = 5;
+    wiwit() { iki.sisi = iki.sisi + 1; }
+}
+pratelas(anyar KotakTiban().sisi, 6);
+golongan PribaIsi {
+    #sisi = 7;
+    nampa sisi() { bali iki.#sisi; }
+}
+pratelas(anyar PribaIsi().sisi, 7);
+// Inisialisasi bisa memakai variabel luar (upvalue) dan `iki`.
+tetep alas_field = 10;
+golongan TanggaField {
+    y = alas_field + 5;
+}
+pratelas(anyar TanggaField().y, 15);
+golongan IndukField {
+    a = 1;
+}
+golongan AnakField turunan IndukField {
+    b = 2;
+}
+pratelas(anyar AnakField().a, 1);
+pratelas(anyar AnakField().b, 2);
+// Field statis bernilai.
+golongan StatisField {
+    statis x = 42;
+}
+pratelas(StatisField.x, 42);
+
 // --- pola `cocog` ----------------------------------------------------------
 gawe kelompok(x) {
   bali cocog (x) {

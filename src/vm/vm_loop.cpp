@@ -591,6 +591,39 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 dorong(cls_val);
                 break;
             }
+            // Stack: [kelas, closure] -> [kelas].
+            case Op::DEFINE_FIELD_INIT: {
+                const Value fnv = ambil();
+                const Value cls_val = ambil();
+                if (Obj* o = objek(cls_val); o != nullptr && o->h.kind == OK::Golongan) {
+                    static_cast<ClassObj*>(o)->inisial_field = fnv;
+                }
+                dorong(cls_val);
+                break;
+            }
+            // Stack: [kelas, nilai] -> [kelas].
+            case Op::DEFINE_STATIC: {
+                const Value nilai = ambil();
+                const Value cls_val = ambil();
+                if (Obj* o = objek(cls_val); o != nullptr && o->h.kind == OK::Golongan) {
+                    auto* kls = static_cast<ClassObj*>(o);
+                    const std::string_view nama = sv(c->nama_properti[ins.a]);
+                    bool ada = false;
+                    for (std::size_t i = 0; i < kls->nama_statis.size(); ++i) {
+                        if (kls->nama_statis[i] == nama) {
+                            kls->nilai_statis[i] = nilai;
+                            ada = true;
+                            break;
+                        }
+                    }
+                    if (!ada) {
+                        kls->nama_statis.push_back(nama);
+                        kls->nilai_statis.push_back(nilai);
+                    }
+                }
+                dorong(cls_val);
+                break;
+            }
             case Op::GET_PROTO: {
                 const Value obj = ambil();
                 Obj* o = objek(obj);
@@ -765,10 +798,34 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                     // Slot hasil dipesan lebih dulu supaya `RETURN` konstruktor
                     // menuliskannya ke tempat yang benar (lihat `Frame::target_balas`).
                     dorong(Value::obyek(inst));
+                    // Field instance berinisialisasi (`y = <ekspresi>`) berjalan
+                    // SEBELUM badan konstruktor, dari induk ke anak. Rantai
+                    // dikumpulkan dulu, lalu frame didorong terbalik supaya yang
+                    // paling induk berjalan paling dulu (LIFO).
+                    std::vector<ClassObj*> rantai;
+                    for (ClassObj* k = kls; k != nullptr;) {
+                        rantai.push_back(k);
+                        Obj* ip = objek(k->induk);
+                        k = (ip != nullptr && ip->h.kind == OK::Golongan) ? static_cast<ClassObj*>(ip)
+                                                                         : nullptr;
+                    }
                     if (kls->konstruktor.is_obyek()) {
-                        mulai_frame(static_cast<ClosureObj*>(kls->konstruktor.mutable_pointer()),
-                                    Value::obyek(inst), args, Frame::kBuangHasil);
-                        if (galat_.ada) return Status::Galat;
+                        if (Obj* ko = objek(kls->konstruktor);
+                            ko != nullptr && ko->h.kind == OK::Closure) {
+                            mulai_frame(static_cast<ClosureObj*>(ko), Value::obyek(inst), args,
+                                        Frame::kBuangHasil);
+                            if (galat_.ada) return Status::Galat;
+                        }
+                    }
+                    for (ClassObj* k : rantai) {
+                        if (!k->inisial_field.is_obyek()) continue;
+                        if (Obj* fo = objek(k->inisial_field);
+                            fo != nullptr && fo->h.kind == OK::Closure) {
+                            std::vector<Value> tanpa_arg;
+                            mulai_frame(static_cast<ClosureObj*>(fo), Value::obyek(inst), tanpa_arg,
+                                        Frame::kBuangHasil);
+                            if (galat_.ada) return Status::Galat;
+                        }
                     }
                 } else {
                     dorong(Value::mboh());

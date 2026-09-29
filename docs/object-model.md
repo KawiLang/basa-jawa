@@ -101,6 +101,8 @@ numerik) — bukan perbandingan pointer.
 - `prototipe` — objek berisi method & accessor
 - `induk` — class induk (untuk `turunan`)
 - `konstruktor` — closure `wiwit`
+- `inisial_field` — closure inisialisasi field instance (`y = <ekspresi>`);
+  dijalankan di `NEW` sebelum `wiwit`, dari induk ke anak
 - `nama_field` / `field_statis` — field instance
 - `nama_statis` / `nilai_statis` — method & field `statis`
 

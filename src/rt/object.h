@@ -417,6 +417,10 @@ public:
     Value induk = Value::mboh();       ///< class induk
     Value konstruktor = Value::mboh(); ///< fungsi constructor
     Value wiwit_pabrik = Value::mboh();
+    /// Inisialisasi field instance (`y = <ekspresi>`). Closure tanpa parameter
+    /// (selain `this`) yang menjalankan `iki.<field> = <init>` berurutan.
+    /// Dijalankan di `NEW` sebelum konstruktor, dari induk ke anak.
+    Value inisial_field = Value::mboh();
     std::vector<Value> field_statis;  ///< nilai field instance (indeks sama dgn nama_field)
     std::vector<std::string_view> nama_field;
     /// Method & field statis (`statis` pada deklarasi class).

@@ -54,9 +54,16 @@ public:
             if (want < bytes * 2) want = bytes * 2;
             if (want < 1u << 16) want = 1u << 16;
             push_block(want);
+            // Blok baru masih kosong: offset selalu 0 (bukan `aligned` milik
+            // blok lama — memakai offset lama menulis lewat akhir blok baru).
+            void* p = blocks_.back().data;
+            blocks_.back().used = bytes;
+            bytes_used_ += bytes;
+            return p;
         }
         void* p = blocks_.back().data + aligned;
         blocks_.back().used = aligned + bytes;
+        bytes_used_ += bytes;
         return p;
     }
 
