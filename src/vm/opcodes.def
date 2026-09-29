@@ -145,6 +145,12 @@ JAWA_OP(THROW,      0, "v - > ", "galat")
 JAWA_OP(TRY_BEGIN,  2, "- t i > ", "galat")
 JAWA_OP(TRY_END,    0, "- > ", "galat")
 JAWA_OP(FINALLY_END,0, "- > ", "galat")
+// `TRY_KLAUSUL t k`: daftarkan klausa `tangkep` pada handler `TRY_BEGIN` yang
+// baru didaftarkan. `t` = index nama tipe kleru pada `nama_properti` chunk ini
+// (`0` = tanpa tipe, yaitu tangkap semua). `k` = ip awal klausa. Unwinder
+// memilih klausaloader PERTAMA yang cocok; kalau tidak ada, galat diteruskan
+// ke handler di luarnya (lihat D-038).
+JAWA_OP(TRY_KLAUSUL, 2, "- > ", "galat")
 
 // ------------------------------------------------------------------ cocog
 JAWA_OP(IS_OBJECT,  0, "v - b", "objek")

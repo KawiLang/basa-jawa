@@ -112,11 +112,22 @@ struct Frame {
     static constexpr std::size_t kBuangHasil = static_cast<std::size_t>(-2);
     std::size_t target_balas = kTanpaTarget;
     /// Handler `coba` aktif pada frame ini.
+    ///
+    /// Satu `coba` bisa punya banyak klausa `tangkep`, masing-masing dengan
+    /// tipe kleru (`tipe` kosong = tangkap semua). Unwinder memilih klausa
+    /// PERTAMA yang cocok; kalau tidak ada yang cocok, handler ini tidak
+    /// menangani galat dan pencarian lanjut ke handler di luarnya (D-038).
+    struct HandlerKlausul {
+        std::string_view tipe;  ///< nama kleru (`Kleru` = semua kleru)
+        std::size_t ip = 0;     ///< ip awal klausa
+    };
     struct Handler {
-        std::size_t handler_tangkep = 0;
-        std::size_t handler_intriguasan = 0;
+        std::vector<HandlerKlausul> klausul;
+        /// ip "jalur tolak": tidak ada klausula yang cocok, tapi ada
+        /// `pungkasan` yang harus jalan sebelum galat diteruskan. `0` = tidak
+        /// ada `pungkasan`, jadi galat langsung naik ke handler luar.
+        std::size_t ip_tolak = 0;
         std::size_t stack_base = 0;
-        std::size_t tangkep_slot = 0;
     };
     std::vector<Handler> handlers;
 

@@ -182,7 +182,8 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 | 101 | `THROW` | 0 | `v - > ` | Lempar nilai puncak. Unwinder mencari handler `coba` terdekat. |
 | 102 | `TRY_BEGIN` | 2 | `- t i > ` | Daftarkan handler `coba`; `a` = ip `tangkep`, `b` = ip `intrigasan`. |
 | 103 | `TRY_END` | 0 | `- > ` | Lepas handler `coba` yang paling dalam. |
-| 104 | `FINALLY_END` | 0 | `- > ` | Tanda akhir blok `intrigasan`. |
+| 104 | `FINALLY_END` | 0 | `- > ` | Tanda akhir blok `pungkasan`. |
+| 104b | `TRY_KLAUSUL` | 2 | `- > ` | Daftarkan klausa `tangkep` pada handler `TRY_BEGIN`: `a` = indeks nama tipe kleru **+1** (`0` = tanpa tipe / tangkap semua), `b` = ip awal klausa. Unwinder memilih klausula pertama yang cocok; kalau tidak ada, `pungkasan` (jalur tolak) lalu galat naik ke luar (D-038). |
 
 ## Objek & properti  (`objek`, 2 opcode)
 

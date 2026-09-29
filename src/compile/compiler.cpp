@@ -64,6 +64,12 @@ void Compiler::patch(std::size_t idx, std::size_t tujuan) {
     }
 }
 
+void Compiler::patch_b(std::size_t idx, std::size_t tujuan) {
+    if (idx < fn().chunk->kode.size()) {
+        fn().chunk->kode[idx].b = static_cast<std::uint16_t>(tujuan);
+    }
+}
+
 void Compiler::patch_sebalik(std::size_t idx, std::size_t tujuan) {
     if (idx < fn().chunk->kode.size()) {
         fn().chunk->kode[idx].a = static_cast<std::uint16_t>(tujuan);

@@ -14,12 +14,12 @@ lokal, pustaka standar lengkap, dan tooling (REPL, `fmt`, `bench`).
 | Metrik | Nilai |
 |---|---|
 | Baris kode C++ (`src/` + `tests/`) | 21.260 |
-| Opcode bytecode | 128 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN` baru) |
+| Opcode bytecode | 129 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN`, `TRY_KLAUSUL` baru) |
 | Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 3 berkas, 152 cek, 81 test |
-| Uji bahasa (`jawa tes`) | 5 berkas, 284 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, ...) |
+| Uji bahasa (`jawa tes`) | 6 berkas, 295 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, ...) |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di ketiganya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
@@ -142,8 +142,12 @@ Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
 - `pilih`: kasus **pola** hanya untuk `[...]` dan `{...}` (mesin yang sama
   dengan `cocog`). `kasus <Kelas>:` untuk pencocokan tipe belum ada, dan
   `pilih` sebagai ekspresi pun belum. Lihat `docs/control-flow.md`.
-- Hanya `tangkep` pertama yang dipakai sebagai handler; seleksi berdasarkan
-  tipe kleru belum ada (kompilator memberi peringatan S504).
+- **`tangkep` bertipe & `pungkasan` SELESAI (tahap 3).** Banyak klausula
+  `tangkep` dengan seleksi tipe kleru (`tangkep (Kleru)`, `tangkep (e:
+  KleruJenis)`), klausula yang tidak cocok meneruskan galat ke `coba` luar, dan
+  `pungkasan` jalan di ketiga jalur. Lihat D-038 & `docs/control-flow.md`.
+  Yang **tetap** belum: `pungkasan` belum jalan kalau `bali` di dalam blok
+  `coba` (kontrol keluar tanpa melewati badan `pungkasan`).
 - **Pengikatan per-iterasi `kanggo` SELESAI (tahap 2).** `kanggo (ana i = ...)`
   dan `kanggo (ana x saka ...)` mengikat per-iterasi lewat `SelObj` +
   `SEL_SALIN` (D-037), jadi closure tiap iterasi melihat nilai iterasinya
@@ -152,6 +156,11 @@ Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
 - **Parameter default: `mboh` vs argumen hilang SELESAI (tahap 2).** Opcode
   `PARAM_HADAH` membaca `Frame::n_argumen` (D-036), jadi `f(mboh)` tidak lagi
   tertukar dengan `f()`.
+- **Galat aritmetika bisa ditangkap (tahap 3).** `1 + "a"` dulu menulis
+  `galat_.ada` langsung, tanpa `unwind_galat`, sehingga `coba` tidak pernah
+  menangkapnya — termasuk dari dalam fungsi yang dipanggil. Sekarang
+  membentuk `KleruObj` dulu (D-038). Galat internal VM (instruksi rusak,
+  langkah maksimum) sengaja tetap tidak bisa ditangkap.
 - `Wektu.tundha` hanya mengurutkan timer, tidak menunggu ms sungguhan
   (loop acara deterministik, lihat `docs/async.md`).
 - Pemanggil fungsi `mengko` menunggu sampai fungsi itu selesai; `tulis(f())`
@@ -183,9 +192,8 @@ Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
   untuk butuh blok kedua (meledak tepat saat `bahasa.tes.jw` + 5 baris field
   ditambahkan; ASan: `unknown-crash` di `Arena::create`). Kini offset blok
   baru selalu 0, dan `bytes_used_` ikut dihitung.
-- Parameter default memakai `JUMP_IF_NOT_NULLISH`, jadi argumen yang sengaja
-  dilewatkan sebagai `mboh` juga akan digantikan nilai default. Membedakan
-  keduanya butuh opcode baru yang membaca `Frame::n_argumen`.
+- ~~Parameter default memakai `JUMP_IF_NOT_NULLISH`~~ — **SELESAI (tahap 2)**,
+  lihat Opcode `PARAM_HADAH` di atas.
 - Skor cakupan belum diukur (preset `coverage` ada, tapi belum ada ambang
   90% yang dijaga).
 
@@ -235,7 +243,7 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 284/284 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 295/295 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

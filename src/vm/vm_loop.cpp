@@ -51,11 +51,26 @@ std::string_view sv(Value v) {
 }
 
 /// Emit galat & kembalikan Status::Galat.
+///
+/// Untuk galat INTERNAL (instruksi rusak, langkah maksimum) yang langsung
+/// menghentikan program. Galat yang LEVEL bahasa harus lewat `galat_tertangkap`
+/// supaya bisa ditangkap `coba`/`tangkep`.
 Status gagal(VM& vm, const char* kode, const char* pesan) {
     std::fprintf(stderr, "KleruRuntime [%s] %s\n", kode, pesan);
     std::fputs(vm.jejak_stack().c_str(), stderr);
     vm.galat_.ada = true;
     return Status::Galat;
+}
+
+/// Galat level bahasa (mis. `1 + "a"`): bentuknya objek `KleruObj` sehingga
+/// bisa ditangkap `coba`/`tangkep` dan dibaca `.jeneng`/`.pesan`.
+///
+/// Mengembalikan true kalau ada handler `coba` yang menangkap -- pemanggil
+/// harus `break` (bukan `return`) supaya loop bytecode lanjut di ip handler.
+/// Kalau false, tidak ada handler: pemanggil mencetak pesan lalu mengembalikan
+/// `Status::Galat`.
+bool lempar_dan_tangkap(VM& vm, const char* jeneng, const char* pesan) {
+    return vm.unwind_galat(vm.buat_kleru(jeneng, pesan));
 }
 
 }  // namespace
@@ -187,7 +202,15 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                     if (ta != nullptr && tb != nullptr) {
                         dorong(Value::obyek(TeksObj::gabung(heap_, ta->str(), tb->str())));
                     } else {
-                        return gagal(*this, "R007", "Ora bisa nambahake nilai iki (tanpa koersi).");
+                        // `break` (bukan `return`) supaya loop lanjut di ip
+                        // handler. Kalau tidak ada handler, `unwind_galat` sudah
+                        // mengisi `galat_`; pencetakan pesannya dilakukan
+                        // `VM::jalankan_sumber` supaya tidak dobel.
+                        if (lempar_dan_tangkap(*this, "KleruJenis",
+                                               "Ora bisa nambahake nilai iki (tanpa koersi).")) {
+                            break;
+                        }
+                        return Status::Galat;
                     }
                 }
                 break;
@@ -196,7 +219,11 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 const Value b = ambil();
                 const Value a = ambil();
                 if (!a.is_angka() || !b.is_angka()) {
-                    return gagal(*this, "R007", "Operator aritmetika mung bisa kanggo angka.");
+                    if (lempar_dan_tangkap(*this, "KleruJenis",
+                                           "Operator aritmetika mung bisa kanggo angka.")) {
+                        break;
+                    }
+                    return Status::Galat;
                 }
                 const double x = a.as_number();
                 const double y = b.as_number();
@@ -947,14 +974,26 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 if (unwind_galat(v)) break;
                 return Status::Galat;
             }
-            // Mendaftarkan handler `coba` pada frame berjalan.
+            // Mendaftarkan handler `coba` pada frame berjalan. `ins.b` = ip
+            // jalur tolak (badan `pungkasan`); `0` berarti tidak ada
+            // `pungkasan`, jadi galat yang tidak cocok langsung naik ke luar.
+            // Klausa `tangkep` didaftarkan terpisah lewat `TRY_KLAUSUL`.
             case Op::TRY_BEGIN: {
                 Frame::Handler h;
-                h.handler_tangkep = ins.a;
-                h.handler_intriguasan = ins.b;
+                h.ip_tolak = ins.b;
                 h.stack_base = stack_.size();
-                h.tangkep_slot = f.slot_base;
-                f.handlers.push_back(h);
+                f.handlers.push_back(std::move(h));
+                break;
+            }
+            // Mendaftarkan satu klausa `tangkep` pada handler `TRY_BEGIN` yang
+            // baru. `ins.a == 0` = tanpa anotasi tipe (tangkap semua).
+            case Op::TRY_KLAUSUL: {
+                if (f.handlers.empty()) break;
+                Frame::HandlerKlausul k;
+                // `ins.a` = indeks nama + 1; `0` = klausula tanpa tipe.
+                k.tipe = ins.a != 0 ? sv(c->nama_properti[ins.a - 1]) : std::string_view();
+                k.ip = ins.b;
+                f.handlers.back().klausul.push_back(k);
                 break;
             }
             case Op::TRY_END: {

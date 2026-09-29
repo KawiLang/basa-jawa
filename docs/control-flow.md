@@ -1,11 +1,14 @@
-# `pilih` (switch) dan Zona Mati-Temporal
+# Alur kendali: `pilih`, `coba`, zona mati-temporal
 
-Dokumen ini menjelaskan dua hal yang diperbaiki pada versi 0.7.0:
+Dokumen ini menjelaskan tiga hal:
 
-1. `pilih` — sebelumnya **hanya kasus pertama yang pernah diuji**, dan `baku`
-   tidak pernah jalan.
+1. `pilih` (switch) — sebelumnya **hanya kasus pertama yang pernah diuji**, dan
+   `baku` tidak pernah jalan.
 2. Zona mati-temporal (TDZ) — sebelumnya membaca pengikat leksikal sebelum
    deklarasinya menghasilkan `undefined`, bukan galat.
+3. `coba`/`tangkep`/`pungkasan` — sebelumnya `pungkasan` dilewati di jalur
+   normal, hanya klausula `tangkep` pertama yang dipakai, dan galat
+   aritmetika tidak bisa ditangkap sama sekali.
 
 ---
 
@@ -100,7 +103,90 @@ Dua hal yang mudah salah dan sudah dikomentari di `Compiler::stmt_pilih`:
 
 ---
 
-## 2. Zona mati-temporal (TDZ)
+## 2. `coba` / `tangkep` / `pungkasan`
+
+### Klausula `tangkep` bertipe
+
+Satu `coba` boleh punya banyak klausula `tangkep`, masing-masing memilih
+handler berdasarkan tipe galat:
+
+```
+coba {
+  salah_koersi();          // melempar KleruJenis
+} tangkep (KleruModul) {   // tidak cocok -> dilewati
+  tulis("modul");
+} tangkep (Kleru) {        // cocok: objek kleru apa pun
+  tulis("kleru: ", galat.jeneng);
+} tangkep (lain) {         // tanpa tipe = tangkap apa saja (harus terakhir)
+  tulis("lain: ", lain);
+}
+```
+
+Dua bentuk penulisan tipe:
+
+- `tangkep (KleruJenis) { ... }` — tanpa binding.
+- `tangkep (err: KleruJenis) { ... }` — dengan binding.
+
+Aturan pencocokan (`cocok_kleru` di `src/vm/vm.cpp`):
+
+| `tipe` | cocok dengan |
+|---|---|
+| kosong (tanpa anotasi) | apa saja |
+| `Kleru` | objek kleru apa pun |
+| `KleruJenis`, `KleruModul`, ... | `KleruObj::jeneng` yang sama persis |
+
+Nilai yang **bukan** objek kleru (mis. `uncal "teks"`) hanya cocok dengan
+klausula tanpa tipe. Klausula pertama yang cocok menang. Kalau tidak ada
+klausula yang cocok, `coba` itu tidak menanganinya dan galat naik ke `coba` di
+luarnya — persis seperti ECMAScript.
+
+Klausula tanpa tipe **harus berada di urutan terakhir**; kalau tidak, klausula
+setelahnya tidak akan pernah dijalankan (unwinder berhenti di klausula
+pertama yang cocok).
+
+### `pungkasan` selalu jalan
+
+Badan `pungkasan` dijalankan di ketiga jalur:
+
+1. Blok selesai normal.
+2. Setelah klausula `tangkep` yang cocok selesai.
+3. Tidak ada klausula yang cocok — `pungkasan` jalan, lalu galat diteruskan
+   dengan `THROW` ke handler di luar.
+
+Jalur (3) dikompilasi sebagai `L_tolak`: badan `pungkasan` diiemit ulang,
+diakhiri `THROW` (nilai galat masih di puncak stack karena unwinder
+meninggalkannya di sana). Karena itu badan `pungkasan` bisa muncul dua kali
+dalam bytecode — itu disengaja, bukan duplikasi tak sengaja.
+
+### Cara kerjanya
+
+`TRY_BEGIN` mendaftarkan satu `Frame::Handler` (tinggi stack saat itu +
+ip jalur tolak). Tiap klausula `tangkep` menambah entri lewat `TRY_KLAUSUL`:
+sebuah `std::string_view` nama tipe + ip awal klausul. Handler dipecah
+dari bentuk "satu ip" menjadi "daftar klausul" justru supaya seleksi tipe
+bisa dilakukan **di sisi unwinder**. Kalau seleksinya dilakukan di bytecode,
+handler tetap harus menangkap galat yang salah lalu dilempar ulang, dan
+`pungkasan`-nya ikut jalan dua kali.
+
+`VM::unwind_galat` mencoba tiap handler dari yang terdekat: kalau tidak ada
+klausula yang cocok, handler itu **dicabut** dan pencarian lanjut ke handler
+berikutnya atau ke frame pemanggil.
+
+### Galat yang bisa ditangkap
+
+Galat level bahasa harus dibentuk sebagai `KleruObj` lalu dilempar lewat
+`unwind_galat` supaya bisa ditangkap. Opcode yang menulis `galat_.ada` secara
+langsung membuat galat **tidak bisa ditangkap** sama sekali — itulah bug lama
+yang membuat `1 + "a"` di dalam `coba` tetap mematikan program
+(`lempar_dan_tangkap` di `src/vm/vm_loop.cpp`).
+
+Galat internal VM (instruksi rusak, `ITER_NEXT` tanpa iterator, langkah
+maksimum terlampaui) sengaja **tidak** bisa ditangkap: itu kondisi mesin, bukan
+kesalahan program.
+
+---
+
+## 3. Zona mati-temporal (TDZ)
 
 Semua pengikat leksikal (`ana`, `wonten`, `tetep`) punya zona mati-temporal:
 nama **tidak bisa dibaca** sebelum deklarasinya dievaluasi.
@@ -145,6 +231,7 @@ Setelah statement deklarasi selesai dikompilasi, entri `tdz_menunggu` dibuang,
 sehingga pembacaan berikutnya tidak memerlukan cek sama sekali — biaya `pilih`
 yang tidak dibaca sebelum deklarasi adalah nol opcode.
 
+
 ### Interaksi
 
 - `ekspor { x }` juga ikut menunda kalau slot `x` masih di zona mati-temporal,
@@ -154,7 +241,9 @@ yang tidak dibaca sebelum deklarasi adalah nol opcode.
 - Destructuring deklaratif (`const { a } = ...`) menutup TDZ di akhir statement,
   jadi slotnya terbaca sebagai sudah siap setelah seluruh pengikatan selesai.
 
-## Pengikatan per-iterasi `kanggo`
+---
+
+## 4. Pengikatan per-iterasi `kanggo`
 
 `kanggo (ana i = 0; i < 3; i = i + 1)` mengikat `i` **per-iterasi**, sama
 seperti ECMAScript: closure yang dibuat di dalam body setiap iterasi melihat

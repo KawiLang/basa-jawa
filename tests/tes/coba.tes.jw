@@ -1,0 +1,131 @@
+// `coba`/`tangkep` bertipe: seleksi handler berdasarkan tipe kleru, dan
+// `pungkasan` yang selalu jalan (D-038).
+//
+// CATATAN: slot kompilator bersifat fungsi-wide (belum ada skop blok), jadi
+// tiap klausa `tangkep` di berkas ini memakai nama binding BERBEDA. Dua
+// klausula dengan nama yang sama akan saling berebut slot.
+
+// --- `pungkasan` di jalur NORMAL --------------------------------------------
+// Bug lama: jalur normal melompati badan `pungkasan` sama sekali.
+ana jalur_normal = [];
+coba {
+    jalur_normal.tambah("body");
+} tangkep (e1) {
+    jalur_normal.tambah("tangkep");
+} pungkasan {
+    jalur_normal.tambah("pungkasan");
+}
+pratelas(jalur_normal, ["body", "pungkasan"]);
+
+// --- `pungkasan` setelah klausula `tangkep` ---------------------------------
+ana setelah_tangkep = [];
+coba {
+    uncal "dalam";
+} tangkep (e2) {
+    setelah_tangkep.tambah("tangkep");
+} pungkasan {
+    setelah_tangkep.tambah("pungkasan");
+}
+pratelas(setelah_tangkep, ["tangkep", "pungkasan"]);
+
+// --- `pungkasan` tanpa `tangkep` sama sekali -------------------------------
+ana tanpa_tangkep = [];
+coba {
+    tanpa_tangkep.tambah("body");
+} pungkasan {
+    tanpa_tangkep.tambah("pungkasan");
+}
+pratelas(tanpa_tangkep, ["body", "pungkasan"]);
+
+// --- seleksi tipe kleru -----------------------------------------------------
+// Nilai biasa (bukan objek kleru) hanya cocok dengan klausula tanpa tipe.
+ana terpilih = [];
+coba {
+    uncal "teks biasa";
+} tangkep (Kleru) {
+    terpilih.tambah("kleru");
+} tangkep (e3) {
+    terpilih.tambah(e3);
+}
+pratelas(terpilih, ["teks biasa"]);
+
+// Galat kleru asli harus cocok dengan `Kleru`.
+ana kleru_asli = [];
+gawe salah_koersi() { bali 1 + "a"; }
+coba {
+    salah_koersi();
+} tangkep (m1: Kleru) {
+    kleru_asli.tambah(m1.jeneng);
+} tangkep (e4) {
+    kleru_asli.tambah("bukan kleru");
+}
+pratelas(kleru_asli, ["KleruJenis"]);
+
+// Klausula pertama yang cocok menang.
+ana urutan = [];
+coba {
+    uncal "nilai";
+} tangkep (Kleru) {
+    urutan.tambah("Kleru");
+} tangkep (e5) {
+    urutan.tambah("e5");
+} tangkep (e6) {
+    urutan.tambah("e6");
+}
+pratelas(urutan, ["e5"]);
+
+// --- galat yang tidak cocok naik ke `coba` luar ------------------------------
+// Klausula dalam harus meneruskan, bukan menelan.
+ana naik = [];
+coba {
+    coba {
+        uncal "dalam";
+    } tangkep (KleruModul) {
+        naik.tambah("modul (salah)");
+    } tangkep (KleruJinis) {
+        naik.tambah("jinis (salah)");
+    }
+} tangkep (e7) {
+    naik.tambah(e7);
+}
+pratelas(naik, ["dalam"]);
+
+// `pungkasan` di `coba` dalam tetap jalan walau galatnya tidak cocok.
+ana p_tetap = [];
+coba {
+    coba {
+        uncal "dalam";
+    } tangkep (KleruModul) {
+        p_tetap.tambah("tidak cocok");
+    } pungkasan {
+        p_tetap.tambah("pungkasan-dalam");
+    }
+} tangkep (e8) {
+    p_tetap.tambah(e8);
+}
+pratelas(p_tetap, ["pungkasan-dalam", "dalam"]);
+
+// --- galat aritmetika bisa ditangkap ----------------------------------------
+// Bug lama: `1 + "a"` menulis `galat_.ada` langsung, tanpa `unwind_galat`,
+// jadi `coba` tidak pernah menangkapnya.
+ana tertangkap_aritmetika = "";
+coba {
+    uncal 1 + "a";
+} tangkep (e9) {
+    tertangkap_aritmetika = e9.jeneng;
+}
+pratelas(tertangkap_aritmetika, "KleruJenis");
+
+// Galat aritmetika di dalam fungsi yang dipanggil pun tertangkap.
+ana dari_fungsi = "";
+gawe salah_dalam() { bali 1 + "a"; }
+coba {
+    salah_dalam();
+} tangkep (e10) {
+    dari_fungsi = e10.jeneng;
+}
+pratelas(dari_fungsi, "KleruJenis");
+
+// Program lanjut normal setelah semua `coba`.
+ana setelah_semua = 1 + 1;
+pratelas(setelah_semua, 2);

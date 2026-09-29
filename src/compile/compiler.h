@@ -114,6 +114,9 @@ private:
     std::size_t tambah_konstanta(Value v);
     std::size_t tambah_nama(Value v);
     void patch(std::size_t idx, std::size_t tujuan);
+    /// Patch operand KEDUA (`b`) -- untuk opcode yang memakai `a` untuk
+    /// sesuatu yang lain (mis. `TRY_KLAUSUL a=<tipe> b=<ip>`).
+    void patch_b(std::size_t idx, std::size_t tujuan);
     void patch_sebalik(std::size_t idx, std::size_t tujuan);
     std::size_t slot_baru(const std::string_view nama);
     /// Seperti `slot_baru`, tapi slotnya ditandai punya zona mati-temporal

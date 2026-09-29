@@ -462,54 +462,104 @@ void Compiler::stmt_pilih(const ast::PilihStmt* n) {
 
 void Compiler::stmt_coba(const ast::CobaStmt* n) {
     // Emit:
-    //   TRY_BEGIN a=<ip tangkep> b=<ip intrigusan>
+    //   TRY_BEGIN b=<ip jalur tolak>            ; 0 = tidak ada `pungkasan`
+    //   TRY_KLAUSUL t=<tipe> k=<ip>             ; satu per klausa `tangkep`
     //   <blok terlindungi>
-    //   TRY_END                    ; handler dilepas setelah blok normal
-    //   JUMP L_akhir
-    // L_tangkep:     <binding> ; <body tangkep> ; JUMP L_akhir
-    // L_intrigusan:  <body intriguasan>
+    //   TRY_END
+    //   JUMP L_akhir                            ; jalur normal
+    // L_klausula_i:  <binding> ; <body klausula_i> ; JUMP L_akhir
+    // L_tolak:       <pungkasan> ; THROW
+    // L_intrigusan:  <pungkasan>
     // L_akhir:
     //
-    // Handler dicatat di `Frame::handlers` saat `TRY_BEGIN` dieksekusi. Unwinder
-    // mencari handler terdekat, memangkas stack ke tinggi saat `TRY_BEGIN`, lalu
-    // lompat ke `L_tangkep` dengan nilai galat di puncak stack.
+    // Handler dicatat di `Frame::handlers` saat `TRY_BEGIN` dieksekusi; tiap
+    // klausa `tangkep` menambah satu entri (nama tipe kleru + ip) lewat
+    // `TRY_KLAUSUL`. Unwinder memilih klausula PERTAMA yang cocok dengan galat;
+    // kalau tidak ada, handler ini tidak menanganinya dan pencarian lanjut ke
+    // luar (D-038).
     //
-    // CATATAN Fase 3: hanya `tangkep` PERTAMA yang dipakai sebagai handler
-    // (seleksi berdasarkan tipe kleru belum ada). Klausul tambahan dilaporkan
-    // sebagai peringatan, bukan diam-diam diabaikan.
-    if (n->tangkep.size() > 1) {
-        diagnosa_di("S504", "Klausa `tangkep` kanggo luwih saka siji durung ora dideftiningake.",
-                    "Nggabungake awake dadi klausa `tangkep` siji nganti pawsh Helper Basa Jawa.");
+    // Badan `pungkasan` diiemit DUA kali karena ada dua jalur masuk: normal
+    // (dan setelah klausula `tangkep` jalan) mendarat di `L_intrigusan`,
+    // sedangkan "tidak ada klausula yang cocok" mendarat di `L_tolak` yang
+    // menjalankan `pungkasan` lalu melempar ulang dengan `THROW` -- persis
+    // seperti ECMAScript.
+    //
+    // BUG YANG DIPERBAIKI: jalur NORMAL dulu melompati badan `pungkasan`
+    // sama sekali, karena `lompat_akhir` diarahkan ke akhir emit. Gejalanya
+    // `coba { tulis("body"); } tangkep (e) { } pkt { tulis("FIN"); }`
+    // mencetak hanya `body`.
+    const std::size_t patch_tolak = emit(Op::TRY_BEGIN, 0, 0);
+    std::vector<std::size_t> patch_klausul;
+    for (const ast::Node* kn : n->tangkep) {
+        if (kn == nullptr) continue;
+        const auto* k = static_cast<const ast::TangkepKlausul*>(kn);
+        // Anotasi tipe kleru: `tangkep (e: KleruJenis) { ... }`. Tanpa
+        // anotasi, klausula menangkap apa saja -- harus berada di urutan
+        // terakhir, kalau tidak klausula setelahnya tidak akan pernah jalan.
+        std::string_view nama_tipe;
+        if (k->tipe != nullptr && k->tipe->kind == NK::TipeAnotasi) {
+            nama_tipe = static_cast<const ast::TipeAnotasi*>(k->tipe)->nama;
+        }
+        // Operand `a` disimpan sebagai `indeks + 1` supaya `0` berarti "tanpa
+        // tipe". Tanpa offset itu, klausula tanpa tipe akan tertukar dengan
+        // klausula bertipe yang kebetulan nama pertamanya di index 0.
+        const std::size_t t = nama_tipe.empty()
+                                  ? 0
+                                  : tambah_nama(Value::obyek(rt::buat_teks(heap_, nama_tipe))) + 1;
+        patch_klausul.push_back(emit(Op::TRY_KLAUSUL, static_cast<std::uint16_t>(t), 0));
     }
-    const std::size_t patch_tangkep = emit(Op::TRY_BEGIN, 0, 0);
     stmt_blok(static_cast<const ast::BlokStmt*>(n->blok));
     emit(Op::TRY_END, 0);
-    const std::size_t lompat_akhir = emit(Op::JUMP, 0);
 
-    const std::size_t ip_tangkep = fn().chunk->ukuran_kode();
-    patch(patch_tangkep, ip_tangkep);
-    if (!n->tangkep.empty()) {
-        const ast::Node* kn = n->tangkep[0];
-        if (kn != nullptr) {
-            const auto* k = static_cast<const ast::TangkepKlausul*>(kn);
-            if (k->ada_binding && !k->binding.empty()) {
-                const std::size_t s = slot_baru(k->binding);
-                emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
-            } else {
-                emit(Op::POP);
-            }
-            stmt_awak(k->body);
+    // Semua jalur yang "sudah beres" (blok selesai normal, atau klausula
+    // `tangkep` yang cocok sudah jalan) menuju ke `L_intrigusan`, yaitu awal
+    // badan `pungkasan`. Kalau tidak ada `pungkasan`, `L_intrigusan` = akhir
+    // `coba` -- jadi lompatan ini selalu benar.
+    const std::size_t lompat_intrigusan = emit(Op::JUMP, 0);
+
+    // Badan tiap klausa `tangkep`, sesuai urutan penulisannya. Tiap klausula
+    // berakhir dengan lompatan sendiri ke `L_intrigusan` supaya tidak jatuh ke
+    // klausula berikutnya (atau ke jalur tolak). Target-nya baru diketahui
+    // setelah semua klausula & `pungkasan` terbit, jadi dikumpulkan dulu.
+    std::vector<std::size_t> lompat_intrigusan_klausul;
+    for (std::size_t i = 0; i < n->tangkep.size(); ++i) {
+        const ast::Node* kn = n->tangkep[i];
+        if (kn == nullptr) continue;
+        const auto* k = static_cast<const ast::TangkepKlausul*>(kn);
+        patch_b(patch_klausul[i], fn().chunk->ukuran_kode());
+        if (k->ada_binding && !k->binding.empty()) {
+            const std::size_t s = slot_baru(k->binding);
+            emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
+        } else {
+            emit(Op::POP);
         }
-    } else {
-        emit(Op::POP);
+        stmt_awak(k->body);
+        lompat_intrigusan_klausul.push_back(emit(Op::JUMP, 0));
     }
+
+    const ast::PungkasanKlausul* pf = nullptr;
+    if (n->pungkasan != nullptr) pf = static_cast<const ast::PungkasanKlausul*>(n->pungkasan);
+
+    if (pf != nullptr) {
+        // Jalur tolak: badan `pungkasan`, lalu lempar ulang. Unwinder
+        // meninggalkan nilai galat di puncak stack, jadi `THROW` langsung
+        // meneruskannya ke handler di luar `coba` ini.
+        const std::size_t ip_tolak = fn().chunk->ukuran_kode();
+        fn().chunk->kode[patch_tolak].b = static_cast<std::uint16_t>(ip_tolak);
+        stmt_awak(pf->body);
+        emit(Op::THROW);
+    }
+
+    // `coba` tanpa klausa `tangkep` dan tanpa `pungkasan`: nilai galat di
+    // puncak tidak dipakai siapa pun, buang. (Kalau `pungkasan` ada, jalur
+    // tolak sudah mengembalikannya lewat `THROW` -- jangan POP dua kali.)
+    if (n->tangkep.empty() && pf == nullptr) emit(Op::POP);
+
+    // `L_intrigusan`: badan `pungkasan` pada jalur normal / setelah klausula.
     const std::size_t ip_intrigusan = fn().chunk->ukuran_kode();
-    if (n->pungkasan != nullptr) {
-        fn().chunk->kode[patch_tangkep].b = static_cast<std::uint16_t>(ip_intrigusan);
-        const auto* f = static_cast<const ast::PungkasanKlausul*>(n->pungkasan);
-        stmt_awak(f->body);
-    }
-    patch(lompat_akhir, fn().chunk->ukuran_kode());
+    if (pf != nullptr) stmt_awak(pf->body);
+    patch(lompat_intrigusan, ip_intrigusan);
+    for (std::size_t l : lompat_intrigusan_klausul) patch(l, ip_intrigusan);
 }
 
 void Compiler::stmt_golongan(const ast::GolonganDeklarasi* n) {

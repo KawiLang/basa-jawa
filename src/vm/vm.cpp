@@ -533,16 +533,59 @@ void VM::mulai_frame(ClosureObj* fn, Value this_val, std::vector<Value>& args,
     frames_.push_back(std::move(f));
 }
 
+namespace {
+
+/// Apakah nilai galat `v` cocok dengan nama tipe kleru `tipe`?
+///
+/// `tipe` kosong berarti "tangkap semua" (klausa `tangkep (e) { }` tanpa
+/// anotasi). Selain itu:
+///   - `Kleru` cocok dengan objek kleru apa pun;
+///   - nama lain harus sama persis dengan `KleruObj::jeneng`.
+///
+/// Nilai yang bukan objek kleru (mis. `uncal "teks"`) hanya cocok dengan klausa
+/// tanpa tipe.
+bool cocok_kleru(Value v, std::string_view tipe) {
+    if (tipe.empty()) return true;
+    Obj* o = nullptr;
+    if (v.is_obyek()) {
+        const void* p = v.pointer();
+        o = p == nullptr ? nullptr : const_cast<Obj*>(static_cast<const Obj*>(p));
+    }
+    if (o == nullptr || o->h.kind != rt::OK::Kleru) return false;
+    const auto* k = static_cast<rt::KleruObj*>(o);
+    if (tipe == "Kleru") return true;
+    return k->jeneng == tipe;
+}
+
+}  // namespace
+
 bool VM::unwind_galat(Value v) {
     while (frames_.size() > batas_unwind_) {
         const std::size_t indeks = frames_.size() - 1;
         Frame& cf = frames_[indeks];
         if (!cf.handlers.empty()) {
-            const auto h = cf.handlers.back();
+            const Frame::Handler h = cf.handlers.back();
             cf.handlers.pop_back();
+            // `coba` bisa punya beberapa klausa `tangkep`. Handler ini hanya
+            // menangani galat kalau salah satu klausunya cocok -- kalau tidak,
+            // handler dicabut dan pencarian LANJUT ke handler yang lebih luar
+            // (atau ke frame pemanggil). Tanpa ini, `coba { } tangkep (e:
+            // KleruJenis) { }` akan menangkap KleruModul juga.
+            std::size_t ip = 0;
+            for (const auto& k : h.klausul) {
+                if (cocok_kleru(v, k.tipe)) {
+                    ip = k.ip;
+                    break;
+                }
+            }
+            // Tidak ada klausula yang cocok. Kalau ada `pungkasan`, bodannya
+            // harus jalan DULU sebelum galat naik ke handler luar; kalau tidak,
+            // `pungkasan` dilewati -- persis seperti ECMAScript.
+            if (ip == 0) ip = h.ip_tolak;
+            if (ip == 0) continue;  // tidak ditangani: cari handler lain
             tutup_upvalue_frame(cf.slot_base);
             stack_.resize(h.stack_base < stack_.size() ? h.stack_base : stack_.size());
-            cf.ip = h.handler_tangkep;
+            cf.ip = ip;
             dorong(v);
             return true;
         }

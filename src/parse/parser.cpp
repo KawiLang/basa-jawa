@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include <cctype>
 #include <cstring>
 
 namespace jawa::parse {
@@ -550,7 +551,15 @@ NodePtr Parser::parse_coba() {
         lewati_asi();
         if (makan(Tok::LParen)) {
             lewati_asi();
-            if (cek(Tok::Ident)) {
+            // `tangkep (KleruJenis) { ... }` -- tanpa binding, tipe kleru
+            // langsung. Bentuk ini tidak ambigu karena `Kleru*` ALWAYS
+            // diawali huruf besar kapital, sedangkan `tangkep (e)` tanpa
+            // anotasi adalah binding.
+            if (cek(Tok::Ident) && cek(1, Tok::RParen) && std::isupper(static_cast<unsigned char>(saat().teks[0]))) {
+                k->tipe = buat<ast::TipeAnotasi>(rentang_dari(idx_));
+                static_cast<ast::TipeAnotasi*>(k->tipe)->nama = saat().teks;
+                ++idx_;
+            } else if (cek(Tok::Ident)) {
                 k->binding = saat().teks;
                 k->ada_binding = true;
                 ++idx_;

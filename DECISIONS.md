@@ -807,6 +807,55 @@ dalam satu fungsi masih saling berebut slot (slot fungsi-wide). Dinyatakan di
 
 ---
 
+---
+
+## D-038. `tangkep` bertipe: seleksi di unwinder, `pungkasan` diemit dua kali
+
+**Konteks.** Sejak Fase 3, `coba` hanya memakai klausula `tangkep` PERTAMA
+(lainnya hanya memberi peringatan S504), dan badan `pungkasan` **tidak pernah
+jalan di jalur normal** -- `lompat_akhir` melompatinya. Ketiganya penyimpangan
+yang terlihat dari program biasa, bukan kasus tepi.
+
+**Keputusan 1: handler jadi daftar klausul.** `Frame::Handler` berubah dari
+satu `handler_tangkep` menjadi `std::vector<HandlerKlausul>`; tiap entri
+menyimpan `std::string_view` nama tipe kleru + ip klausa, diisi opcode baru
+`TRY_KLAUSUL t k`. `unwind_galat` mencoba klausula dari yang pertama; yang
+tidak cocok berarti `coba` itu **tidak menanganinya**, jadi handler dicabut dan
+pencarian lanjut ke luar.
+
+**Kenapa di unwinder, bukan di bytecode.** Seleksi di bytecode berarti handler
+harus menangkap galat yang salah lalu melempar ulang -- dan `pungkasan`-nya ikut
+jalan dua kali, persis kesalahan yang sedang diperbaiki. Memindahkan keputusan
+ke `unwind_galat` membuat "tangkap atau teruskan" satu keputusan di satu tempat.
+
+**Keputusan 2: `pungkasan` diemit dua kali.** Ada tiga jalur masuk: normal,
+setelah klausula cocok, dan "tidak ada yang cocok". Dua yang pertama bisa
+berhimpit di satu emit; yang ketiga harus menyalakan `pungkasan` lalu melempar
+ulang, jadi dikompilasi ulang sebagai `L_tolak` (badan `pungkasan` + `THROW`).
+Nilai galat masih di puncak stack karena `unwind_galat` meninggalkannya di
+sana. Handler menyimpan `ip_tolak` (operand `b` `TRY_BEGIN`) supaya jalur itu
+ditemukan tanpa opcode tambahan.
+
+**Keputusan 3: dua bentuk sintaks tipe.** `tangkep (KleruJenis) { }` (tanpa
+binding) dan `tangkep (err: KleruJenis) { }` (dengan binding). Bentuk pertama
+tidak ambigu karena `Kleru*` selalu diawali huruf kapital, sedangkan
+`tangkep (e)` adalah binding biasa. Parser membedakan dengan `isupper(teks[0])`.
+
+**Keputusan 4: `a` disimpan sebagai indeks+1.** `TRY_KLAUSUL` memakai `a == 0`
+sebagai penanda "tanpa tipe". Tanpa offset itu, klausula tanpa tipe tertukar
+dengan klausula bertipe yang nama pertamanya kebetulan ada di index 0
+`nama_properti` -- gejalanya klausula tanpa tipe menangkap segalanya.
+
+**Bug yang ketahuan saat mengerjakan ini (bukan bagian dari rencana).** Galat
+aritmetika (`1 + "a"`) menulis `galat_.ada` langsung lewat helper `gagal()`,
+**tidak** lewat `unwind_galat`, jadi tidak bisa ditangkap `coba` sama sekali --
+termasuk dari dalam fungsi yang dipanggil. Helper baru `lempar_dan_tangkap`
+membentuk `KleruObj` lalu memanggil `unwind_galat`, dan dipanggil dengan
+`break` (bukan `return`) supaya loop lanjut di ip handler. Galat internal VM
+(instruksi rusak, langkah maksimum) sengaja tetap memakai `gagal()` dan tidak
+bisa ditangkap: itu kondisi mesin, bukan kesalahan program.
+
+
 ## TODO-VERIFIKASI
 
 | # | Item | Rencana verifikasi |
