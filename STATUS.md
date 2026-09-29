@@ -15,12 +15,14 @@ hidden class, *live binding* modul, pustaka standar lengkap, dan tooling
 |---|---|
 | Baris kode C++ (`src/` + `tests/`) | 17.808 |
 | Opcode bytecode | 119 (`MARK_SPREAD` baru; `GET_EXPORT`) |
+| Target fuzz | 5 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 106 |
-| Uji unit | 3 berkas, 140 cek, 74 test |
+| Uji unit | 3 berkas, 152 cek, 81 test |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
-| Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di kelimanya |
-| Dokumentasi | 9 berkas `docs/` + 4 berkas akar |
+| Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di kelimanya; preset `fuzz` — 5/5 `ctest` hijau |
+| Campaign fuzz terakhir | 20.000 kasus x 5 target (100.000) + ASan 14.000 kasus — 0 crash |
+| Dokumentasi | 10 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -65,6 +67,8 @@ Bahasa yang berjalan penuh, termasuk:
 - Template literal, termasuk tag & bersarang.
 - GC mark-and-sweep presisi dengan akar lengkap; `--gc-stress` bersih.
 - CLI: `run`, `cek`, `token`, `ast`, `bytecode`, `versi`, `bantuan`, `-e`.
+- Fuzzing 5 target (`preset fuzz`) dengan driver deterministik yang bisa jalan
+  tanpa libFuzzer; sudah menemukan 6 bug nyata, lihat `docs/fuzzing.md`.
 - Modul ES: `impor` (nama / alias / namespace / `baku` / tanpa pengikat) dan
   `ekspor` (deklarasi / `baku` / daftar nama / re-export), termasuk impor
   siklik antar-modul.
@@ -125,7 +129,20 @@ Lihat `docs/stdlib.md` dan `docs/async.md`.
 - `AksesProperti` pada `Instance` mencari field secara linear.
 - Error runtime tidak membawa jejak stack sumber (hanya nama fungsi).
 - Batas instruksi 16-bit: fungsi dengan > 65535 instruksi tidak didukung.
-- Tanpa debugger, tanpa REPL, tanpa LSP, tanpa formatter.
+- Tanpa debugger, tanpa REPL, tanpa LSP, tanpa formatter, tanpa `jawa fmt` /
+  `jawa ubah`, tanpa `jawa bench`, tanpa embedding API (`include/` belum ada --
+  `CMakeLists.txt` sudah menyiapkan `install(DIRECTORY include/)` tapi
+  direktorinya belum dibuat).
+- Tidak ada korpus crash fuzzing yang tersimpan, dan `fuzz_parser` belum
+  memeriksa rentang setiap node anak (butuh penelusur AST per-jenis-node).
+  Lihat `docs/fuzzing.md`.
+- Parameter default memakai `JUMP_IF_NOT_NULLISH`, jadi argumen yang sengaja
+  dilewatkan sebagai `mboh` juga akan digantikan nilai default. Membedakan
+  keduanya butuh opcode baru yang membaca `Frame::n_argumen`.
+- Regex hanya ada sebagai token; sebagai nilai runtime belum (Fase 8).
+- `kasus <Kelas>:` untuk pencocokan tipe di `pilih` belum ada.
+- Skor cakupan belum diukur (preset `coverage` ada, tapi belum ada ambang
+  90% yang dijaga).
 
 ## Cara memverifikasi
 
@@ -158,6 +175,11 @@ python3 scripts/cek_contoh.py
 
 # 6. Kode sumber bebas karakter terlarang
 python3 tools/check_sumber.py
+
+# Fuzzing (butuh preset `fuzz`)
+cmake --preset fuzz -DCMAKE_CXX_COMPILER=g++
+cmake --build build/fuzz -j 1
+python3 scripts/fuzz_jalankan.py --batas 20000
 ```
 
 **Catatan lingkungan.** Mesin build ini punya 2 GB RAM dan 3 inti. Build

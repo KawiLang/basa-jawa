@@ -656,6 +656,102 @@ menangkap nilai yang belum diinisialisasi.
 kompilator ini), jadi pengikatan per-iterasi `for (let i ...)` tidak dimodelkan.
 Dinyatakan eksplisit di `docs/control-flow.md`.
 
+---
+
+## D-034. Fuzzing: driver deterministik sendiri, bukan hanya libFuzzer
+
+**Konteks.** Definition of Done meminta 5 target fuzz. Toolchain proyek ini
+hanya menyediakan GCC 12 (lihat `STATUS.md`), sedangkan libFuzzer hanya ada di
+clang. Menjalankan fuzzing berarti memasang toolchain baru -- yang tidak ada
+anjuran untuk dijadikan syarat verifikasi harian.
+
+**Keputusan.** Setiap target (`tests/fuzz/fuzz_*.cpp`) memakai
+`JAWAFUZZ_TARGET(label, fungsi)` dari `tests/fuzz/jawa_fuzz.h`, yang menghasilkan
+satu dari dua bentuk:
+
+- `-DJAWAFUZZ_LIBFUZZER` (clang): `LLVMFuzzerTestOneInput`, jadi berkas yang
+  sama langsung bisa dipakai `clang -fsanitize=fuzzer`.
+- GCC (default): `main()` yang menjalankan campaign deterministik -- PRNG
+  splitmix64, korpus seed dari `examples/`, mutasi enam jenis. Bisa dijalankan di
+  ctest tanpa dependensi.
+
+Logika target identik di kedua bentuk; yang berbeda hanya cara masuknya.
+
+**Kenapa deterministik, bukan acak.** Campaign yang hasilnya tidak bisa
+diulang tidak berguna sebagai bukti. `scripts/fuzz_jalankan.py` menjalankan
+campaign yang sama dua kali dengan benih sama dan menganggap statistik yang
+berbeda sebagai kegagalan.
+
+**Kenapa mutasi dari seed, bukan byte acak.** Byte acak hampir selalu gagal di
+token pertama, jadi tidak pernah menjangkau parser atau VM. Campaign memakai
+75% mutasi dari seed yang sudah benar, 15% seed apa adanya, 10% byte acak.
+
+**Batas yang diterima.** Tidak ada korpus crash yang tersimpan dan tidak ada
+dictionary grammar-aware. Seed diambil dari `examples/` supaya tidak bisa basi,
+dan daftar potongan sintaks ada di header yang sama. Semua ini dicatat di
+`docs/fuzzing.md`.
+
+---
+
+## D-035. Batas kedalaman rekursi parser: 160 tingkat, RAII, Reported sebagai galat
+
+**Konteks.** `parse_deklarasi_fungsi` untuk `gawe` diikuti `[` atau `{`
+memundurkan `idx_` ke posisi `gawe` lalu memanggil `parse_statement()`, yang
+memanggil `parse_deklarasi_fungsi()` lagi -- rekursi tak berujung. Masukan
+minimal `gawe* { }` sudah cukup untuk meledakkan stack (ditemukan `fuzz_parser`).
+Selain itu, `Parser` punya field `kedalaman_` sejak awal tetapi tidak pernah
+dipakai.
+
+**Keputusan.** Dua bagian:
+
+1. Cabang yang bermasalah diganti diagnostik + pemulihan yang tidak bisa mengulang
+   (mulai setelah `gawe`/`mengko`/`*`, lalu `sinkronisasi_statement()`), bukan
+   rewinding.
+2. `Parser::RakKedalaman` (RAII) dipasang di dua titik masuk rekursi utama,
+   `parse_statement` dan `parse_assignment`, dengan batas 160 tingkat. Melebihi
+   batas jadi galat `S002` yang bisa dibaca, bukan crash.
+
+**Kenapa RAII, bukan ++/-- manual.** Jalur keluar dari kedua fungsi itu banyak
+(`: early return`, `nullptr` setelah gagal parse). Increment/decrement manual
+yang rawan lupa di salah satu cabang, dan batas rekursi yang bocor membuat
+stack overflow pada program yang dalam secara wajar -- lebih buruk daripada
+tidak ada batas sama sekali.
+
+**Kenapa 160.** Nilai ini jauh di bawah batas stack 8 MB pada build
+`-O2` dengan instrumentation, tapi cukup longgar untuk program yang wajar
+(expresi bertingkat, `cocog` bersarang, kelas bersarang). Nilainya dikomentari di
+`Parser::kKedalamanMaks`.
+
+**Efek samping yang tidak pure:** `fuzz_parser` sempat melaporkan
+"AST terlalu dalam" untuk program yang sebelumnya hanya menabrak stack. Itu
+perilaku yang diinginkan, bukan regresi.
+
+---
+
+## D-036. Parameter default: prolog `JUMP_IF_NOT_NULLISH`, bukan jumlah argumen
+
+**Konteks.** `ParamDeklarasi::nilai_default` sudah di-parse sejak Fase 2 tapi
+tidak pernah dikompilasi -- `gawe f(a, b = 2) { bali b; }` memberi `mboh`,
+selama ini tanpa test yang menangkapnya (ditemukan regression test hasil
+fuzzing).
+
+**Keputusan.** Prolog di awal badan fungsi: untuk tiap parameter dengan
+`nilai_default`, emit `GET_LOCAL slot; JUMP_IF_NOT_NULLISH Lewati; POP;
+<nilai_default>; SET_LOCAL slot; Lewati:`.
+
+**Penyimpangan yang diketahui.** JS membedakan "argumen tidak diberikan" dari
+"argumen bernilai `mboh`"; `JUMP_IF_NOT_NULLISH` tidak bisa. Membedakan keduanya
+butuh opcode baru yang membaca `Frame::n_argumen`, yang berarti menambah satu
+opcode dan satu jalur di loop bytecode untuk selisih yang jarang menimbulkan
+kejutan. Dicatat di `STATUS.md`.
+
+**Bug kedua yang ikut ketahuan.** `Chunk::n_argumen_tetap` ada tapi tidak pernah
+diisi, jadi VM menyalin argumen ke slot parameter rest dan mendahulukan dhaptar
+sisa satu slot. Akibatnya `gawe f(a, ...sisa) { bali jenis(sisa); }` memberi
+`angka`. Diperbaiki dengan mengisi `n_argumen_tetap` di kompilator dan memakai
+`n_argumen_tetap` (bukan `jumlah_param`) untuk menyalin argumen di
+`VM::dorong_frame`.
+
 
 ---
 

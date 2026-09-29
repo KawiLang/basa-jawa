@@ -194,6 +194,68 @@ if(JAWA_BUILD_TESTS)
 endif()
 
 # ---------------------------------------------------------------------------
+# Target fuzzing
+# ---------------------------------------------------------------------------
+# 5 target, masing-masing dengan dua bentuk:
+#   * GCC 12 (toolchain proyek): driver mandiri deterministik -- PRNG splitmix64,
+#     korpus seed + mutasi. Tidak perlu libFuzzer.
+#   * clang + libFuzzer: `-DJAWAFUZZ_LIBFUZZER` mendefinisikan
+#     `LLVMFuzzerTestOneInput`, jadi berkas yang sama langsung bisa dipakai
+#     `clang -fsanitize=fuzzer`. Pilih lewat `JAWA_FUZZ_LIBFUZZER`.
+if(JAWA_BUILD_FUZZ)
+    add_library(jawa_fuzz_support INTERFACE)
+    target_include_directories(jawa_fuzz_support INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz
+        # Sama seperti `jawa_test`: header dalam satu direktori memakai include
+        # relatif, jadi yang perlu ditambahkan hanya akar `src/`.
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(jawa_fuzz_support INTERFACE jawa)
+    target_compile_features(jawa_fuzz_support INTERFACE cxx_std_20)
+
+    file(GLOB JAWA_FUZZ_FILES ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_*.cpp)
+    list(LENGTH JAWA_FUZZ_FILES JAWA_FUZZ_COUNT)
+    if(JAWA_FUZZ_COUNT LESS 5)
+        message(FATAL_ERROR "spesifikasi meminta 5 target fuzz; ditemukan ${JAWA_FUZZ_COUNT}")
+    endif()
+    foreach(ff ${JAWA_FUZZ_FILES})
+        get_filename_component(fname ${ff} NAME_WE)
+        add_executable(${fname} ${ff})
+        target_link_libraries(${fname} PRIVATE jawa_fuzz_support)
+        if(NOT MSVC)
+            target_compile_options(${fname} PRIVATE -Wall -Wextra -Wshadow -Wold-style-cast)
+            if(JAWA_WERROR)
+                target_compile_options(${fname} PRIVATE -Werror)
+            endif()
+        endif()
+        if(JAWA_FUZZ_LIBFUZZER)
+            target_compile_definitions(${fname} PRIVATE JAWAFUZZ_LIBFUZZER)
+            target_compile_options(${fname} PRIVATE -fsanitize=fuzzer)
+        endif()
+    endforeach()
+
+    # Driver mandiri butuh POSIX (`dup2` untuk menyendapkan stderr) dan tidak
+    # ada di Windows. Batasnya kecil (400 kasus) supaya muat di ctest; campaign
+    # serius pakai `scripts/fuzz_jalankan.py` langsung.
+    if(NOT WIN32 AND NOT JAWAFUZZ_LIBFUZZER AND TARGET fuzz_vm)
+        find_package(Python3 COMPONENTS Interpreter)
+        if(Python3_Interpreter_FOUND)
+            # Preset `fuzz` mematikan `JAWA_BUILD_TESTS`, jadi `enable_testing()`
+            # belum dipanggil di titik ini.
+            enable_testing()
+            foreach(fname fuzz_lexer fuzz_parser fuzz_kompilasi fuzz_vm fuzz_modul)
+                add_test(NAME fuzz.${fname}
+                         COMMAND ${Python3_EXECUTABLE}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/fuzz_jalankan.py
+                                 --satuan --batas 400
+                                 --target ${fname}
+                                 --build $<TARGET_FILE_DIR:fuzz_vm>)
+                set_tests_properties(fuzz.${fname} PROPERTIES TIMEOUT 900)
+            endforeach()
+        endif()
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Instalasi
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)

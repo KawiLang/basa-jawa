@@ -40,6 +40,30 @@ private:
     support::DiagnosticBag& bag_;
     std::string_view nama_berkas_;
     std::size_t idx_ = 0;
+    /// Rekursi parser dijaga secara eksplisit agar satu program crafted tidak bisa membuat
+    /// stack overflow. Tanpa ini, mutasi yang menghasilkan `gawe` berulang
+    /// (atau setiap mutual recursion di masa depan) bisa meledakkan stack --
+    /// That's what fuzzing ditemukan pertama di parser.
+    ///
+    /// `RAKI_KEDALAMAN` dipakai di titik masuk rekursi utama
+    /// (`parse_statement` dan `parse_assignment`) sehingga decrement tetap
+    /// terjadi di jalur keluar mana pun.
+    static constexpr int kKedalamanMaks = 160;
+
+    struct RakKedalaman {
+        Parser* p;
+        bool aktif = false;
+        explicit RakKedalaman(Parser* parser) noexcept : p(parser) { aktif = p->masuk_kedalaman(); }
+        ~RakKedalaman() { if (aktif) p->keluar_kedalaman(); }
+        RakKedalaman(const RakKedalaman&) = delete;
+        RakKedalaman& operator=(const RakKedalaman&) = delete;
+    };
+
+    /// `false` kalau kedalaman maksimum sudah tercapai (diagnostik sudah
+    /// diterbitkan; pemanggil harus berhenti mengurai).
+    bool masuk_kedalaman();
+    void keluar_kedalaman() noexcept { --kedalaman_; }
+
     int kedalaman_ = 0;
 
     // ------------------------------------------------------------- token

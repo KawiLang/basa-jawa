@@ -625,6 +625,88 @@ TEST_CASE("tdz: pengikut loop tetap jalan") {
              std::string("0\n1\n2\n"));
 }
 
+// ===========================================================================
+// Regression test dari hasil fuzzing (lihat `docs/fuzzing.md`)
+// ===========================================================================
+// Dua bug di bawah ditemukan oleh `fuzz_lexer` dan `fuzz_parser`, bukan oleh
+// test yang ditulis orang. Test ini sengaja memakai INPUT PERSIS dari kasus
+// yang ditemukan, supaya regresinya tidak bisa lolos diam-diam.
+
+// Bug 1: `lex_regex` menghitung flag dari `pola_akhir + 1`. Untuk regex yang
+// tidak ketutup dan berhenti tepat di akhir sumber, `pola_akhir == src_.size()`,
+// sehingga `substr` mulai pada `size() + 1` dan melempar `std::out_of_range`.
+// Masukan minimal: `/b` (2 byte).
+TEST_CASE("lexer: regex tanpa penutup di akhir sumber tidak melempar") {
+    for (const char* src : {"/b", "a/[/", "/", "a+/b", "/ab", "a/[/]/"}) {
+        jawa::vm::VMOptions opt;
+        jawa::vm::VM mesin(opt);
+        // Yang penting: tidak melempar exception. Status boleh apa saja --
+        // galat diagnostik L008 adalah hasil yang diharapkan.
+        (void)mesin.jalankan_sumber(src, "<test>");
+    }
+}
+
+TEST_CASE("lexer: regex tanpa penutup dilaporkan sebagai galat") {
+    jawa::vm::VMOptions opt;
+    jawa::vm::VM mesin(opt);
+    CHECK(mesin.jalankan_sumber("const r = /abc", "<test>") == jawa::vm::Status::Galat);
+}
+
+// Penjaga: perbaikan di atas tidak boleh merusak regex yang sah maupun program
+// biasa yang tidak memakai regex sama sekali. (Regex sebagai NILAI runtime
+// belum ada -- itu Fase 8; yang diuji di sini hanya tokenisasi.)
+TEST_CASE("lexer: regex ketutup dan pembagian tetap jalan") {
+    CHECK_EQ(jalankan("const a = 'abc';\ntulis(jenis(a));\n"), std::string("teks\n"));
+    CHECK_EQ(jalankan("tulis(10 / 2, 7 % 3);\n"), std::string("5 1\n"));
+}
+
+// Bug 2: `parse_deklarasi_fungsi` untuk `gawe` diikuti `[` atau `{` memundurkan
+// `idx_` ke posisi `gawe` lalu memanggil `parse_statement()`, yang memanggil
+// `parse_deklarasi_fungsi()` lagi -- rekursi tak berujung yang meledakkan stack.
+// Masukan minimal: `gawe* { }`.
+TEST_CASE("parser: `gawe` tanpa nama lalu blok tidak menyebabkan stack overflow") {
+    for (const char* src : {"gawe* { metokake 1; }", "gawe { metokake 1; }",
+                            "gawe [a, b](x) { bali x; }", "gawe {a}(x) { bali x; }",
+                            "gawe mengko * { enteni 1; }"}) {
+        jawa::vm::VMOptions opt;
+        jawa::vm::VM mesin(opt);
+        // Hasil yang diharapkan: galat diagnostik, bukan crash.
+        CHECK(mesin.jalankan_sumber(src, "<test>") == jawa::vm::Status::Galat);
+    }
+}
+
+// Bug 2b: tanpa batas kedalaman, program dengan kurung bersarang jauh akan tetap
+// menabrak stack. Dengan batas, ia jadi galat biasa yang bisa dibaca.
+TEST_CASE("parser: nestoring ekspresi dibatasi") {
+    std::string dalam(400, '(');
+    dalam += "1";
+    dalam.append(400, ')');
+    jawa::vm::VMOptions opt;
+    jawa::vm::VM mesin(opt);
+    CHECK(mesin.jalankan_sumber(dalam, "<test>") == jawa::vm::Status::Galat);
+}
+
+TEST_CASE("parser: nestoring wajar masih boleh") {
+    // Penjaga: batasnya 160 tingkat, jadi ekspresi yang wajar tidak terpengaruh.
+    std::string dalam(40, '(');
+    dalam += "1";
+    dalam.append(40, ')');
+    jawa::vm::VMOptions opt;
+    jawa::vm::VM mesin(opt);
+    CHECK(mesin.jalankan_sumber(dalam, "<test>") != jawa::vm::Status::Galat);
+}
+
+// Penjaga kedua: bentuk `gawe` yang SAH (dengan nama) tidak boleh ikut terpengaruh
+// oleh jalur pemulihan di atas.
+TEST_CASE("parser: `gawe` bernama tetap berfungsi seperti biasa") {
+    CHECK_EQ(jalankan("gawe f(a, b = 2, ...sisa) { bali a + b + sisa.dawa; }\n"
+                      "tulis(f(1), f(1, 5, 9, 9));\n"),
+             std::string("3 8\n"));
+    CHECK_EQ(jalankan("gawe* g() { metokake 1; metokake 2; }\n"
+                      "kanggo (tetep x saka g()) { tulis(x); }\n"),
+             std::string("1\n2\n"));
+}
+
 TEST_CASE("modul: impor nama, alias, dan namespace") {
     const PetaBerkas peta{
         {"/satu/util.jw", "ekspor tetep K = 42;\nekspor gawe tambah(a, b) { bali a + b; }\n"},

@@ -385,20 +385,24 @@ void VM::mulai_frame(ClosureObj* fn, Value this_val, std::vector<Value>& args,
     f.this_val = this_val;
     f.target_balas = target_balas;
 
-    const std::size_t n_param = kode->jumlah_param;
-    // Slot 0 = `this`; 1..n_param = parameter; sisanya = argumen berlebih.
+    // Parameter rest occupies ONE slot (isi dhaptar sisa), jadi salinan argumen
+    // hanya boleh menutupi parameter yang tidak rest. Urutan slot:
+    //   0 = `this`, 1..n_tetap = parameter biasa, n_tetap+1 = dhaptar sisa.
+    const std::size_t n_tetap = kode->n_argumen_tetap;
     stack_.push_back(this_val);
-    for (std::size_t i = 0; i < n_param; ++i) {
+    for (std::size_t i = 0; i < n_tetap; ++i) {
         stack_.push_back(i < args.size() ? args[i] : Value::mboh());
     }
     if (kode->variadic) {
         ArrayObj* rest = buat_dhaptar();
-        for (std::size_t i = n_param; i < args.size(); ++i) rest->dorong(args[i], &heap_);
+        for (std::size_t i = n_tetap; i < args.size(); ++i) rest->dorong(args[i], &heap_);
         stack_.push_back(Value::obyek(rest));
     }
     // Slot temporer tambahan (untuk ekspresi berklaim nilai) sudah dihitung
-    // kompilator lewat `jumlah_slot`; sisakan ruang kosong.
-    const std::size_t total = std::max<std::size_t>(kode->jumlah_slot, n_param + 2);
+    // kompilator lewat `jumlah_slot`; sisakan ruang kosong. `jumlah_param` yang
+    // dipakai di sini menghitung rest, jadi pasangannya harus ikut menghitung.
+    const std::size_t total =
+        std::max<std::size_t>(kode->jumlah_slot, static_cast<std::size_t>(kode->jumlah_param) + 2);
     while (stack_.size() < f.slot_base + total) stack_.push_back(Value::mboh());
 
     frames_.push_back(std::move(f));

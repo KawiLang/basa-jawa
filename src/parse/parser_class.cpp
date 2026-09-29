@@ -298,10 +298,24 @@ NodePtr Parser::parse_deklarasi_fungsi() {
             aspek_ke_close(Tok::Gt, "S002", "\">\" sawise parameter generics");
         }
     } else if (cek(Tok::LBracket) || cek(Tok::LBrace)) {
-        // `gawe [a,b](x) {}` / `gawe {a}(x) {}` — destruktur nama
-        // tangani sebagai ekspresi: biarkan parse_ekspresi yang menangani
-        idx_ = m;
-        return parse_statement();
+        // `gawe [a,b](x) {}` / `gawe {a}(x) {}` -- fungsi tanpa nama dengan pola
+        // destruktur sebagai parameter.
+        //
+        // PERHATIAN: dulu cabang ini meng mundurkan `idx_` ke `m` lalu memanggil
+        // `parse_statement()`, yang memanggil `parse_deklarasi_fungsi()` lagi dan
+        // melihat pola yang sama -- rekursi tak berujung. Program `gawe* { ... }`
+        // satu karakter saja sudah membuat parser menabrak batas stack (ditemukan
+        // fuzzing). Sekarang dilaporkan sebagai galat dan dilewati
+        // sampai statement selesai, yang tidak mungkin mengulang.
+        diagnosa_di("S001",
+                    "Fungsi tanpa nama dengan pola destruktur utawa blok belum didukung.",
+                    "Tulis deklarasinya sebagai `gawe nama(params) { ... }`, atau pakai "
+                    "arrow function.");
+        // Mulai SETELAH `gawe`/`mengko`/`*`, supaya `parse_statement()` melihat
+        // `[` atau `{` sebagai literal/blok biasa -- bukan `gawe` lagi.
+        while (idx_ < token_.token.size() && cek(Tok::KwFunction)) ++idx_;
+        sinkronisasi_statement();
+        return nullptr;
     }
     parse_params(fn);
     if (cek(Tok::Colon)) { ++idx_; fn->tipe_bali = parse_tipe(); lewati_asi(); }

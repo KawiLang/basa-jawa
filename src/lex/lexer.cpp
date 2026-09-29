@@ -727,13 +727,22 @@ void Lexer::lex_regex(Token& t) {
         const SourcePos p{static_cast<std::uint32_t>(mulai), baris_, kolom_};
         diagnostik("L008", p, "Regex ora ketutup: teka baris anyar sadurunge penutup /.");
     }
-    const std::size_t pola_akhir = (selesai && i > mulai) ? i - 1 : i;
-    std::size_t fend = pola_akhir + 1;
+    // Regex yang TIDAK ketutup bisa berhenti tepat di akhir sumber, jadi
+    // `pola_akhir` bisa sama dengan `src_.size()`. Tanpa clamping, `substr` untuk
+    // flag akan mulai pada `size() + 1` dan melempar `std::out_of_range`
+    // (ditemukan fuzzing: masukan `/b` sepanjang 2 byte). Selain itu, regex
+    // tanpa penutup tidak punya bagian flag sama sekali -- huruf setelahnya
+    // milik token berikutnya, bukan flag.
+    const std::size_t pola_akhir = std::min((selesai && i > mulai) ? i - 1 : i, src_.size());
+    std::size_t fend = pola_akhir;
+    if (selesai && fend < src_.size()) ++fend;
     while (fend < src_.size() && std::isalpha(static_cast<unsigned char>(src_[fend])) != 0) ++fend;
     t.jenis = Tok::Regex;
     t.teks = src_.substr(mulai, fend - mulai);
     t.regex_pola = src_.substr(mulai + 1, pola_akhir > mulai + 1 ? pola_akhir - mulai - 1 : 0);
-    t.regex_flag = src_.substr(pola_akhir + 1, fend - pola_akhir - 1);
+    t.regex_flag = (selesai && pola_akhir < src_.size())
+                       ? src_.substr(pola_akhir + 1, fend - pola_akhir - 1)
+                       : std::string_view();
     for (char f : t.regex_flag) {
         if (f != 'g' && f != 'i' && f != 'm' && f != 's' && f != 'u' && f != 'y') {
             const SourcePos p{static_cast<std::uint32_t>(pola_akhir), baris_, kolom_};

@@ -176,7 +176,30 @@ void Parser::parse_params(ast::FungsiDeklarasi* fn) {
 // STATEMENT
 // ===========================================================================
 
+bool Parser::masuk_kedalaman() {
+    if (kedalaman_ >= kKedalamanMaks) {
+        // Diagnostik hanya sekali, tepat saat batas pertama tercapai, supaya
+        // program yang bersarang terlalu dalam tidak membanjiri bag (yang punya
+        // batas sendiri) dan supaya pelaporannya menunjuk ke tempat yang
+        // sebenarnya terlalu dalam.
+        if (kedalaman_ == kKedalamanMaks) {
+            diagnosa_di("S002",
+                        "Nestoring program kelewat dangkal (batas " +
+                            std::to_string(kKedalamanMaks) + " tingkat).",
+                        "Sederhanakan ekspresi, atau pecah jadi beberapa fungsi.");
+        }
+        return false;
+    }
+    ++kedalaman_;
+    return true;
+}
+
 NodePtr Parser::parse_statement() {
+    const RakKedalaman guard(this);
+    if (!guard.aktif) {
+        sinkronisasi_statement();
+        return nullptr;
+    }
     lewati_asi();
     const std::size_t m = idx_;
 
@@ -400,7 +423,11 @@ NodePtr Parser::parse_kanggo() {
     // --- inisialisasi opsional ---
     NodePtr init = nullptr;
     if (!cek(Tok::Semi) && !cek(Tok::RParen)) {
-        if (cek(Tok::KwAna)) {
+        // `ana` (wonten) maupun `tetep` boleh jadi pengikat loop -- bentuk
+        // `kanggo (const x saka ...)` adalah yang paling sering ditulis, dan
+        // menolaknya membuat `kanggo`|`saka` terasa rusak padahal deklarasi
+        // biasa sudah menerimanya.
+        if (cek(Tok::KwAna) || cek(Tok::KwConst)) {
             const std::size_t im = idx_;
             ++idx_;
             auto* dvl = buat<ast::DeklarasiVarStmt>(rentang_dari(im));

@@ -380,6 +380,60 @@ benar-benar jalan. `impor`/`ekspor` sebelumnya di-parse dengan benar tetapi
 
 ---
 
+## [0.8.0] — Fuzzing: 5 target, 6 bug nyata
+
+### Ditambahkan
+- **5 target fuzz** (`tests/fuzz/`, preset `fuzz`), masing-masing dengan dua
+  bentuk: driver deterministik sendiri untuk GCC 12 (yang dipakai ctest), dan
+  `LLVMFuzzerTestOneInput` untuk clang + libFuzzer.
+  - `fuzz_lexer` — rentang token di dalam sumber, teks token tidak melebihi sumber
+  - `fuzz_parser` — rentang program, `cetak_ast` menelusuri setiap node
+  - `fuzz_kompilasi` — tujuan lompatan, `jumlah_slot`, indeks konstanta/nama, entri TDZ
+  - `fuzz_vm` — batas langkah/frame, batas keluaran, filesystem virtual
+  - `fuzz_modul` — grafik impor dipecah dari satu masukan lewat penanda `===MODUL:nama===`
+- `tests/fuzz/jawa_fuzz.h` — PRNG splitmix64, mutasi enam jenis, potongan sintaks,
+  program Jawa utuh yang menyasar jalur yang jarang terkena mutasi acak.
+- `scripts/fuzz_jalankan.py` — runner dengan mode ctest (`--satuan`) dan mode
+  campaign yang **memeriksa determinisme**: campaign sama dengan benih sama harus
+  menghasilkan statistik sama, kalau tidak dianggap gagal.
+- Case crash tersimpan otomatis ke `/tmp/jawa_fuzz_kasus.bin` (bisa ditimpa lewat
+  `JAWA_FUZZ_KASUS`), sehingga crash yang tidak bisa ditangkap -- assertion glibc
+  `malloc` -- tetap bisa direproduksi ulang.
+- `docs/fuzzing.md`.
+- 7 test case baru dari hasil fuzzing. Total 81 test / 152 cek.
+
+### Diperbaiki
+Enam bug nyata; tiga ditemukan langsung oleh fuzzer, tiga lagi oleh test
+regresi yang ditulis berdasarkan temuan itu.
+- **Regex tanpa penutup di akhir sumber melempar exception.** `lex_regex`
+  menghitung flag dari `pola_akhir + 1`; regex yang tidak ketutup dan berhenti di
+  `src_.size()` membuat `substr` mulai pada `size() + 1`. Masukan minimal `/b`
+  (2 byte). [Ditemukan `fuzz_lexer`]
+- **`gawe` tanpa nama lalu blok menyebabkan stack overflow.** Cabang
+  `parse_deklarasi_fungsi` untuk `gawe` diikuti `[`/`{` memundurkan `idx_` ke
+  posisi `gawe` lalu memanggil `parse_statement()` yang memanggil dirinya lagi.
+  Masukan minimal `gawe* { }`. [Ditemukan `fuzz_parser`]
+- **Tidak ada batas kedalaman rekursi parser.** Program dengan kurung bersarang
+  menabrak stack alih-alih jadi galat. Sekarang dibatasi 160 tingkat lewat
+  `Parser::RakKedalaman` (RAII) di `parse_statement` dan `parse_assignment`, dan
+  melebihi batas jadi galat `S002` yang bisa dibaca. [Ditemukan `fuzz_parser`]
+- **Parameter default tidak pernah berfungsi.** `ParamDeklarasi::nilai_default`
+  di-parse sejak Fase 2 tapi tidak pernah dikompilasi; `gawe f(a, b = 2)` memberi
+  `mboh`. Sekarang ada prolog `JUMP_IF_NOT_NULLISH` di awal badan fungsi.
+  Penyimpangan: argumen bernilai `mboh` juga memakai default (D-036).
+- **Parameter rest mengikat argumen biasa, bukan dhaptar sisa.**
+  `Chunk::n_argumen_tetap` ada tapi tidak pernah diisi, jadi VM menyalin argumen
+  ke slot parameter rest dan mendahulukan dhaptar sisa satu slot.
+  `gawe f(a, ...sisa) { bali jenis(sisa); }` menghasilkan `angka`.
+- **`kanggo (tetep x saka ...)` ditolak.** `parse_kanggo` hanya menerima `ana`
+  sebagai pengikat loop. Bentuk `tetep` sekarang diterima juga.
+
+### Catatan
+- Tidak ada korpus crash yang tersimpan, dan `fuzz_parser` belum memeriksa rentang
+  setiap node anak. Campaign terakhir yang dijalankan: 20.000 kasus x 5 target
+  (100.000) plus 14.000 kasus di bawah ASan, 0 crash. Lihat `docs/fuzzing.md`.
+- 5/5 `ctest` hijau pada preset `fuzz`; 6/6 hijau pada kelima build lain.
+
 ## [0.7.0] — `pilih` yang benar, zona mati-temporal, dan perbaikan GC
 
 ### Diperbaiki

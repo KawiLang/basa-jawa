@@ -125,6 +125,11 @@ NodePtr Parser::parse_ekspresi() {
 }
 
 NodePtr Parser::parse_assignment() {
+    const RakKedalaman guard(this);
+    if (!guard.aktif) {
+        sinkronisasi_statement();
+        return nullptr;
+    }
     const std::size_t m = idx_;
 
     // `cocog (nilai) { ... }`

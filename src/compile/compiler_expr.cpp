@@ -782,6 +782,32 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
     // `gawe f() { tulis(y); tetep y = 1; }` menghasilkan galat TDZ.
     if (!n->ekspresi_badan) pradaftar_tdz(n->awak);
 
+    // Prolog parameter default: kalau slot parameter masih kosong, isi dengan
+    // nilai default-nya.
+    //
+    // CATATAN: `nilai_default` sudah lama di-parse tapi TIDAK pernah dikompilasi,
+    // jadi `gawe f(a, b = 2) {}` diam-diam memberi `mboh` untuk `b` (ditemukan
+    // regression test hasil fuzzing, bukan test yang ditulis orang).
+    //
+    // Penentuan "argumen tidak diberikan" memakai `JUMP_IF_NOT_NULLISH`, bukan
+    // jumlah argumen yang diterima. Konsekuensinya: argumen yang sengaja
+    // dilewatkan sebagai `mboh` juga akan memakai nilai default. Membedakan
+    // keduanya butuh opcode baru yang membaca `Frame::n_argumen`; Untuk sekarang,
+    // selisihnya dianggap tidak sepadat dengan complexity-nya (lihat
+    // `STATUS.md`).
+    for (std::size_t i = 0; i < n->param.size(); ++i) {
+        const auto* par = static_cast<const ast::ParamDeklarasi*>(n->param[i]);
+        if (par == nullptr || par->rest || par->nilai_default == nullptr) continue;
+        const std::size_t slot = i + 1;
+        if (slot > 0xFFu) continue;
+        emit(Op::GET_LOCAL, static_cast<std::uint16_t>(slot));
+        const std::size_t l_ada = emit(Op::JUMP_IF_NOT_NULLISH, 0);
+        emit(Op::POP);
+        ekspresi(par->nilai_default);
+        emit(Op::SET_LOCAL, static_cast<std::uint16_t>(slot));
+        patch(l_ada, fn().chunk->ukuran_kode());
+    }
+
     // Cek tipe awal parameter: dijalankan setiap kali fungsi dipanggil.
     for (std::size_t i = 0; i < tipe_param.size(); ++i) {
         if (tipe_param[i].empty()) continue;
@@ -804,6 +830,16 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
     }
     ctx.chunk->jumlah_slot = static_cast<std::uint8_t>(std::min<std::size_t>(ctx.n_slot_maks, 250));
     ctx.chunk->jumlah_param = static_cast<std::uint8_t>(n->param.size());
+    // Jumlah parameter TANPA rest. VM memakai ini untuk menyalin argumen ke
+    // slot, lalu menaruh dhaptar sisa tepat sesudahnya. Kalau ini sama dengan
+    // `jumlah_param`, dhaptar sisa mendarat satu slot terlalu jauh dan
+    // parameter rest justru membaca argumen biasa (ditemukan fuzzing:
+    // `gawe f(a, ...sisa) { bali jenis(sisa); }` menghasilkan `angka`).
+    ctx.chunk->n_argumen_tetap = 0;
+    for (const ast::Node* pn : n->param) {
+        const auto* pd = static_cast<const ast::ParamDeklarasi*>(pn);
+        if (pd != nullptr && !pd->rest) ++ctx.chunk->n_argumen_tetap;
+    }
     ctx.chunk->variadic = ctx.info.variadic;
     ctx.chunk->panah = n->panah;
     ctx.chunk->mengko = n->mengko;
