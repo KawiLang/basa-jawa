@@ -1,0 +1,7 @@
+# Owners bawaan untuk seluruh repo.
+# Tambahkan dependant baru di sini bila repo dibuka untuk kontribusi.
+* @vrypt-cpp
+
+# Jalur yang hanya boleh disentuh owner proyek.
+# /src/rt/       @vrypt-cpp
+# /src/vm/       @vrypt-cpp

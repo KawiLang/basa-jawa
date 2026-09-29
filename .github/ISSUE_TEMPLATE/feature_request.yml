@@ -1,0 +1,71 @@
+name: Usulan fitur
+description: Tambah kemampuan baru atau perluasan bahasa
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Selalu cek dulu bagian "Yang BELUM" di
+        [`STATUS.md`](https://github.com/KawiLang/basa-jawa/blob/main/STATUS.md)
+        dan roadmap di
+        [`PLAN.md`](https://github.com/KawiLang/basa-jawa/blob/main/PLAN.md) —
+        banyak usulan sudah direncanakan di sana.
+
+  - type: textarea
+    id: ringkas
+    attributes:
+      label: Ringkas
+      description: "Satu-dua kalimat: fitur apa yang diusulkan."
+    validations:
+      required: true
+
+  - type: textarea
+    id: maksud
+    attributes:
+      label: Masalah yang diselesaikan
+      description: Mengapa ini penting? Jelaskan masalahnya, bukan sekadar sintaksnya.
+    validations:
+      required: true
+
+  - type: textarea
+    id: contoh
+    attributes:
+      label: Contoh pemakaian
+      description: Bentuk kode yang Anda bayangkan.
+      render: jawa
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatif
+    attributes:
+      label: Alternatif / sintaks lain yang dipertimbangkan
+      description: Mengapa tidak memakai sintaks/mendekatan alternatif tersebut?
+      render: text
+
+  - type: dropdown
+    id: fase
+    attributes:
+      label: Fase roadmap yang terkait
+      description: Lihat tabel "Peta Fase" di PLAN.md.
+      options:
+        - "4 — Object model (shape, inline cache)"
+        - "6 — Galat & pengecualian"
+        - "8 — Pustaka standar (berkas, izin)"
+        - "9 — Fitur expert (cocog, pipeline, tipe bertahap, optimizer)"
+        - "10 — Tooling (REPL, fmt, ubah, tes, bench, embedding, aksara)"
+        - "11 — Pengerasan (GC inkremental, tuning, fuzz, dokumentasi)"
+        - "tidak tahu / lintas fase"
+
+  - type: checkboxes
+    id: batasan
+    attributes:
+      label: Batasan proyek (dari PLAN.md Bagian 1)
+      options:
+        - label: Usulan ini tetap bisa diimplementasikan tanpa dependensi runtime baru (NOL dependensi pihak ketiga).
+          required: false
+        - label: Usulan ini tidak memerlukan `eval`/`Function`/`with`.
+          required: false
+        - label: Usulan ini bisa diuji dengan harness uji yang ada (`jawa tes`).
+          required: false

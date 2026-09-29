@@ -1,0 +1,84 @@
+name: Laporan galat
+description: Sesuatu yang salah pada Basa Jawa (kompiler, VM, GC, atau pustaka standar)
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Terima kasih sudah melaporkan. Sebelum mengirim, cek dulu
+        [`STATUS.md`](https://github.com/KawiLang/basa-jawa/blob/main/STATUS.md) —
+        banyak hal yang memang masih ditandai "belum" dan bukan galat.
+
+  - type: textarea
+    id: ringkas
+    attributes:
+      label: Ringkas
+      description: "Satu-dua kalimat: apa yang rusak."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Langkah reproduksi
+      description: |
+        Program `.jw` atau potongan kode terkecil yang bisa menunjukkan galat.
+        Kalau bisa, tempel program lengkapnya.
+      render: jawa
+    validations:
+      required: true
+
+  - type: textarea
+    id: harapan
+    attributes:
+      label: Keluaran yang diharapkan
+      description: Apa yang seharusnya terjadi?
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: aktual
+    attributes:
+      label: Keluaran sebenarnya
+      description: Salin pesan galat apa adanya, jangan diterjemahkan.
+      render: text
+
+  - type: input
+    id: versi
+    attributes:
+      label: Versi
+      description: Hasil dari `jawa versi`.
+      placeholder: "Basa Jawa 0.12.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: preset
+    attributes:
+      label: Preset build
+      options:
+        - release
+        - asan
+        - ubsan
+        - nonanbox
+        - belum tahu
+    validations:
+      required: true
+
+  - type: input
+    id: sistem
+    attributes:
+      label: Sistem & compiler
+      description: Mis. Ubuntu 24.04, GCC 13.2, x86_64.
+      placeholder: "Ubuntu 24.04 / GCC 13.2 / x86_64"
+    validations:
+      required: true
+
+  - type: textarea
+    id: tambahan
+    attributes:
+      label: Tambahan
+      description: Output `--log-gc`, dump bytecode, atau apa pun yang membantu.
+      render: text

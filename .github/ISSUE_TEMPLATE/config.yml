@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Tanya-jawab (pertanyaan umum &usage)
+    url: https://github.com/KawiLang/basa-jawa/discussions
+    about: Tanyakan cara pakai `jawa`, opsi CLI, atau apa pun yang belum jelas di dokumentasi.
+  - name: Roadmap & status pekerjaan
+    url: https://github.com/KawiLang/basa-jawa/blob/main/STATUS.md
+    about: Sebelum membuka issue, cek dulu apa yang sudah dan belum dikerjakan.
