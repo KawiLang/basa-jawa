@@ -2,6 +2,96 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/) + semver.
 
+## [0.12.0] — Field kelas, `tangkep` bertipe, kasus tipe `pilih`
+
+Empat perbaikan yang menutup celah yang tercatat di `STATUS.md` sejak
+0.11.0. Semuanya berimplikasi pada **semantik**, bukan hanya fitur baru: tiga
+dari empat memperbaiki program yang tadinya salah atau tidak bisa menangkap
+galat.
+
+### Ditambahkan
+- **Field kelas berinisialisasi.** `y = <ekspresi>`, `#x = <ekspresi>`, dan
+  `statis x = <ekspresi>` kini dievaluasi; sebelumnya nilai awalnya diabaikan
+  dan instans baru langsung `mboh`. Inisialisasi field instance dikompilasi
+  jadi closure `inisial_field` (opcode baru `DEFINE_FIELD_INIT`) yang dijalankan
+  di `NEW` sebelum `wiwit`, dari induk ke anak; nilai default boleh membaca
+  `iki` dan menangkap variabel luar sebagai upvalue. Field statis dievaluasi sekali
+  saat definisi lewat `DEFINE_STATIC`.
+- **Klausula `tangkep` bertipe.** Satu `coba` boleh punya banyak `tangkep`,
+  masing-masing memilih handler berdasarkan tipe galat:
+  `tangkep (Kleru) { }` maupun `tangkep (err: KleruJenis) { }`. Klausula
+  pertama yang cocok menang; yang tidak cocok **meneruskan** galat ke `coba` di
+  luarnya, bukan menelan. `Frame::Handler` berubah dari satu ip menjadi daftar
+  klausul (opcode baru `TRY_KLAUSUL`) supaya seleksi dilakukan di `unwind_galat`.
+- **Kasus tipe pada `pilih`.** `kasus <Kelas>:` mencocokkan instans class itu
+  **atau salah satu induknya** (opcode baru `INSTAN_DARI`), jadi `kasus
+  Kucing:` juga menjerat `KucingPriba` — setara `instanceof` ECMAScript.
+
+### Diperbaiki (bug nyata)
+- **`pungkasan` dilewati di jalur normal.** `coba { ... } tangkep (e) { }
+  pkt { ... }` tidak pernah menjalankan badan `pungkasan` kalau bloknya
+  selesai tanpa galat: `lompat_akhir` melompatinya. Ditulis sejak Fase 3.
+- **`bali` di dalam `coba` melewati `pungkasan`.** `RETURN` keluar langsung dari
+  frame, jadi badan `pungkasan` tidak pernah jalan sebelum nilai kembali.
+  `NK::BaliStmt` kini menyalin badan `pungkasan` tepat sebelum `RETURN`, dengan
+  nilai `bali` disimpan di slot temporer lebih dulu.
+- **Galat aritmetika tidak bisa ditangkap sama sekali.** `1 + "a"` menulis
+  `galat_.ada` langsung tanpa `unwind_galat`, sehingga `coba` tidak pernah
+  menangkapnya — termasuk dari dalam fungsi yang dipanggil. Sekarang
+  membentuk `KleruObj` dulu (`lempar_dan_tangkap`).
+- **Parameter default salah untuk `mboh`.** Prolog memakai
+  `JUMP_IF_NOT_NULLISH` atas nilai slot, jadi `f(mboh)` yang SENGAJA mengosongkan
+  argumen ikut memakai nilai default dan tidak bisa dibedakan dari `f()`.
+  Opcode baru `PARAM_HADAH` membaca `Frame::n_argumen`.
+- **`kanggo` mengikat per-fungsi, bukan per-iterasi.** `kanggo (ana i = 0; i < 3;
+  i = i + 1) t.tambah(() => i)` menghasilkan `3 3 3`. Sekarang mengikat
+  per-iterasi (`SelObj` + opcode baru `SEL_SALIN`), hasilnya `0 1 2` — juga
+  untuk `kanggo (ana x saka ...)`.
+- **`Arena` menulis lewat akhir blok.** `allocate()` memakai offset blok LAMA
+  untuk blok BARU, jadi berkas yang cukup besar untuk butuh blok kedua
+  menulis di luar batas. Terlewat karena blok bawaan 64 KB jarang terlampaui;
+  meledak saat berkas uji bertambah beberapa baris (ASan: `unknown-crash` di
+  `Arena::create`).
+- **GC tidak menandai `SelObj`.** Nilai di dalam sel bisa tersapu padahal
+  sel-nya masih hidup; selector belum pernah memanggil `mark` untuk `OK::Sel`.
+  Upvalue terikat-sel juga belum di-root, jadi sel yang hanya dipegang upvalue
+  bisa tersapu pada `--gc-stress`.
+
+### Perubahan desain
+Tiga keputusan diambil dan alasannya ditulis di `DECISIONS.md`:
+- **D-036** (direvisi) — parameter default ditentukan jumlah argumen, bukan
+  nilai slot.
+- **D-037** — pengikatan per-iterasi `kanggo` memakai sel yang disalin tiap
+  akhir iterasi; `terusna` melompat ke titik sebelum salinan, kalau tidak
+  pembaruan menulis ke sel yang sudah ditangkap closure iterasi itu.
+- **D-038** — seleksi klausula `tangkep` dilakukan di unwinder, bukan di
+  bytecode; `pungkasan` diemit beberapa kali karena ada empat jalur masuk.
+- **D-039** — `kasus <Kelas>:` dibedakan dari kasus nilai dengan dua syarat:
+  pengenal langsung diikuti `:` dan huruf pertamanya kapital. Konsekuensinya,
+  penamaan class wajib mengikuti konvensi kapital.
+
+### Verifikasi
+
+| Preset | Hasil |
+|---|---|
+| `release` | build 0 warning; `ctest` 8/8 hijau; 313/313 assertion `jawa tes` |
+| `asan` (ASan+LSan) | 8/8 hijau |
+| `ubsan` | 8/8 hijau; 0 runtime error |
+| `nonanbox` (mode nilai 16-byte) | 8/8 hijau |
+| `--gc-stress` | 15/15 contoh emas + 313/313 assertion |
+
+**Metrik**: 130 opcode (+`DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`,
+`SEL_SALIN`, `TRY_KLAUSUL`, `INSTAN_DARI`), 7 berkas uji bahasa / 313
+assertion, 130 opcode, 15 contoh emas, 13 berkas `docs/`.
+
+### Belum (lihat `STATUS.md`)
+Pola `cocog` bertipe (`kasus n: teks =>`) masih selalu dianggap cocok; `pilih`
+sebagai ekspresi; `uncal` di dalam `pungkasan`; skop blok; `Janji.all`/`race`;
+`Peta`/`Himpunan` komprehensif; berkas & proses; hidden class & inline cache;
+tooling (`fmt`, `bench`, REPL, embedding API).
+
+---
+
 ## [0.11.0] — Regex runtime & `Tanggal`
 
 ### Ditambahkan
