@@ -64,12 +64,30 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
             } else {
                 const std::size_t s = slot_baru_tdz(d->jeneng);
                 tdz_baru.push_back(s);
-                if (d->nilai != nullptr) {
-                    ekspresi(d->nilai);
-                } else {
+                if (adalah_sel(d->jeneng)) {
+                    // Variabel modul yang diekspor: slotnya berisi `SelObj`,
+                    // bukan nilai. Sel dibuat lebih dulu lalu diisi -- itulah
+                    // yang membuat `ekspor` menjadi live binding (importer
+                    // mengikat sel yang sama, jadi penulisan di sini terlihat
+                    // di sana, dan sebaliknya).
                     emit(Op::MBOH);
+                    emit(Op::SEL_BUAT);
+                    emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
+                    if (d->nilai != nullptr) {
+                        ekspresi(d->nilai);
+                    } else {
+                        emit(Op::MBOH);
+                    }
+                    emit(Op::SET_CELL, static_cast<std::uint16_t>(s));
+                    emit(Op::POP);
+                } else {
+                    if (d->nilai != nullptr) {
+                        ekspresi(d->nilai);
+                    } else {
+                        emit(Op::MBOH);
+                    }
+                    emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
                 }
-                emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
             }
             for (const ast::Node* lain : d->deklarator_lain) statement(lain);
             // Tutup TDZ: dari titik ini nama boleh dibaca.
@@ -508,18 +526,21 @@ void Compiler::stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist) {
     // `sudah_hoist`: statement `ekspor` ini sudah dikompilasi utuh di awal modul
     // (deklarasi + ekspor), jadi jangan apa-apa lagi. Melewati langkah ini juga
     // membuat ekspor tersedia SEBELUM `impor` dievaluasi -- syarat agar impor
-    // siklik (`a impor b; b impor a;`) bisa saling memanggil.
+    // siklik (`a impor b; b impor a`) bisa saling memanggil.
     if (sudah_hoist) return;
 
-    // --- `ekspor { a, b minangka c }` (+ opsional `saka "mod"`) ---
+    // --- `ekspor { a, b minangka c }` (+ opsional `saka "mod"`) -------------
     if (!n->daftar.empty() || n->ada_modul) {
+        // Re-export `ekspor { y } saka "./lain.jw"`: impor modul itu, lalu
+        // TERUSKAN sel yang sama. `GET_IMPORT` mencari modul lewat
+        // `Frame::impor_modul`, jadi objek ekspornya tidak perlu di stack.
+        std::size_t idx_rekspor = 0;
         if (n->ada_modul) {
-            // Re-export: impor dulu, lalu ekspor ulang selective.
+            idx_rekspor = impor_modul_ke_++;
             const std::size_t km = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, n->modul)));
             emit(Op::TEKS, static_cast<std::uint16_t>(km));
-            emit(Op::IMPORT, 0);
-        } else {
-            emit(Op::MBOH);
+            emit(Op::IMPORT, static_cast<std::uint16_t>(idx_rekspor));
+            emit(Op::POP);  // objek ekspor tidak dipakai langsung
         }
         for (const ast::EksporSpesifikasi& sp : n->daftar) {
             const auto it = cari_slot(sp.lokal);
@@ -530,23 +551,36 @@ void Compiler::stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist) {
             const bool masih_tdz =
                 it != std::string::npos && fn().tdz_menunggu.count(it) != 0;
             if (it == std::string::npos || masih_tdz) {
-                ekspor_tunda_.push_back(EksporTunda{sp.lokal, sp.ekspor});
+                ekspor_tunda_.push_back(EksporTunda{sp.lokal, sp.ekspor, n->ada_modul, idx_rekspor});
                 continue;
             }
-            emit(Op::DUP);
-            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(it));
+            if (n->ada_modul) {
+                // Re-export: teruskan SEL yang sama, jangan bungkus ulang. Kalau
+                // dibungkus, kedua modul punya sel terpisah dan live binding
+                // ikut terputus di tengah rantai.
+                const std::size_t kn = tambah_nama(Value::obyek(rt::buat_teks(heap_, sp.lokal)));
+                emit(Op::GET_IMPORT, static_cast<std::uint16_t>(idx_rekspor), static_cast<std::uint16_t>(kn));
+            } else {
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(it));
+                if (!adalah_sel(sp.lokal)) {
+                    // Fungsi/kelas: bungkus dalam sel baru supaya impor tetap
+                    // live (meski nilainya sendiri tidak pernah berubah). Slot
+                    // variabel yang diekspor sudah berisi `SelObj`; yang ini
+                    // diekspor apa adanya supaya importer memakai sel yang sama.
+                    emit(Op::SEL_BUAT);
+                }
+            }
             const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, sp.ekspor)));
             emit(Op::TEKS, static_cast<std::uint16_t>(k));
             emit(Op::EXPORT, 0);
         }
-        if (n->ada_modul) emit(Op::POP);
         return;
     }
 
     // --- `ekspor <deklarasi>` / `ekspor baku <ekspresi>` ---
-    // Deklarasi dikompilasi normal (jadi slot lokal modul), lalu nilainya dibaca
+    // Deklarasi dikompilasi normal (jadi slot lokal modul), lalu slotnya dibaca
     // ulang dan ditaruh ke objek ekspor. Cara ini berlaku seragam untuk
-    // `gawe`, `golongan`, dan `const`, tanpa bentuk bytecode khusus.
+    // `gawe`, `golongan`, dan `tetep`, tanpa bentuk bytecode khusus.
     if (n->default_ekspor) {
         if (n->deklarasi == nullptr) {
             emit(Op::MBOH);
@@ -555,13 +589,19 @@ void Compiler::stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist) {
                    n->deklarasi->kind == NK::DeklarasiVar) {
             if (!sudah_hoist) statement(n->deklarasi, sudah_hoist);
             const auto s = cari_slot(nama_deklarasi(n->deklarasi));
-            if (s != std::string::npos) emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
-            else emit(Op::MBOH);
+            if (s != std::string::npos) {
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+                if (!adalah_sel(nama_deklarasi(n->deklarasi))) emit(Op::SEL_BUAT);
+            } else {
+                emit(Op::MBOH);
+                emit(Op::SEL_BUAT);
+            }
         } else if (n->deklarasi->kind == NK::EkspresiStmt) {
             // `ekspor baku <ekspresi>`: NILAI ekspresi yang diekspor, bukan
             // statement-nya. `statement()` akan menambah `POP` yang menghapus
             // nilai itu, jadi ekspresinya dikompilasi langsung.
             ekspresi(static_cast<const ast::EkspresiStmt*>(n->deklarasi)->ekspresi);
+            emit(Op::SEL_BUAT);
         } else {
             statement(n->deklarasi);
         }
@@ -582,6 +622,7 @@ void Compiler::stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist) {
     const auto s = cari_slot(nama);
     if (s == std::string::npos) return;  // deklarasi tanpa nama: tidak ada yang bisa diekspor
     emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+    if (!adalah_sel(nama)) emit(Op::SEL_BUAT);
     const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, nama)));
     emit(Op::TEKS, static_cast<std::uint16_t>(k));
     emit(Op::EXPORT, 0);
@@ -591,16 +632,20 @@ void Compiler::stmt_impor(const ast::ImporDeklarasi* n) {
     // IMPOR: muat modul, taruh ekspornya di stack, lalu bind tiap nama.
     // Objek ekspor didupe-kan tiap iterasi supaya `GET_PROP` tidak
     // menghabiskan satu-satunya rujukan.
+    const std::size_t idx_modul = impor_modul_ke_++;
     if (!n->ada_modul) {
         emit(Op::MBOH);
     } else {
         const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, n->modul)));
         emit(Op::TEKS, static_cast<std::uint16_t>(k));
-        emit(Op::IMPORT, 0);
+        // Operand `IMPORT` = indeks modul ini pada `Frame::impor_modul`, dipakai
+        // `GET_IMPORT` untuk menemukan sel live binding-nya.
+        emit(Op::IMPORT, static_cast<std::uint16_t>(idx_modul));
     }
     if (n->ada_namespace) {
         // `impor * minangka M` (atau `impor M saka "..."`): objek ekspor
-        // langsung diikat sebagai satu nilai.
+        // langsung diikat sebagai satu nilai. Isinya tetap objek ekspor
+        // biasa; `VM::ambil_properti` yang membongkar sel di dalamnya.
         emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(slot_impor(n->alias_namespace)));
         return;
     }
@@ -611,16 +656,23 @@ void Compiler::stmt_impor(const ast::ImporDeklarasi* n) {
         return;
     }
     for (const ast::ImporSpesifikasi& sp : n->daftar) {
-        emit(Op::DUP);
-        // `GET_EXPORT` (bukan `GET_PROP`): nama yang tidak diekspor modul harus
+        // `GET_IMPORT` (bukan `GET_PROP`): nama yang tidak diekspor modul harus
         // menjadi galat, bukan `mboh` -- impor salah ketik adalah kesalahan
-        // program, bukan nilai kosong.
+        // program, bukan nilai kosong. Hasilnya `SelObj` yang diikat ke slot
+        // lokal, jadi perubahan di modul asal tetap terlihat.
         // `baku` = `default`: nama baku untuk ekspor default, ditulis dengan
         // ejaan Jawa supaya konsisten dengan bahasa.
         const std::string_view sumber = sp.sumber == "baku" ? std::string_view("default") : sp.sumber;
         const std::size_t k = tambah_nama(Value::obyek(rt::buat_teks(heap_, sumber)));
-        emit(Op::GET_EXPORT, static_cast<std::uint16_t>(k));
-        emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(slot_impor(sp.impor)));
+        emit(Op::GET_IMPORT, static_cast<std::uint16_t>(idx_modul), static_cast<std::uint16_t>(k));
+        // Sel pengikat sudah dibuat di awal modul (lihat `Compiler::compile`),
+        // jadi di sini sel itu cukup diarahkan ke sel milik modul pengekspor.
+        // both pihak lalu benar-benar berbagi satu nilai -- itulah live binding.
+        const std::size_t s = slot_impor(sp.impor);
+        emit(Op::SEL_ALIAS, static_cast<std::uint16_t>(s));
+        // Pengikatan impor adalah sel: tandai supaya semua pembacaan &
+        // penulisan namanya memakai `GET_CELL`/`SET_CELL`.
+        sel_slot_.emplace(std::string(sp.impor), 0);
     }
     emit(Op::POP);
 }

@@ -39,8 +39,6 @@ JAWA_OP(SET_LOCAL,  1, "v - >", "variabel")
 JAWA_OP(DEF_LOCAL,  1, "v - >", "variabel")
 JAWA_OP(GET_UPVAL,  1, "- -> v", "variabel")
 JAWA_OP(SET_UPVAL,  1, "v - >", "variabel")
-JAWA_OP(GET_CELL,   1, "- -> v", "variabel")
-JAWA_OP(SET_CELL,   1, "v - >", "variabel")
 JAWA_OP(CLOSE_UPVAL,1, "- -> -", "variabel")
 JAWA_OP(TDZ_CHECK,  1, "- -> -", "variabel")
 
@@ -145,9 +143,23 @@ JAWA_OP(MATCH_TEST, 1, "v p - >", "cocog")
 JAWA_OP(MATCH_BIND, 1, "v p - >", "cocog")
 
 // ------------------------------------------------------------------- lain
-JAWA_OP(IMPORT,     1, "- > m", "modul")
-JAWA_OP(EXPORT,     1, "v - > ", "modul")
+JAWA_OP(IMPORT,     1, "sp - > m", "modul")
+JAWA_OP(EXPORT,     1, "n v - > ", "modul")
 JAWA_OP(GET_EXPORT, 1, "m - v", "modul")
+// --- live binding modul ES -------------------------------------------------
+// `IMPORT a` tidak hanya mendorong objek ekspor: ia juga MENDAFTARKAN modul
+// yang dimuat ke frame ini pada indeks `a`. `GET_IMPORT a b` lalu membaca sel
+// live binding nama `c->nama_properti[b]` dari modul tersebut.
+//
+// Pengikatan impor disimpan sebagai `SelObj` di slot lokal, bukan salinan
+// nilainya. `GET_CELL`/`SET_CELL` menerjemahkan baca/tulis nama itu menjadi
+// akses sel, sehingga modul pengekspor dan semua pengimpornya berbagi satu
+// nilai.
+JAWA_OP(GET_IMPORT, 2, "- > s", "modul")
+JAWA_OP(SEL_ALIAS,  1, "s - > ", "modul")
+JAWA_OP(GET_CELL,   1, "- > v", "variabel")
+JAWA_OP(SET_CELL,   1, "v - > v", "variabel")
+JAWA_OP(SEL_BUAT,   0, "v - > s", "modul")
 JAWA_OP(YIELD,      0, "v - r", "fiber")
 JAWA_OP(AWAIT,      0, "v - r", "fiber")
 JAWA_OP(DEBUGGER,   0, "- > ", "lain")

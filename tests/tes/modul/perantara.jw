@@ -1,0 +1,8 @@
+// Modul perantara: mengimpor dari `sumber.jw` lalu mengekspor ulang pengikatnya.
+// Re-export harus meneruskan SEL YANG SAMA -- kalau dibungkus ulang, kedua
+// modul punya sel terpisah dan live binding terputus di tengah rantai.
+
+impor { nilai, naik, baca } saka "./sumber.jw";
+
+// Re-export dengan alias: pengikat yang diteruskan harus tetap live.
+ekspor { nilai minangka nilai_dari_perantara, naik, baca };

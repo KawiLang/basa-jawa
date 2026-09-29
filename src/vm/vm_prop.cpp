@@ -19,6 +19,7 @@ using rt::InstanceObj;
 using rt::ObyekObj;
 using rt::Obj;
 using rt::OK;
+using rt::SelObj;
 using rt::TeksObj;
 using rt::Value;
 
@@ -47,6 +48,23 @@ std::string_view sv(Value v) {
 // ---------------------------------------------------------------------------
 
 Value VM::ambil_properti(Obj* o, Value kunci) {
+    // Objek ekspor modul menyimpan `SelObj` (lihat `docs/modules.md`): impor
+    // mengikat sel supaya bisa live. Impor namespace mengikat objek ekspor itu
+    // langsung, jadi di sini sel harus dibongkar supaya `U.tambah` dibaca
+    // sebagai Closure, bukan `SelObj`. Tanpa ini `U.tambah(1, 2)` gagal dengan
+    // "iki dudu fungsi".
+    if (o != nullptr && o->h.kind == OK::Obyek) {
+        for (const auto& rec : modul_store_) {
+            if (!rec.ekspor.is_obyek() || rec.ekspor.pointer() != o) continue;
+            if (Value v; static_cast<ObyekObj*>(o)->get(kunci, v)) {
+                if (v.is_obyek() && v.pointer() != nullptr &&
+                    static_cast<const Obj*>(v.pointer())->h.kind == OK::Sel) {
+                    return static_cast<SelObj*>(v.mutable_pointer())->baca();
+                }
+            }
+            break;
+        }
+    }
     for (Obj* cur = o; cur != nullptr;) {
         switch (cur->h.kind) {
             case OK::Obyek: {

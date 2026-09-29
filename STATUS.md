@@ -13,13 +13,13 @@ hidden class, *live binding* modul, pustaka standar lengkap, dan tooling
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 19.567 |
-| Opcode bytecode | 119 (`MARK_SPREAD` baru; `GET_EXPORT`) |
+| Baris kode C++ (`src/` + `tests/`) | 20.032 |
+| Opcode bytecode | 123 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT` baru) |
 | Target fuzz | 5 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 106 |
 | Uji unit | 3 berkas, 152 cek, 81 test |
-| Uji bahasa (`jawa tes`) | 2 berkas, 85 assertion |
+| Uji bahasa (`jawa tes`) | 3 berkas, 93 assertion (termasuk live binding modul) |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di kelimanya; preset `fuzz` — 5/5 `ctest` hijau |
 | Campaign fuzz terakhir | 20.000 kasus x 5 target (100.000) + ASan 14.000 kasus — 0 crash |
@@ -34,7 +34,7 @@ hidden class, *live binding* modul, pustaka standar lengkap, dan tooling
 | 2 | Parser + AST | selesai |
 | 3 | Kompiler bytecode + VM + GC + pustaka standar minimum | **selesai (versi minimum)** |
 | 4 | Bentuk objek: shape, hidden class, inline cache | **belum** (lihat "Yang belum") |
-| 5 | Modul ES, zona mati-temporal, `super` penuh | modul ES + TDZ + `pilih` pola selesai; `super` penuh belum |
+| 5 | Modul ES, zona mati-temporal, `super` penuh | modul ES (live binding) + TDZ + `pilih` pola selesai; `super` penuh belum |
 | 6 | Event loop, Promise | **selesai** (loop acara deterministik; tanpa jam nyata) |
 | 7 | Fiber, generator suspend, `metokake` non-eager | **generator selesai tanpa fiber** (D-028; `FIBER_*` tidak pernah dipakai) |
 | 8 | Pustaka standar lengkap, `Tanggal`, regex, berkas | sebagian |
@@ -76,7 +76,8 @@ Bahasa yang berjalan penuh, termasuk:
   tanpa libFuzzer; sudah menemukan 6 bug nyata, lihat `docs/fuzzing.md`.
 - Modul ES: `impor` (nama / alias / namespace / `baku` / tanpa pengikat) dan
   `ekspor` (deklarasi / `baku` / daftar nama / re-export), termasuk impor
-  siklik antar-modul.
+  siklik antar-modul dan **live binding** (variabel yang diekspor dibagi lewat
+  sel yang sama).
 - `pilih` dengan kasus nilai (`==`), kasus **pola** (`[a, ...sisa]`,
   `{nama}`, wildcard `_`, pola bersarang), dan `baku` sebagai cadangan.
 - Zona mati-temporal: `ana`/`wonten`/`tetep` tidak bisa dibaca sebelum
@@ -95,16 +96,14 @@ mode dictionary langsung. Properti dibaca dengan `ObyekObj::dict` +
 Field privat juga bukan privat sungguhan: disimpan sebagai slot biasa bernama
 `#x`; privasi dijaga kompilator.
 
-### 2. Modul ES: berfungsi, tapi bukan live binding & belum ada modul bawaan
+### 2. Modul ES: live binding selesai, modul bawaan belum
 
 `impor`/`ekspor` sudah berfungsi penuh (lihat `docs/modules.md`): impor nama,
-alias, namespace, ekspor `baku`, re-export, impor bersarang, impor siklik, dan
-penanganan galat. Yang belum:
+alias, namespace, ekspor `baku`, re-export, impor bersarang, impor siklik,
+penanganan galat, dan **live binding** — variabel yang diekspor disimpan
+sebagai sel yang dibagi, sehingga perubahan dari arah mana pun langsung terlihat
+di semua pengimpor (termasuk lewat rantai re-export). Yang belum:
 
-- **Bukan live binding** — nilai yang diedarkan adalah nilai saat statement
-  `ekspor` dievaluasi. Perubahan `const` di modul asal tidak terlihat importer.
-- Modul hanya boleh ber-hoist lewat deklarasi fungsi/kelas. Dua modul yang
-  saling mengimpor `const` akan melihat `mboh`.
 - Belum ada modul bawaan (`std:...`); tidak ada bundling, tidak ada peta
   alias nama berkas.
 
@@ -195,7 +194,7 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 85/85 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 93/93 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

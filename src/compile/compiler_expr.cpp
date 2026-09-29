@@ -635,7 +635,9 @@ void Compiler::emit_baca_nama(std::string_view nama) {
         }
     }
     if (s != static_cast<std::size_t>(-1)) {
-        emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+        // Pengikatan impor & variabel modul yang diekspor disimpan sebagai sel;
+        // membacanya berarti membaca isi sel, bukan objek sel itu sendiri.
+        emit(adalah_sel(nama) ? Op::GET_CELL : Op::GET_LOCAL, static_cast<std::uint16_t>(s));
         return;
     }
     if (fn().dalam_fungsi) {
@@ -651,7 +653,7 @@ void Compiler::emit_baca_nama(std::string_view nama) {
 void Compiler::emit_tulis_nama(std::string_view nama) {
     const std::size_t s = cari_slot(nama);
     if (s != static_cast<std::size_t>(-1)) {
-        emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s));
+        emit(adalah_sel(nama) ? Op::SET_CELL : Op::SET_LOCAL, static_cast<std::uint16_t>(s));
         return;
     }
     if (fn().dalam_fungsi) {
@@ -664,7 +666,7 @@ void Compiler::emit_tulis_nama(std::string_view nama) {
 void Compiler::emit_tulis_nama_statement(std::string_view nama) {
     const std::size_t s = cari_slot(nama);
     if (s != static_cast<std::size_t>(-1)) {
-        emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s));
+        emit(adalah_sel(nama) ? Op::SET_CELL : Op::SET_LOCAL, static_cast<std::uint16_t>(s));
         return;
     }
     if (fn().dalam_fungsi) {

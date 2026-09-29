@@ -1,0 +1,34 @@
+// Live binding modul ES.
+//
+// `ekspor` variabel harus menjadi LIVE BINDING: importer mengikat SEL yang sama
+// dengan modul pengekspor, bukan salinan nilainya. Perubahan di modul asal
+// langsung terlihat di semua pengimpor-nya, dan sebaliknya.
+//
+// Berkas ini adalah modul pengimpor; state-nya ada di `sumber.jw`.
+// Lihat `docs/modules.md`.
+
+impor { nilai, naik, baca } saka "./sumber.jw";
+
+// Nilai awal dari modul asal.
+pratelas(nilai, 0);
+pratelas(baca(), 0);
+
+// Fungsi dari modul asal mengubah state-nya; pengikat DI SINI harus ikut berubah.
+pratelas(naik(5), 5);
+pratelas(nilai, 5);
+
+// Menulis langsung dari sini juga terlihat oleh modul asal.
+nilai = 100;
+pratelas(baca(), 100);
+
+// Modul ketiga: `perantara.jw` mengimpor dari `sumber.jw` lalu memakai
+// pengikat itu. Semua pengimpor berbagi satu sel.
+impor { nilai_dari_perantara minangka nilai_lewat_perantara } saka "./perantara.jw";
+pratelas(nilai, 100);
+
+gawe periksa() { bali nilai_lewat_perantara; }
+pratelas(periksa(), 100);
+
+// Closure di dalam fungsi yang ter-hoist harus membaca sel yang sama.
+gawe pengamat() { bali nilai; }
+pratelas(pengamat(), 100);

@@ -1,0 +1,10 @@
+// Modul yang memegang state: `nilai` di-`ekspor` sebagai live binding.
+
+ana nilai = 0;
+ekspor { nilai };
+
+gawe naik(n) { nilai = nilai + n; bali nilai; }
+ekspor { naik };
+
+gawe baca() { bali nilai; }
+ekspor { baca };

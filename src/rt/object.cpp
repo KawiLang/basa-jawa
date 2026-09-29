@@ -29,6 +29,7 @@ const char* ok_name(OK k) noexcept {
         case OK::Simbol: return "Simbol";
         case OK::BigInt: return "BigInt";
         case OK::Generator: return "Generator";
+        case OK::Sel: return "Sel";
         case OK::BoundFn: return "BoundFn";
         case OK::Proxy: return "Proxy";
         default: return "Objek";

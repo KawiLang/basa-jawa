@@ -241,6 +241,76 @@ std::size_t Compiler::cari_upvalue(const std::string_view nama) {
 }
 
 // ===========================================================================
+// Live binding modul ES
+// ===========================================================================
+
+bool Compiler::adalah_sel(std::string_view nama) const {
+    return sel_slot_.find(std::string(nama)) != sel_slot_.end();
+}
+
+/// Catat nama yang diekspor sebagai **variabel** (bukan fungsi/kelas), supaya
+/// statement mana pun yang membacanya tahu aksesnya harus lewat sel.
+///
+/// Harus dipanggil SEBELUM statement apa pun dikompilasi: `ekspor { n }`
+/// boleh ditulis setelah penggunaan `n`, jadi statement yang membaca `n`
+/// lebih dulu harus sudah tahu bahwa aksesnya lewat sel.
+///
+/// Hanya variabel yang ditandai. `ekspor { f }` untuk fungsi `f` juga muncul
+/// di `daftar`, tapi nilainya tidak pernah berubah -- membungkusnya dalam sel
+/// yang tidak pernah ditulis hanya menambah satu alokasi tanpa guna.
+void Compiler::kumpulkan_ekspor_variabel(const ast::Node* n, int kedalaman) {
+    if (n == nullptr || kedalaman > 32) return;
+    if (n->kind == ast::NK::FungsiDeklarasi) return;  // badan sendiri
+    if (n->kind == ast::NK::EksporDeklarasi) {
+        const auto* e = static_cast<const ast::EksporDeklarasi*>(n);
+        for (const ast::EksporSpesifikasi& sp : e->daftar) ekspor_nama_.emplace(std::string(sp.lokal), 0);
+        if (e->deklarasi != nullptr && e->deklarasi->kind == ast::NK::DeklarasiVar) {
+            const auto* d = static_cast<const ast::DeklarasiVarStmt*>(e->deklarasi);
+            if (!d->jeneng.empty()) ekspor_nama_.emplace(std::string(d->jeneng), 0);
+        }
+    }
+    for (const ast::Node* anak : anak_stmt(n)) kumpulkan_ekspor_variabel(anak, kedalaman + 1);
+}
+
+/// Daftar nama variabel modul (non-destruktur) yang diekspor. `FungsiDeklarasi`
+/// & `GolonganDeklarasi` sengaja TIDAK termasuk: nilainya tetap, jadi tidak
+/// perlu sel.
+
+/// Kumpulkan SEMUA statement `impor` di bawah `n` (rekursif), termasuk yang
+/// ada di dalam blok. Impor boleh ditulis di mana saja dalam badan modul,
+/// tapi slot pengikatnya selalu milik frame modul -- jadi sel pengikatnya juga
+/// harus dibuat di frame modul, bukan di dalam blok tempat statement itu berada.
+void Compiler::kumpulkan_impor(const ast::Node* n, std::vector<const ast::Node*>& keluar) {
+    if (n == nullptr) return;
+    if (n->kind == ast::NK::FungsiDeklarasi) return;  // badan sendiri
+    if (n->kind == ast::NK::ImporDeklarasi) keluar.push_back(n);
+    for (const ast::Node* anak : anak_stmt(n)) kumpulkan_impor(anak, keluar);
+}
+
+void Compiler::tandai_sel_ekspor(const std::vector<ast::Node*>& statement_s) {
+    for (const ast::Node* s : statement_s) {
+        if (s == nullptr) continue;
+        const ast::Node* deklarasi = deklarasi_ekspor(s);
+        if (deklarasi != nullptr && deklarasi->kind == ast::NK::DeklarasiVar) {
+            const auto* d = static_cast<const ast::DeklarasiVarStmt*>(deklarasi);
+            if (!d->destruktur && !d->jeneng.empty()) {
+                sel_slot_.emplace(std::string(d->jeneng), 0);
+            }
+            continue;
+        }
+        if (s->kind != ast::NK::EksporDeklarasi) continue;
+        const auto* e = static_cast<const ast::EksporDeklarasi*>(s);
+        for (const ast::EksporSpesifikasi& sp : e->daftar) {
+            if (ekspor_nama_.count(std::string(sp.lokal)) == 0) continue;
+            // `minangka` (alias ekspor) tidak mengubah jenis nilainya.
+            if (variabel_modul_.count(std::string(sp.lokal)) != 0) {
+                sel_slot_.emplace(std::string(sp.lokal), 0);
+            }
+        }
+    }
+}
+
+// ===========================================================================
 // Top-level
 // ===========================================================================
 
@@ -274,18 +344,82 @@ HasilKompilasi Compiler::compile(const ast::Program* prog) {
     std::unordered_set<std::string> sudah_dinaikkan;
     std::vector<const ast::Node*> dinaikkan;
 
-    // 0. Slot untuk pengikat impor dialokasikan lebih dulu (tanpa emits), supaya
+    // 0. Kumpulkan nama yang diekspor. Harus SEBELUM statement apa pun
+    //    dikompilasi, karena `ekspor { n }` boleh ditulis setelah `n` dipakai;
+    //    statement yang membaca `n` lebih dulu harus sudah tahu bahwa aksesnya
+    //    lewat sel, bukan `GET_LOCAL` biasa.
+    for (const ast::Node* s : semua_statement) kumpulkan_ekspor_variabel(s);
+    for (const ast::Node* s : semua_statement) {
+        if (s == nullptr) continue;
+        if (s->kind == ast::NK::DeklarasiVar) {
+            const auto* d = static_cast<const ast::DeklarasiVarStmt*>(s);
+            if (!d->destruktur && !d->jeneng.empty()) {
+                variabel_modul_.emplace(std::string(d->jeneng), 0);
+            }
+        }
+        if (s->kind == ast::NK::EksporDeklarasi) {
+            const auto* e = static_cast<const ast::EksporDeklarasi*>(s);
+            const ast::Node* d = e->deklarasi;
+            if (d != nullptr && d->kind == ast::NK::DeklarasiVar) {
+                const auto* dv = static_cast<const ast::DeklarasiVarStmt*>(d);
+                if (!dv->destruktur && !dv->jeneng.empty()) {
+                    variabel_modul_.emplace(std::string(dv->jeneng), 0);
+                }
+            }
+        }
+    }
+    tandai_sel_ekspor(semua_statement);
+
+    // 0b. Slot untuk pengikat impor dialokasikan lebih dulu (tanpa emits), supaya
     //    fungsi yang di-hoist.capture-nya sebagai upvalue SLOT, bukan sebagai
     //    nama global. Tanpa ini, `a impor b; b impor a` menghasilkan fungsi yang
     //    memanggil binding global yang belum pernah diisi.
-    for (const ast::Node* s : semua_statement) {
-        if (s == nullptr || s->kind != NK::ImporDeklarasi) continue;
+    // Slot pengikat impor milik FRAME MODUL, jadi alokasi harus terjadi di
+    // konteks modul -- termasuk untuk `impor` yang ditulis di dalam blok
+    // (`coba { impor { x } saka "..."; ... }`).
+    std::vector<const ast::Node*> semua_impor;
+    kumpulkan_impor(semua_statement, semua_impor);
+    for (const ast::Node* s : semua_impor) {
         const auto* im = static_cast<const ast::ImporDeklarasi*>(s);
-        if (im->ada_namespace && !im->alias_namespace.empty()) {
+        // `slot_baru` SELALU dievaluasi sebagai argumen `emplace`, jadi harus
+        // dicek dulu: nama yang sama bisa diimpor dari dua modul
+        // (`impor { x } saka "a"; impor { x } saka "b";`) dan hanya boleh punya
+        // satu slot.
+        if (im->ada_namespace && !im->alias_namespace.empty() &&
+            impor_slot_.count(std::string(im->alias_namespace)) == 0) {
             impor_slot_.emplace(std::string(im->alias_namespace), slot_baru(im->alias_namespace));
         }
         for (const ast::ImporSpesifikasi& sp : im->daftar) {
+            if (impor_slot_.count(std::string(sp.impor)) != 0) continue;
             impor_slot_.emplace(std::string(sp.impor), slot_baru(sp.impor));
+        }
+    }
+
+    // 0c. Sel PENGIKAT untuk tiap nama impor, dibuat paling awal -- sebelum
+    // hoisting ekspor pun. Closure yang ter-hoist menangkap sel ini sebagai
+    // upvalue, dan upvalue terikat-sel membaca lewat sel, bukan lewat slot
+    // stack. Kalau slot-nya masih kosong saat `CLOSURE` berjalan,
+    // `cari_atau_buat_upvalue` akan mengikat upvalue ke slot stack biasa; begitu
+    // `impor` mengisi slot dengan `SelObj`, pembacaannya menghasilkan objek sel
+    // yang tidak bisa dipanggil.
+    //
+    // `SEL_ALIAS` (dalam `stmt_impor`) lalu mengarahkan sel pengikat ini ke sel
+    // milik modul pengekspor, sehingga keduanya benar-benar berbagi nilai.
+    // Iterasi mengikuti urutan statement (bukan `impor_slot_`, yang urutannya
+    // tidak dijamin) supaya bytecode deterministik.
+    //
+    // Pemindaian masuk ke blok anak: `coba { impor { x } saka "..."; ... }`
+    // juga butuh sel pengikat. Impor boleh muncul di mana saja dalam badan
+    // modul, dan slot pengikatnya selalu milik frame modul.
+    for (const ast::Node* s : semua_impor) {
+        const auto* im = static_cast<const ast::ImporDeklarasi*>(s);
+        if (im->ada_namespace) continue;  // impor namespace mengikat objek ekspor
+        for (const ast::ImporSpesifikasi& sp : im->daftar) {
+            const std::size_t slot = slot_impor(sp.impor);
+            emit(Op::MBOH);
+            emit(Op::SEL_BUAT);
+            emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(slot));
+            sel_slot_.emplace(std::string(sp.impor), 0);
         }
     }
 
@@ -302,16 +436,45 @@ HasilKompilasi Compiler::compile(const ast::Program* prog) {
         sudah_dinaikkan.insert(std::string(nama));
     }
 
+    // 0d. Statement `impor` dijalankan SETELAH hoisting ekspor, tapi SEBELUM
+    // statement biasa apa pun.
+    //
+    // Alasannya urutan sel. Pengikatan impor disimpan sebagai `SelObj` di slot
+    // lokal (dibuat di 0c). Kalau `impor` baru dijalankan SETELAH fungsi
+    // ter-hoist dibuat, `CLOSURE`-nya sudah berjalan dan upvalue-nya terikat ke
+    // SEL pengikat yang saat itu belum diarahkan -- nilainya masih kosong.
+    //
+    // Urutannya berlawanan dengan yang terlihat: `ekspor` fungsi harus lebih
+    // dulu, supaya impor siklik (`a impor b; b impor a`) menemukan fungsi yang
+    // sudah di-hoist di modul lain. `impor` sendiri baru setelah itu, tapi
+    // tetap sebelum statement biasa -- sesuai semantik ES, impor selalu
+    // di-hoist.
+    for (const ast::Node* s : semua_statement) {
+        if (s == nullptr || s->kind != NK::ImporDeklarasi) continue;
+        statement(s);
+        dinaikkan.push_back(s);
+    }
+
     // Pra-walk TDZ: semua pengikat leksikal di modul ini dapat slot lebih dulu.
     for (const ast::Node* s : semua_statement) pradaftar_tdz(s);
 
     for (const ast::Node* s : semua_statement) {
-        const bool sudah = std::find(dinaikkan.begin(), dinaikkan.end(), s) != dinaikkan.end();
-        statement(s, sudah);
+        if (std::find(dinaikkan.begin(), dinaikkan.end(), s) != dinaikkan.end()) continue;
+        statement(s, false);
     }
 
-    // Ekspor tertunda (`ekspor { x }` mendahului deklarasinya).
+    // Ekspor tertunda (`ekspor { x }` mendahului deklarasinya, atau re-export).
     for (const EksporTunda& t : ekspor_tunda_) {
+        if (t.dari_modul) {
+            // Re-export: teruskan sel yang sama dari modul asal. Membungkus ulang
+            // akan membuat dua sel terpisah dan live binding ikut terputus.
+            const std::size_t k = tambah_nama(Value::obyek(rt::buat_teks(heap_, t.lokal)));
+            emit(Op::GET_IMPORT, static_cast<std::uint16_t>(t.idx_modul), static_cast<std::uint16_t>(k));
+            const std::size_t ke = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, t.ekspor)));
+            emit(Op::TEKS, static_cast<std::uint16_t>(ke));
+            emit(Op::EXPORT, 0);
+            continue;
+        }
         const auto s = cari_slot(t.lokal);
         if (s == std::string::npos) {
             diagnosa_di("S503", "Jeneng \"" + std::string(t.lokal) + "\" ora kanggo diekspor.",
@@ -319,6 +482,7 @@ HasilKompilasi Compiler::compile(const ast::Program* prog) {
             continue;
         }
         emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+        if (!adalah_sel(t.lokal)) emit(Op::SEL_BUAT);
         const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, t.ekspor)));
         emit(Op::TEKS, static_cast<std::uint16_t>(k));
         emit(Op::EXPORT, 0);

@@ -28,7 +28,7 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | VM (fungsi, closure, kelas, pola, try/catch, generator lazy) | selesai |
 | GC mark-and-sweep presisi | selesai |
 | Pustaka standar | sebagian (`tulis`, `Teks`, `Matematika`, `Dhaptar`, `Teks`, `StdAksara`, `Wektu`, `JSON` minimum) |
-| Modul ES (`impor`/`ekspor`) | selesai — impor, ekspor, alias, default, re-export, impor siklik (`docs/modules.md`) |
+| Modul ES (`impor`/`ekspor`) | selesai — impor, ekspor, alias, default, re-export, impor siklik, **live binding** (`docs/modules.md`) |
 | Generator lazy (`gawe*` + `metokake`) | selesai — tanpa fiber, tak berhingga bisa dipakai (`docs/generator.md`) |
 | async/await + loop acara | selesai (deterministik, tanpa fiber — `docs/async.md`) |
 | `jawa tes` | selesai — kerangka uji level bahasa (`docs/testing.md`) |

@@ -474,6 +474,27 @@ void VM::tutup_upvalue_frame(std::size_t stack_base) {
 }
 
 Upvalue* VM::cari_atau_buat_upvalue(std::size_t stack_index) {
+    // Slot yang berisi `SelObj` (pengikatan impor, atau variabel modul yang
+    // diekspor) harus menghasilkan upvalue yang TERIKAT ke sel, bukan ke slot
+    // stack. Kalau terikat ke slot, begitu frame selesai nilainya hilang --
+    // dan impor berubah kembali jadi salinan, yaitu justru live binding yang
+    // ingin kita hilangkan.
+    //
+    // Upvalue terikat-sel sengaja tidak masuk `open_upvalues_`: isinya bukan
+    // milik stack frame mana pun, jadi tidak perlu ditutup.
+    if (stack_index < stack_.size()) {
+        auto* s = static_cast<rt::SelObj*>(objek(stack_[stack_index]));
+        if (s != nullptr && s->h.kind == OK::Sel) {
+            for (const auto& u : sel_tutup_) {
+                if (u != nullptr && u->sel == s) return u.get();
+            }
+            auto baru = std::make_unique<Upvalue>();
+            baru->sel = s;
+            Upvalue* ptr = baru.get();
+            sel_tutup_.push_back(std::move(baru));
+            return ptr;
+        }
+    }
     // `open_upvalues_` diurutkan menurun menurut lokasi stack.
     for (Upvalue* u : open_upvalues_) {
         if (u->lokasi == &stack_[stack_index]) return u;

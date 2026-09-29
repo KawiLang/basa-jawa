@@ -2,6 +2,94 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/) + semver.
 
+## [0.10.0] — Live binding modul ES
+
+### Ditambahkan
+- **Live binding.** `ekspor` variabel sekarang adalah *live binding*: importer
+  mengikat sel yang sama dengan modul pengekspor, bukan salinan nilainya.
+  Perubahan dari arah mana pun langsung terlihat di semua pengimpor, termasuk
+  lewat rantai re-export.
+
+  ```
+  // penghitung.jw
+  ana hitung = 0;
+  ekspor { hitung };
+  gawe naik(n) { hitung = hitung + n; bali hitung; }
+  ekspor { naik };
+
+  // pemakai.jw
+  impor { hitung, naik } saka "./penghitung.jw";
+  tulis(hitung);      // 0
+  naik(5);
+  tulis(hitung);      // 5   <- berubah, bukan salinan
+  hitung = 100;
+  tulis(naik(1));     // 101 <- perubahan dari importer juga terlihat
+  ```
+
+- `rt::SelObj` — satu nilai yang dibaca/tulis bersama. Dipakai untuk dua hal:
+  variabel modul yang diekspor, dan pengikatan impor.
+- Opcode baru: `GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`. Opcode `GET_CELL` &
+  `SET_CELL` yang sejak awal ada di `opcodes.def` sebagai *dead opcode* kini
+  diimplementasikan.
+- `Frame::impor_modul` — daftar modul yang dimuat statement `impor` pada frame
+  itu, supaya `GET_IMPORT` tahu modul mana yang dibaca.
+- `tests/tes/modul/` — berkas uji live binding tiga modul (`live.tes.jw`,
+  `sumber.jw`, `perantara.jw`), termasuk pengikatan yang diteruskan lewat
+  re-export.
+- `docs/modules.md` — bagian "Live binding": semantik, cara kerja, dan apa yang
+  perlu diperhatikan.
+
+### Diperbaiki (bug nyata)
+
+- **Penulisan tidak melewati alias.** `SET_CELL` menulis `sel->nilai` langsung,
+  padahal sel pengikat impor diarahkan ke sel modul asal. Akibatnya importer
+  bisa menulis, tapi modul asal dan pengimpor lain tidak pernah melihat
+  perubahannya — live binding separuh jalan. Sekarang lewat `SelObj::tulis()`,
+  yang menelusuri rantai alias sampai ke akar.
+- **`Frame&` menggantung setelah `IMPORT`.** Opcode `IMPORT` menyimpan indeks
+  modul pada `frames_.back()`, tapi `muat_modul()` mendorong lalu mem-pop frame
+  modul. Referensi `f` sesudah itu menunjuk memori yang sudah dibebaskan.
+  Gejalanya: impor siklik gagal secara tidak-deterministik. Semua akses frame
+  sesudah `muat_modul` kini ditulis ulang lewat `frames_.back()`.
+
+### Perubahan desain
+
+Tiga hal harus berubah supaya live binding bisa bekerja; semuanya punya alasan
+yang sama (urutan sel), dan urutannya berlawanan dengan yang terlihat:
+
+1. **Sel pengikat impor dibuat paling awal**, sebelum statement apa pun
+   dikompilasi. Kalau tidak, closure yang ter-hoist menangkap slot yang isinya
+   `mboh` saat `CLOSURE` berjalan, dan `cari_atau_buat_upvalue` mengikat
+   upvalue ke *slot stack* alih-alih sel. Begitu `impor` mengisi slot, upvalue
+   itu membaca objek `SelObj` dan pemanggilannya gagal.
+2. **`SEL_ALIAS`**, bukan penggantian slot: sel pengikat diarahkan ke sel
+   pengekspor. Kalau slot-nya diganti, upvalue yang sudah terikat ke sel
+   pengikat akan membaca objek sel yang salah.
+3. **Akses variabel yang diekspor memakai `GET_CELL`/`SET_CELL`**, bukan
+   `GET_LOCAL`/`SET_LOCAL`. Kompiler menandai nama itu lebih awal
+   (`Compiler::tandai_sel_ekspor`), karena `ekspor { n }` boleh ditulis
+   *setelah* `n` dipakai.
+
+Statement `impor` juga dipindah: ia dijalankan setelah hoist ekspor, tapi
+sebelum statement biasa. Ekspor harus lebih dulu supaya impor siklik
+(`a impor b; b impor a`) menemukan fungsi yang sudah ter-hoist di modul lain.
+
+### Verifikasi
+
+| Preset | Hasil |
+|---|---|
+| `release` | build 0 warning; `ctest` 8/8 hijau; 93/93 assertion `jawa tes` |
+| `asan` (ASan+LSan) | 8/8 hijau |
+| `ubsan` | 8/8 hijau; 0 runtime error |
+| `nonanbox` (mode nilai 16-byte) | 8/8 hijau |
+| `fuzz` | 5/5 hijau |
+| `--gc-stress` | 15/15 contoh emas + 93/93 assertion |
+
+**Metrik**: 123 opcode (+`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`), 20.032 baris
+C++, 3 berkas uji bahasa / 93 assertion.
+
+---
+
 ## [0.9.0] — `jawa tes`: kerangka uji level bahasa
 
 ### Ditambahkan

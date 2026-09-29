@@ -144,7 +144,7 @@ Belum: TDZ, `pilih` dengan pola, hidden class (inline cache). Lihat
 - [x] Generator lazy `gawe*` + `metokake` (continuation, tanpa fiber — D-028)
 - [x] `Wektu` (timer) + method Janji (`then`, `tangkep`)
 - [x] Modul ES: cache, impor siklik, alias, `baku`, re-export (D-025 s/d D-027)
-- [ ] Live binding (ekspor bukan nilai-yang-dihidupi) — lihat `docs/modules.md`
+- [x] Live binding (ekspor variabel dibagi lewat sel; lihat `docs/modules.md`)
 - [ ] Async generator (`gawe mengko`), `kanggo enteni`
 - [ ] `Janji.all` / `race` / `anySelesai`
 

@@ -41,6 +41,7 @@ using support::SourcePos;
 
 class VM;
 class Module;
+struct ModuleRecord;
 
 namespace stdlib {
 /// Tabel global & method pustaka standar milik VM ini (lihat `stdlib/stdlib.h`).
@@ -53,18 +54,31 @@ struct State;
 /// Owned by VM: `open_upvalues_` menyimpan daftar sel yang masih terbuka; sel
 /// yang sudah ditutup dibebaskan. Kita memakai `std::vector<Upvalue>` sebagai
 /// arena agar tidak ada `new`/`delete` mentah di luar heap GC.
+///
+/// `sel` dipakai untuk **live binding modul ES**: kalau slot yang di-capture
+/// berisi `SelObj` (pengikatan impor), upvalue ini terikat ke sel itu dan bukan
+/// ke slot stack. Isi sel$dibaca langsung, jadi penulisan dari modul
+/// pengekspor terlihat di sini. `close()` tidak berlaku untuk upvalue
+/// terikat-sel -- nilainya tidak ada di stack frame mana pun.
 struct Upvalue {
-    Value* lokasi = nullptr;      ///< nullptr bila sudah `close`
+    Value* lokasi = nullptr;      ///< nullptr bila sudah `close` atau terikat-sel
     Value nilai = Value::mboh();  ///< nilai bila sudah `close`
+    rt::SelObj* sel = nullptr;    ///< bila tidak-null: live binding, bukan slot stack
     bool open() const noexcept { return lokasi != nullptr; }
+    bool terikat_sel() const noexcept { return sel != nullptr; }
     void close() noexcept {
         if (lokasi == nullptr) return;
         nilai = *lokasi;
         lokasi = nullptr;
     }
-    [[nodiscard]] Value get() const noexcept { return lokasi != nullptr ? *lokasi : nilai; }
+    [[nodiscard]] Value get() const noexcept {
+        if (sel != nullptr) return sel->baca();
+        return lokasi != nullptr ? *lokasi : nilai;
+    }
     void set(Value v) noexcept {
-        if (lokasi != nullptr) {
+        if (sel != nullptr) {
+            sel->tulis(v);
+        } else if (lokasi != nullptr) {
             *lokasi = v;
         } else {
             nilai = v;
@@ -118,6 +132,10 @@ struct Frame {
     /// Frame ini adalah AKAR generator (bukan fungsi yang dipanggil dari
     /// body-nya). Penanda ini menentukan titik pemangkasan saat `metokake`.
     bool akar_agen = false;
+    /// Modul yang dimuat statement `impor` pada frame ini, sesuai indeks
+    /// operand `IMPORT`. `GET_IMPORT a b` memakainya untuk menemukan sel live
+    /// binding. Frame modul punya daftar ini; frame fungsi biasa kosong.
+    std::vector<ModuleRecord*> impor_modul;
 };
 
 /// Modul: satu berkas .jw yang telah dikompilasi.

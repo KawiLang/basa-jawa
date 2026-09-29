@@ -921,6 +921,18 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 const std::string_view spesifikasi = sv(nama);
                 const std::string dir = pos_berkas_.empty() ? std::string()
                                                             : pos_berkas_.substr(0, pos_berkas_.find_last_of('/'));
+                // Catat modul ini di frame SEBELUM evaluates, supaya impor
+                // siklik (`a impor b; b impor a`) menemukan `b` yang belum selesai
+                // dievaluasi -- dan supaya `GET_IMPORT` tahu modul mana yang
+                // dibaca. Entri dibuat kosong dulu karena `muat_modul` baru
+                // mendaftarkan modul saat dipanggil.
+                //
+                // CATATAN: `muat_modul` mendorong & mem-pop frame modul, jadi
+                // `f` (referensi ke `frames_.back()`) SETELAH pemanggilan itu
+                // menunjuk memori yang sudah dibebaskan. Karena itu akses frame
+                // sesudahnya ditulis ulang lewat `frames_.back()`.
+                const std::size_t idx = static_cast<std::size_t>(ins.a);
+                if (idx == frames_.back().impor_modul.size()) frames_.back().impor_modul.push_back(nullptr);
                 const Value ekspor = muat_modul(spesifikasi, dir);
                 if (galat_.ada) {
                     // `muat_modul` sudah menyiapkan galat; teruskan sebagai galat
@@ -930,7 +942,92 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                     if (unwind_galat(v)) break;
                     return Status::Galat;
                 }
+                if (!frames_.empty() && idx < frames_.back().impor_modul.size()) {
+                    frames_.back().impor_modul[idx] = cari_modul(selesaikan_path(spesifikasi, dir));
+                }
                 dorong(ekspor);
+                break;
+            }
+            // `GET_IMPORT a b`: sel live binding untuk nama `nama_properti[b]`
+            // dari modul yang diimpor pada indeks `a`. Sel inilah yang membuat
+            // `ekspor` bersifat live: importer menyimpan sel, bukan salinan
+            // nilainya, jadi penulisan dari modul pengekspor langsung terlihat.
+            case Op::GET_IMPORT: {
+                const std::string_view kunci = sv(c->nama_properti[ins.b]);
+                ModuleRecord* asal = nullptr;
+                if (ins.a < f.impor_modul.size()) asal = f.impor_modul[ins.a];
+                ObyekObj* ekspor = nullptr;
+                if (asal != nullptr && asal->ekspor.is_obyek()) {
+                    ekspor = static_cast<ObyekObj*>(asal->ekspor.mutable_pointer());
+                } else if (modul_aktif != nullptr && modul_aktif->ekspor.is_obyek()) {
+                    ekspor = static_cast<ObyekObj*>(modul_aktif->ekspor.mutable_pointer());
+                }
+                Value hasil;
+                const bool ada = ekspor != nullptr &&
+                                 ekspor->get(Value::obyek(rt::buat_teks(heap_, kunci)), hasil) &&
+                                 hasil.is_obyek() && hasil.pointer() != nullptr &&
+                                 static_cast<const Obj*>(hasil.pointer())->h.kind == OK::Sel;
+                if (!ada) {
+                    const Value k = buat_kleru("KleruModul",
+                                              "Modul ora ninggekspor \"" + std::string(kunci) +
+                                                  "\" minangka variabel (live binding).");
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
+                }
+                dorong(hasil);
+                break;
+            }
+            // `SEL_BUAT`: bungkus nilai di puncak stack menjadi sel baru.
+            case Op::SEL_BUAT: {
+                const Value v = ambil();
+                auto* s = heap_.alokasi<rt::SelObj>();
+                s->h.kind = OK::Sel;
+                s->nilai = v;
+                dorong(Value::obyek(s));
+                break;
+            }
+            // `SEL_ALIAS a`: arahkan sel di slot `a` ke sel yang baru dipop.
+            //
+            // Sel pengikat impor dibuat lebih awal (agar closure ter-hoist bisa
+            // menangkapnya), lalu diarah ke sel milik modul pengekspor begitu
+            // `impor` dijalankan. Tanpa ini, upvalue closure ter-hoist akan
+            // menangkap slot stack yang isinya diganti, dan pembacaannya
+            // menghasilkan objek `SelObj` alih-alih nilainya.
+            case Op::SEL_ALIAS: {
+                const Value target = ambil();
+                Obj* o = objek(stack_[f.slot_base + ins.a]);
+                auto* sel = (o != nullptr && o->h.kind == OK::Sel) ? static_cast<rt::SelObj*>(o) : nullptr;
+                auto* t = (target.is_obyek() && target.pointer() != nullptr &&
+                           static_cast<const Obj*>(target.pointer())->h.kind == OK::Sel)
+                              ? static_cast<rt::SelObj*>(target.mutable_pointer())
+                              : nullptr;
+                if (sel != nullptr && t != nullptr && t != sel) sel->alias = t;
+                break;
+            }
+            // Baca/tulis lewat sel live binding. Slot lokal pengikatan impor
+            // berisi `SelObj`; variabel modul yang diekspor memakai sel yang
+            // sama, jadi pengekspor dan pengimpor berbagi satu nilai.
+            case Op::GET_CELL: {
+                const Value& s = stack_[f.slot_base + ins.a];
+                Obj* o = objek(s);
+                auto* sel = (o != nullptr && o->h.kind == OK::Sel) ? static_cast<rt::SelObj*>(o) : nullptr;
+                dorong(sel != nullptr ? sel->baca() : s);
+                break;
+            }
+            case Op::SET_CELL: {
+                const Value v = ambil();
+                Obj* o = objek(stack_[f.slot_base + ins.a]);
+                auto* sel = (o != nullptr && o->h.kind == OK::Sel) ? static_cast<rt::SelObj*>(o) : nullptr;
+                if (sel != nullptr) {
+                    // `tulis`, bukan `nilai = ...`: slot pengikatan impor berisi
+                    // sel yang DIARAHKAN ke sel modul pengekspor. Menulis ke
+                    // `nilai` langsung hanya mengubah sel pengikat, sehingga
+                    // modul asal (dan semua pengimpor lain) tidak melihatnya.
+                    sel->tulis(v);
+                } else {
+                    stack_[f.slot_base + ins.a] = v;
+                }
+                dorong(v);
                 break;
             }
             // `GET_EXPORT`: baca nama dari objek ekspor modul. Berbeda dengan
@@ -1104,7 +1201,7 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 }
                 break;
             }
-            case Op::SET_CELL: case Op::GET_CELL: case Op::CLOSE_UPVAL: {
+            case Op::CLOSE_UPVAL: {
                 dorong(Value::mboh());
                 break;
             }

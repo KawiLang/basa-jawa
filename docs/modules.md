@@ -134,13 +134,74 @@ Galat dari `IMPORT` diteruskan lewat `unwind_galat`, bukan langsung
 gagal dihapus dari cache supaya importer berikutnya tidak memakai modul
 separuh jadi.
 
+## Live binding
+
+`ekspor` variabel adalah **live binding**: importer mengikat *sel* yang sama
+dengan modul pengekspor, bukan salinan nilainya.
+
+```
+// penghitung.jw
+ana hitung = 0;
+ekspor { hitung };
+gawe naik(n) { hitung = hitung + n; bali hitung; }
+ekspor { naik };
+```
+
+```
+// pemakai.jw
+impor { hitung, naik } saka "./penghitung.jw";
+
+tulis(hitung);        // 0
+naik(5);
+tulis(hitung);        // 5  <- berubah, bukan salinan
+hitung = 100;
+tulis(naik(1));      // 101 <- perubahan dari importer juga terlihat
+```
+
+Perubahan dari arah mana pun langsung terlihat di semua pihak. Berlaku juga
+untuk re-export:
+
+```
+// perantara.jw
+impor { hitung } saka "./penghitung.jw";
+ekspor { hitung minangka hitung_via_perantara };
+```
+
+`perantara` meneruskan **sel yang sama**, bukan membuat sel baru -- kalau
+dibungkus ulang, rantai live binding terputus di tengah dan pengimpor
+`perantara` tidak lagi melihat perubahan.
+
+### Bagaimana cara kerjanya
+
+Setiap variabel modul yang diekspor, dan setiap pengikatan impor, disimpan
+sebagai `rt::SelObj` di slot lokal modul:
+
+1. **Sel pengikat impor dibuat paling awal**, sebelum statement apa pun
+   dikompilasi. Closure yang ter-hoist menangkap sel ini sebagai upvalue, dan
+   upvalue terikat-sel membaca lewat sel, bukan lewat slot stack.
+2. **`import` diarahkan ke sel modul asal.** Opcode `SEL_ALIAS` membuat sel
+   pengikat menunjuk sel milik pengekspor, jadi keduanya benar-benar berbagi
+   satu nilai. Rantai alias bisa lebih dari satu tingkat, jadi penelusuran
+   dilakukan sampai ke akar.
+3. **Akses lewat `GET_CELL`/`SET_CELL`**, bukan `GET_LOCAL`/`SET_LOCAL`.
+   Impor namespace (`impor * minangka M`) mengikat objek ekspor biasa;
+   `VM::ambil_properti` yang membongkar sel di dalamnya, jadi `M.nilai` terbaca
+   sebagai nilainya.
+
+Objek ekspor modul menyimpan `SelObj` untuk setiap nama. Fungsi dan kelas juga
+dibungkus dalam sel, supaya `impor { f }` tetap live secara bentuk meskipun
+nilainya memang tidak pernah berubah.
+
+### Yang perlu diperhatikan
+
+- Impor selalu di-hoist: `import` dijalankan setelah ekspor fungsi ter-hoist
+  tapi sebelum statement biasa. Urutan ini bukan gaya penulisan -- ia yang
+  membuat impor siklik dan closure ter-hoist sama-sama benar.
+- `impor { x } saka "a"; impor { x } saka "b";` hanya mengikat satu slot; nama
+  yang sama dari dua modul akan menunjuk sel yang terakhir.
+
 ## Batasan
 
-- **Bukan live binding.** `ekspor tetep N = 1;` diimpor, lalu `N` diubah di
-  modul asalnya, importer **tidak** melihat perubahan. Yang diedarkan adalah
-  nilai saat statement `ekspor` dievaluasi. Kalau nilai yang berubah perlu
-  dibagikan, ekspor *fungsi* yang membaca state modul — closure-nya tetap
-  hidup dan melihat perubahan.
 - Jalur modul tidak dinormalkan sepenuhnya: `..` tidak di-resolve, dan symlink
   tidak diikuti. Path relatif bertingkat (`../../a.jw`) bekerja sebagai
   penggabungan teks, yang cukup untuk struktur proyek biasa.

@@ -149,6 +149,8 @@ private:
     struct EksporTunda {
         std::string_view lokal;
         std::string_view ekspor;
+        bool dari_modul = false;    ///< re-export (`saka "..."`)
+        std::size_t idx_modul = 0;  ///< indeks modul pada `Frame::impor_modul`
     };
     /// Deklarasi yang dibungkus `ekspor`, atau `nullptr`.
     [[nodiscard]] static const ast::Node* deklarasi_ekspor(const ast::Node* n);
@@ -203,6 +205,37 @@ private:
     std::vector<EksporTunda> ekspor_tunda_;
     /// Slot pengikat impor yang sudah dialokasikan di awal modul.
     std::unordered_map<std::string, std::size_t> impor_slot_;
+    /// Nama variabel modul yang diekspor -> slot-nya. Pengikatan seperti ini
+    /// disimpan sebagai `SelObj` di slot, dan semua baca/tulisnya memakai
+    /// `GET_CELL`/`SET_CELL`. Itulah yang membuat `ekspor` menjadi live binding
+    /// (lihat `docs/modules.md`).
+    std::unordered_map<std::string, std::size_t> sel_slot_;
+    /// Nama diekspor yang tidak bisa jadi live binding (mis. destruktur), dan
+    /// alasannya. Dipakai untuk pesan diagnostik.
+    std::unordered_map<std::string, std::string> sel_gagal_;
+    /// Semua nama yang muncul di `ekspor` (fungsi/kelas/variabel).
+    std::unordered_map<std::string, std::size_t> ekspor_nama_;
+    /// Nama variabel modul non-destruktur. Dipakai untuk membedakan mana yang
+    /// perlu sel.
+    std::unordered_map<std::string, std::size_t> variabel_modul_;
+    /// Indeks modul untuk statement `impor` berikutnya, dipakai sebagai
+    /// operand `IMPORT` (lihat `Frame::impor_modul`).
+    std::size_t impor_modul_ke_ = 0;
+    /// Nama variabel modul yang diekspor, apa pun caranya diekspor
+    /// (`ekspor { n }`, `ekspor n`, `ekspor { n minangka m }`). Dikumpulkan
+    /// lebih awal supaya statement mana pun yang membaca `n` tahu bahwa
+    /// aksesnya harus lewat sel.
+    void kumpulkan_ekspor_variabel(const ast::Node* n, int kedalaman = 0);
+    /// Kumpulkan semua statement `impor` di bawah `n`, termasuk yang ada di
+    /// dalam blok (impor boleh ditulis di mana saja dalam badan modul).
+    void kumpulkan_impor(const ast::Node* n, std::vector<const ast::Node*>& keluar);
+    void kumpulkan_impor(const std::vector<ast::Node*>& statements, std::vector<const ast::Node*>& keluar) {
+        for (const ast::Node* s : statements) kumpulkan_impor(s, keluar);
+    }
+    /// Tandai nama variabel modul yang diekspor sebagai slot sel.
+    void tandai_sel_ekspor(const std::vector<ast::Node*>& statements);
+    /// Apakah `nama` adalah variabel modul yang diekspor (slot sel)?
+    [[nodiscard]] bool adalah_sel(std::string_view nama) const;
 };
 
 }  // namespace jawa::compile

@@ -52,6 +52,7 @@ class HimpunanObj;
 class RegexObj;
 class TanggalObj;
 class KleruObj;
+class SelObj;
 class SimbolObj;
 class BigIntObj;
 class GeneratorObj;
@@ -84,6 +85,7 @@ enum class OK : uint8_t {
     Simbol,
     BigInt,
     Generator,     ///< hasil pemanggilan `gawe*` (lazy; lihat D-028)
+    Sel,           ///< sel nilai yang dipakai live binding modul ES
     BoundFn,
     Proxy,         ///< belum didukung
     ArrayBuffer,   ///< typed array
@@ -543,6 +545,51 @@ class TanggalObj : public Obj {
 public:
     static constexpr OK kKind = OK::Tanggal;
     double milidetik = 0.0;  ///< ms sejak epoch UTC
+};
+
+// ---------------------------------------------------------------------------
+// Sel (live binding modul ES)
+// ---------------------------------------------------------------------------
+
+/// Satu nilai yang dibaca dan ditulis bersama oleh modul pengekspor dan semua
+/// modul pengimpor-nya.
+///
+/// Ini yang membuat `ekspor` menjadi **live binding**: importer menyimpan sel,
+/// bukan salinan nilainya. Modul pengekspor menulis lewat sel yang sama, jadi
+/// perubahan di sana langsung terlihat di importer -- persis seperti
+/// `export let counter` di ECMAScript.
+///
+/// `alias` dipakai untuk pengikatan impor. Sel pengikat dibuat lebih dulu
+/// (sebelum statement `impor` dijalankan) supaya closure yang ter-hoist bisa
+/// menangkapnya; begitu modulnya benar-benar diimpor, sel itu diarahkan ke sel
+/// milik modul pengekspor. Tanpa ini, closure ter-hoist akan menangkap slot
+/// stack yang isinya nanti diganti -- dan upvalue-nya membaca objek `SelObj`,
+/// bukan isinya.
+///
+/// Nama pengikat impor pada modul pengimpor adalah slot lokal yang berisi
+/// `SelObj` ini; opcode `GET_CELL`/`SET_CELL` menerjemahkan baca/tulis menjadi
+/// akses sel.
+class SelObj : public Obj {
+public:
+    static constexpr OK kKind = OK::Sel;
+    Value nilai = Value::mboh();
+    SelObj* alias = nullptr;  ///< bila tidak-null: nilai sebenarnya ada di sini
+
+    /// Sel yang benar-benar menyimpan nilai.
+    ///
+    /// Rantai alias bisa lebih dari satu tingkat: re-export
+    /// (`ekspor { y } saka "./tiga.jw"`) meneruskan sel milik modul lain, dan
+    /// modul pengimpor mengarahkan selnya ke sel itu -- jadi `a -> b -> c`.
+    /// Karena itu penelusuran dibuat sampai ke akar, bukan satu tingkat.
+    [[nodiscard]] SelObj* sel_asli() noexcept {
+        SelObj* s = this;
+        for (int d = 0; d < 16 && s->alias != nullptr; ++d) s = s->alias;
+        return s;
+    }
+    [[nodiscard]] Value baca() const {
+        return const_cast<SelObj*>(this)->sel_asli()->nilai;
+    }
+    void tulis(Value v) { sel_asli()->nilai = v; }
 };
 
 // ---------------------------------------------------------------------------
