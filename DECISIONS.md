@@ -391,6 +391,85 @@ wajar. Token kata kunci sudah membawa teksnya di `Token::teks`, jadi tidak ada
 kerugian informasi. Tidak ada ambiguitas: `a.b` di posisi ekspresi adalah akses
 properti; setelah `.` yang diharapkan adalah nama, bukan operator.
 
+---
+
+## D-025. Modul dievaluasi sinkron di tengah loop bytecode
+
+**Konteks.** Modul A yang mengimpor B harus menjalankan body B sampai selesai
+sebelum A bisa memakai ekspornya. Satu jalan alternatif adalah menjalankan B di
+loop bytecode bersarang (reentrancy) — tapi itu berarti jalur eksekusi kedua
+yang bisa menyimpang dari loop utama (melanggar D-003/D-015).
+
+**Keputusan.** Linker (`src/vm/linker.cpp`) mendorong frame modul ke
+`VM::frames_` yang SAMA dan menjalankan `jalankan_loop(frame_awal + 1)`. Loop
+berhenti begitu jumlah frame turun kembali, jadi modul A melanjutkan tepat dari
+instruksi setelah `IMPORT`.
+
+**Alasan.**
+
+- Tidak ada loop bersarang: semua operasi bytecodec tetap di satu loop, dengan
+  satu bentuk lompatan dan satu bentuk galat.
+- Modul punya `ModuleRecord` sendiri dengan peta `global` sendiri, ditumpuk di
+  `VM::modul_tumpukan_`. `GET_GLOBAL` melihat modul teratas, jadi dua modul
+  dengan nama variabel yang sama tidak bertabrakan.
+- Deep import (a→b→c→d) tidak menambah kedalaman stack C++, cuma menambah frame
+  bytecode.
+
+**Catatan implementasi.** Ambang loop dihitung dari JUMLAH FRAME, bukan indeks
+stack. memakai indeks stack membuat loop langsung keluar (kondisi `2 < 3` sudah
+terpenuhi) sehingga body modul tak pernah berjalan — gejalanya `ekspor` melihat
+`modul_aktif == nullptr`.
+
+---
+
+## D-026. Tiga aturan hoisting supaya impor siklik bisa bekerja
+
+**Konteks.** `a.jw` mengimpor `b.jw` dan `b.jw` mengimpor `a.jw`. Keduanya
+saling memanggil. Tanpa penanganan khusus, salah satunya melihat objek ekspor
+yang masih kosong.
+
+**Keputusan.** Tiga aturan, semuanya di `Compiler::compile`:
+
+1. **Fungsi & kelas yang diekspor di-hoist ke atas modul.** `ekspor gawe f()`
+   dikompilasi sebelum statement `impor` mana pun, sehingga `f` sudah ada di
+   objek ekspor saat modul lain membacanya.
+2. **Slot pengikat impor dialokasikan lebih dulu** (tanpa emits) sebelum
+   hoisting. Tanpa ini, fungsi yang di-hoist meng-capture `g` sebagai **nama
+   global** (karena `g` belum jadi slot lokal saat hoisting berjalan), dan
+   pemanggilannya gagal.
+3. **`ekspor { x }` boleh mendahului deklarasi.** Entri yang slot-nya belum ada
+   ditunda ke akhir body modul.
+
+**Alasan.** Aturan 1 & 2 harus bersama. Aturan 1 saja tidak cukup — tanpa
+pre-alokasi slot, capture upvalue-nya salah. Aturan 3 murah dan membuat
+`ekspor` tidakzys order-dependent, yang sulit dibaca.
+
+**Batas yang diterima.** Hanya deklarasi fungsi/kelas yang bisaBootstrap lewat
+siklus. `tetep`/`ana` yang saling diimpor akan melihat `mboh` — sama seperti
+ECMAScript, di mana yang boleh mengarahkan bootstrap modul adalah deklarasi
+fungsi.
+
+---
+
+## D-027. Nama yang tidak diekspor adalah galat, bukan `mboh`
+
+**Konteks.** `GET_PROP` mengembalikan `mboh` untuk nama yang tidak ada — itu
+benar untuk objek biasa. Tapi untuk impor modul, `impor { hngal } saka "./a.jw"`
+adalah kesalahan ketik program, dan diam-diam menghasilkan `undefined` adalah
+sumber bug yang mahal dicari.
+
+**Keputusan.** Opcode baru `GET_EXPORT` (grup `modul`) yang melempar
+`KleruModul` bila nama tidak ada, dengan pesan yang **mencantumkan nama yang
+diekspor modul**. Opcode `GET_PROP` tidak berubah.
+
+**Alasan.**
+
+- Galat ada di tempat yang salah ketik terjadi, bukan Diameter frame pemanggil.
+- Pesan galat menyebutkan kandidat yang benar — kesalahan yang paling sering
+  adalah beda ejaan atau lupa `ekspor`.
+- Galat diteruskan lewat `unwind_galat`, jadi `coba`/`tangkep` di modul
+  pemanggil bisa menanganinya (bukan `galat_.ada` langsung).
+
 
 ---
 

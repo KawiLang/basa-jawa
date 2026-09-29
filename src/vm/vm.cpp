@@ -62,6 +62,15 @@ VM::VM(const VMOptions& opt) : opt_(opt), heap_(opt.gc_stress, opt.maks_memori_m
         if (modul_aktif != nullptr) {
             for (const auto& kv : modul_aktif->global) rv.rooted(kv.second);
         }
+        // Semua modul yang sudah dimuat: closure entri, objek ekspor, dan
+        // variabel modul. Tanpa ini objek ekspor bisa tersapu di tengah
+        // `ObyekObj::set` (yang mengalokasikan kunci), sehingga `impor` membaca
+        // ekspor yang sudah dibebaskan.
+        for (const ModuleRecord& m : modul_store_) {
+            if (m.entri != nullptr) rv.rooted(Value::obyek(m.entri));
+            rv.rooted(m.ekspor);
+            for (const auto& kv : m.global) rv.rooted(kv.second);
+        }
         // Antrean async: Janji yang menunggu, nilai hasil, handler, dan Janji
         // turunan. Tanpa ini, Janji pada `Wektu.tundha` bisa tersapu sebelum
         // mikrotugas dijalankan.

@@ -277,3 +277,106 @@ Rilis ketiga. 0.3.0 menyelesaikan runtime; 0.4.0 menutup Fase 6 sehingga
 - `Wektu.tundha` hanya mengurutkan timer; tidak menunggu ms sungguhan.
 
 ---
+
+## [0.5.0] — Fase 5: linker modul ES
+
+Rilis keempat. 0.4.0 menutup async/await; 0.5.0 membuat program multi-berkas
+benar-benar jalan. `impor`/`ekspor` sebelumnya di-parse dengan benar tetapi
+`IMPORT`/`EXPORT` di VM hanya pushing objek kosong.
+
+### Ditambahkan
+
+**Linker modul** (`src/vm/linker.cpp`, baru)
+- `VM::muat_modul`: resolusi path relatif terhadap direktori modul pengimpor,
+  baca, kompilasi (lex → parse → compile), evaluasi, dan kembalikan objek ekspor.
+- `VM::selesaikan_path` menormalkan path (`./` dibuang, `/` dirapatkan) sehingga
+  kunci cache konsisten.
+- `VM::kompilasi_modul` & `VM::evaluasi_modul` dipisah dari `jalankan_sumber`
+  supaya alur boot modul utama dan modul terimpor memakai kode yang sama.
+- `VMOptions::baca_berkas` — pembaca berkas yang bisa diinjeksi, supaya unit
+  test menguji linker tanpa menyentuh sistem berkas dan embedder bisa
+  menyuplai filesystem sendiri. Default-nya `<fstream>`.
+- Cache per path kanonik: modul dievaluasi satu kali walau diimpor berkali-kali.
+- Impor siklik: modul yang sedang dievaluasi mengembalikan objek ekspor
+  parsial-nya, bukan menggantung.
+- Cakupan global per modul via `VM::modul_tumpukan_`; `modul_aktif` adalah
+  puncak tumpukan.
+- `pos_berkas_` disimpan & dipulihkan di sekitar evaluasi modul, supaya pesan
+  galat dan jejak stack menunjuk modul yang benar.
+- Akar GC untuk seluruh `ModuleRecord` (entri, objek ekspor, `global`).
+
+**Opcode baru**
+- `GET_EXPORT` (grup `modul`): membaca nama dari objek ekspor. Berbeda dengan
+  `GET_PROP`, nama yang tidak ada adalah `KleruModul` yang mencantumkan daftar
+  nama yang diekspor — impor salah ketik adalah kesalahan program, bukan nilai
+  kosong (D-027).
+
+**Kompilator**
+- `ekspor`: deklarasi dikompilasi normal lalu nilainya dibaca ulang ke objek
+  ekspor. Berlaku seragam untuk `gawe`, `golongan`, dan `tetep`/`ana`.
+- `ekspor baku <ekspresi>` menyimpan NILAI ekspresi (bukan statement-nya, yang
+  akan menambah `POP`).
+- `ekspor { a, b minangka c }` (+ `saka "mod"` untuk re-export), dengan pemisah
+  opsional (koma, titik koma, atau spasi).
+- `ekspor { x }` boleh mendahului deklarasi: entri ditunda ke akhir modul.
+- Hoisting ekspor (D-026): fungsi/kelas yang diekspor dibuat di awal modul;
+  slot pengikat impor dialokasikan lebih dulu.
+- `impor`: `DUP` per nama, `GET_EXPORT`, `DEF_LOCAL`, lalu `POP` modulnya.
+  (Bug lama: objek ekspor hanya ada satu di stack, jadi `GET_PROP` untuk nama
+  kedua dan seterusnya membaca kekosongan.)
+
+**Parser**
+- `impor "path"` tanpa pengikat (impor untuk efek samping).
+- `impor NAMA saka "modul"` = impor ekspor `baku` ke nama lokal (sesuai
+  `daftar_impor` di `docs/grammar.ebnf`).
+- `baku` diterima sebagai nama di daftar impor `impor { baku }`.
+- Pemisah opsional di daftar impor (koma/titik koma/tanpa pemisah).
+- Kata kunci boleh jadi nama properti setelah `.` dan `?.` (D-024) — ini yang
+  membuat `.tangkep` (`.catch`) pada Janji bisa ditulis.
+
+**Contoh & pengujian**
+- `examples/modul/{matematika,bentuk,alat,utama}.jw` — contoh acuan modul ES
+  dengan impor, alias, ekspor `baku`, dan re-export.
+- `tests/golden/modul/*.out` + `scripts/cek_golden.py` kini memindai
+  `examples/modul/`.
+- 9 test unit baru di `tests/unit/test_runtime.cpp`, memakai filesystem virtual:
+  impor nama/alias/namespace, ekspor `baku`, impor efek samping, evaluasi
+  satu kali, impor bersarang tiga tingkat, impor siklik, re-export, ekspor
+  mendahului deklarasi, kelas yang diekspor, dan tiga jenis galat impor
+  (nama tidak diekspor / berkas hilang / galat di dalam modul).
+
+### Diperbaiki (bug nyata yang ditemukan saat Fase 5)
+
+| Bug | Gejala | Akar masalah |
+|---|---|---|
+| Impor kedua & seterusnya `undefined` | hanya nama pertama yang terbaca | objek ekspor tidak di-`DUP` per nama; `GET_PROP` juga mengabaikan kunci di stack |
+| `ekspor` di modul utama gagal | "ekspor mung bisa digunakake ing modul" | `jalankan_sumber` tidak mendorong modul utama ke tumpukan modul & tidak membuat objek ekspornya |
+| Body modul tidak pernah jalan | ekspor selalu kosong | ambang `jalankan_loop` memakai indeks STACK, bukan jumlah FRAME |
+| Fungsi ter-hoist memanggil `undefined` | "dudu fungsi" saat impor siklik | upvalue ter-capture sebagai nama global karena slot impor belum dialokasikan |
+| Nama salah ketik diam-diam | `undefined` tanpa penjelasan | impor memakai `GET_PROP`; butuh opcode khusus (`GET_EXPORT`) |
+| `ekspor { a, b }` gagal tanpa koma | galat sintaks | parser mewajibkan koma sebagai pemisah |
+| Galat impor tidak bisa ditangkap | program berhenti | `muat_modul` memakai `galat_.ada` langsung, bukan `unwind_galat` |
+
+### Status verifikasi
+
+| Preset | Hasil |
+|---|---|
+| `release` | build 0 warning; `ctest` 6/6 hijau; 51/51 unit test |
+| `asan` (ASan+LSan) | 6/6 hijau; 14/14 contoh emas bersih dengan `--gc-stress` |
+| `ubsan` | 6/6 hijau; 0 runtime error |
+| `tsan` | 6/6 hijau; 0 data race |
+| `nonanbox` (mode nilai 16-byte) | 6/6 hijau |
+| `--gc-stress` | 14/14 contoh emas tetap identik |
+
+**Metrik**: 118 opcode, 16.811 baris C++, 51 unit test / 106 cek,
+14 contoh emas, 7 berkas `docs/`.
+
+### Penyimpangan yang disengaja
+
+- **Bukan live binding**: nilai yang diedarkan adalah nilai saat statement
+  `ekspor` dievaluasi. Perubahan `const` di modul asal tidak terlihat importer.
+- Hanya deklarasi fungsi/kelas yang bisa di-bootstrap lewat siklus impor.
+- Path modul belum me-resolve `..` dan tidak mengikuti symlink.
+
+---
+

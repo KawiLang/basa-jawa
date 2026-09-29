@@ -820,13 +820,74 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 break;
             }
             case Op::INHERIT: break;
+            // `impor ... saka "spesifikasi"`. Linker memuat, mengompilasi, dan
+            // mengevaluasi modul (lihat `vm/linker.cpp`), lalu mendorong objek
+            // ekspornya. Modul yang gagal sudah melempar galat lewat `lempar`.
             case Op::IMPORT: {
                 const Value nama = ambil();
-                dorong(Value::obyek(buat_obyek()));
-                (void)nama;
+                const std::string_view spesifikasi = sv(nama);
+                const std::string dir = pos_berkas_.empty() ? std::string()
+                                                            : pos_berkas_.substr(0, pos_berkas_.find_last_of('/'));
+                const Value ekspor = muat_modul(spesifikasi, dir);
+                if (galat_.ada) {
+                    // `muat_modul` sudah menyiapkan galat; teruskan sebagai galat
+                    // ordinary supaya `coba`/`tangkep` di pemanggil bisa menangkap.
+                    galat_.ada = false;
+                    const Value v = galat_.nilai;
+                    if (unwind_galat(v)) break;
+                    return Status::Galat;
+                }
+                dorong(ekspor);
                 break;
             }
-            case Op::EXPORT: break;
+            // `GET_EXPORT`: baca nama dari objek ekspor modul. Berbeda dengan
+            // `GET_PROP`, nama yang tidak ada adalah GALAT (bukan `mboh`) —
+            // impor salah ketik adalah kesalahan program, bukan nilai kosong.
+            case Op::GET_EXPORT: {
+                const Value obj = ambil();
+                const Value kunci = c->nama_properti[ins.a];
+                Obj* o = objek(obj);
+                auto* ekspor = o != nullptr && o->h.kind == OK::Obyek ? static_cast<ObyekObj*>(o) : nullptr;
+                if (ekspor == nullptr) {
+                    const Value k = buat_kleru(
+                        "KleruModul",
+                        "Nilai iki dudu objek ekspor modul, ora bisa maca \"" + std::string(sv(kunci)) + "\".");
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
+                }
+                Value hasil;
+                if (!ekspor->get(kunci, hasil)) {
+                    std::string daftar;
+                    for (const auto& kv : ekspor->dict) {
+                        if (!daftar.empty()) daftar += ", ";
+                        daftar += std::string(sv(kv.first));
+                    }
+                    if (daftar.empty()) daftar = "(kosong)";
+                    const Value k = buat_kleru("KleruModul", "Modul ora ninggekspor \"" +
+                                                                     std::string(sv(kunci)) +
+                                                                     "\". N sing diekspor: " + daftar + ".");
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
+                }
+                dorong(hasil);
+                break;
+            }
+            // `ekspor`: stack berisi nilai lalu nama. Simpan ke objek ekspor
+            // modul aktif supaya importer berikutnya bisa membacanya.
+            case Op::EXPORT: {
+                const Value nama_v = ambil();
+                const Value nilai = ambil();
+                if (modul_aktif == nullptr || !modul_aktif->ekspor.is_obyek()) {
+                    const Value k = buat_kleru(
+                        "KleruKonteks",
+                        "`ekspor` mung bisa digunakake ing modul, dudu ing fungsi.");
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
+                }
+                auto* ekspor = static_cast<ObyekObj*>(modul_aktif->ekspor.mutable_pointer());
+                if (ekspor != nullptr) ekspor->set(heap_, nama_v, nilai);
+                break;
+            }
             // `metokake x`. Di dalam generator mode-eager (lihat
             // `panggil_objek`), nilai dikumpulkan lalu eksekusi dilanjutkan.
             case Op::YIELD: {

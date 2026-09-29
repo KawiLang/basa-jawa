@@ -199,29 +199,30 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 
 | # | Opcode | Operand | Tumpukan | Keterangan |
 |---:|---|---:|---|---|
-| 109 | `IMPORT` | 1 | `- > m` | Muat modul (linker belum diimplementasikan). |
-| 110 | `EXPORT` | 1 | `v - > ` | Daftarkan nama ke objek ekspor modul. |
+| 109 | `IMPORT` | 1 | `- > m` | Muat & evaluasi modul, dorong objek ekspornya. |
+| 110 | `EXPORT` | 1 | `v - > ` | Simpan nilai ke objek ekspor modul aktif. |
+| 111 | `GET_EXPORT` | 1 | `m - v` | Baca nama dari objek ekspor. Nama yang tidak ada = galat (bukan `mboh`). |
 
 ## Async  (`fiber`, 2 opcode)
 
 | # | Opcode | Operand | Tumpukan | Keterangan |
 |---:|---|---:|---|---|
-| 111 | `YIELD` | 0 | `v - r` | `metokake`. Pada mode-eager, nilai dikumpulkan lalu eksekusi dilanjutkan. |
-| 112 | `AWAIT` | 0 | `v - r` | `enteni`. Janji yang sudah selesai langsung dipakai; yang masih menunggu menunda seluruh rantai `async` (lihat `docs/async.md`). |
+| 112 | `YIELD` | 0 | `v - r` | `metokake`. Pada mode-eager, nilai dikumpulkan lalu eksekusi dilanjutkan. |
+| 113 | `AWAIT` | 0 | `v - r` | `enteni`. Janji yang sudah selesai langsung dipakai; yang masih menunggu menunda seluruh rantai `async` (lihat `docs/async.md`). |
 
 ## Lain-lain  (`lain`, 3 opcode)
 
 | # | Opcode | Operand | Tumpukan | Keterangan |
 |---:|---|---:|---|---|
-| 113 | `DEBUGGER` | 0 | `- > ` | Titik henti debugger. |
-| 114 | `NOP_LINE` | 1 | `- > ` | Alias `NOP`. |
-| 115 | `UNDEF_LINE` | 1 | `- > ` | Alias `MBOH`. |
+| 114 | `DEBUGGER` | 0 | `- > ` | Titik henti debugger. |
+| 115 | `NOP_LINE` | 1 | `- > ` | Alias `NOP`. |
+| 116 | `UNDEF_LINE` | 1 | `- > ` | Alias `MBOH`. |
 
 ## Variabel, lokal, upvalue  (`variabel`, 1 opcode)
 
 | # | Opcode | Operand | Tumpukan | Keterangan |
 |---:|---|---:|---|---|
-| 116 | `GET_GLOBAL_FUNC` | 1 | `- > f` | Alias lawas `GET_GLOBAL`. |
+| 117 | `GET_GLOBAL_FUNC` | 1 | `- > f` | Alias lawas `GET_GLOBAL`. |
 
 ## Opcode belum diimplementasikan
 
@@ -229,7 +230,6 @@ Opcode berikut ada di `.def` agar ruang nama stabil, tapi memicu
 `KleruInternal [I001]` bila bytecode memakainya:
 
 - `BIGINT` (BigInt runtime, Fase 8)
-- `GET_MODULE` / `SET_MODULE` (linker modul, Fase 7)
 - `FIBER_CREATE` / `FIBER_RESUME` (fiber untuk `metokake` suspend, Fase 7)
 - `TDZ_CHECK` (zona mati-temporal, Fase 5)
 

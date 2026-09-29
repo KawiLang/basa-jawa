@@ -18,7 +18,9 @@ using vm::Op;
 // Statement
 // ===========================================================================
 
-void Compiler::statement(const ast::Node* n) {
+void Compiler::statement(const ast::Node* n) { statement(n, false); }
+
+void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
     if (n == nullptr) return;
     switch (n->kind) {
         case NK::EkspresiStmt: {
@@ -36,7 +38,9 @@ void Compiler::statement(const ast::Node* n) {
         case NK::PilihStmt: stmt_pilih(static_cast<const ast::PilihStmt*>(n)); return;
         case NK::CobaStmt: stmt_coba(static_cast<const ast::CobaStmt*>(n)); return;
         case NK::GolonganDeklarasi: stmt_golongan(static_cast<const ast::GolonganDeklarasi*>(n)); return;
-        case NK::EksporDeklarasi: stmt_ekspor(static_cast<const ast::EksporDeklarasi*>(n)); return;
+        case NK::EksporDeklarasi:
+            stmt_ekspor(static_cast<const ast::EksporDeklarasi*>(n), sudah_hoist);
+            return;
         case NK::ImporDeklarasi: stmt_impor(static_cast<const ast::ImporDeklarasi*>(n)); return;
         case NK::FungsiDeklarasi: deklarasi_fungsi(static_cast<const ast::FungsiDeklarasi*>(n), false); return;
         case NK::DeklarasiVar: {
@@ -400,25 +404,109 @@ void Compiler::stmt_golongan(const ast::GolonganDeklarasi* n) {
     }
 }
 
-void Compiler::stmt_ekspor(const ast::EksporDeklarasi* n) {
-    statement(n->deklarasi);
-    if (n->deklarasi != nullptr) {
-        // Ambil nama yang diekspor lalu taruh di objek ekspor modul.
-        const ast::Node* d = n->deklarasi;
-        std::string_view nama;
-        if (d->kind == NK::FungsiDeklarasi) nama = static_cast<const ast::FungsiDeklarasi*>(d)->nama;
-        else if (d->kind == NK::GolonganDeklarasi) nama = static_cast<const ast::GolonganDeklarasi*>(d)->nama;
-        else if (d->kind == NK::DeklarasiVar) nama = static_cast<const ast::DeklarasiVarStmt*>(d)->jeneng;
-        if (!nama.empty()) {
-            const std::size_t k = tambah_nama(Value::obyek(rt::buat_teks(heap_, nama)));
-            emit(Op::NOMOR, static_cast<std::uint16_t>(k));
+const ast::Node* Compiler::deklarasi_ekspor(const ast::Node* n) {
+    if (n == nullptr || n->kind != NK::EksporDeklarasi) return nullptr;
+    return static_cast<const ast::EksporDeklarasi*>(n)->deklarasi;
+}
+
+std::size_t Compiler::slot_impor(const std::string_view nama) {
+    auto it = impor_slot_.find(std::string(nama));
+    if (it != impor_slot_.end()) return it->second;
+    return slot_baru(nama);
+}
+
+std::string_view Compiler::nama_deklarasi(const ast::Node* d) {    if (d == nullptr) return {};
+    switch (d->kind) {
+        case NK::FungsiDeklarasi: return static_cast<const ast::FungsiDeklarasi*>(d)->nama;
+        case NK::GolonganDeklarasi: return static_cast<const ast::GolonganDeklarasi*>(d)->nama;
+        case NK::DeklarasiVar: return static_cast<const ast::DeklarasiVarStmt*>(d)->jeneng;
+        default: return {};
+    }
+}
+
+void Compiler::stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist) {
+    // `sudah_hoist`: statement `ekspor` ini sudah dikompilasi utuh di awal modul
+    // (deklarasi + ekspor), jadi jangan apa-apa lagi. Melewati langkah ini juga
+    // membuat ekspor tersedia SEBELUM `impor` dievaluasi -- syarat agar impor
+    // siklik (`a impor b; b impor a;`) bisa saling memanggil.
+    if (sudah_hoist) return;
+
+    // --- `ekspor { a, b minangka c }` (+ opsional `saka "mod"`) ---
+    if (!n->daftar.empty() || n->ada_modul) {
+        if (n->ada_modul) {
+            // Re-export: impor dulu, lalu ekspor ulang selective.
+            const std::size_t km = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, n->modul)));
+            emit(Op::TEKS, static_cast<std::uint16_t>(km));
+            emit(Op::IMPORT, 0);
+        } else {
+            emit(Op::MBOH);
+        }
+        for (const ast::EksporSpesifikasi& sp : n->daftar) {
+            const auto it = cari_slot(sp.lokal);
+            if (it == std::string::npos) {
+                // Slot belum ada: nama mungkin dideklarasikan SESUDAH baris ini
+                // (`ekspor { x }; const x = 5;`). Tunda ke akhir modul.
+                ekspor_tunda_.push_back(EksporTunda{sp.lokal, sp.ekspor});
+                continue;
+            }
+            emit(Op::DUP);
+            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(it));
+            const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, sp.ekspor)));
+            emit(Op::TEKS, static_cast<std::uint16_t>(k));
             emit(Op::EXPORT, 0);
         }
+        if (n->ada_modul) emit(Op::POP);
+        return;
     }
+
+    // --- `ekspor <deklarasi>` / `ekspor baku <ekspresi>` ---
+    // Deklarasi dikompilasi normal (jadi slot lokal modul), lalu nilainya dibaca
+    // ulang dan ditaruh ke objek ekspor. Cara ini berlaku seragam untuk
+    // `gawe`, `golongan`, dan `const`, tanpa bentuk bytecode khusus.
+    if (n->default_ekspor) {
+        if (n->deklarasi == nullptr) {
+            emit(Op::MBOH);
+        } else if (n->deklarasi->kind == NK::FungsiDeklarasi ||
+                   n->deklarasi->kind == NK::GolonganDeklarasi ||
+                   n->deklarasi->kind == NK::DeklarasiVar) {
+            if (!sudah_hoist) statement(n->deklarasi, sudah_hoist);
+            const auto s = cari_slot(nama_deklarasi(n->deklarasi));
+            if (s != std::string::npos) emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+            else emit(Op::MBOH);
+        } else if (n->deklarasi->kind == NK::EkspresiStmt) {
+            // `ekspor baku <ekspresi>`: NILAI ekspresi yang diekspor, bukan
+            // statement-nya. `statement()` akan menambah `POP` yang menghapus
+            // nilai itu, jadi ekspresinya dikompilasi langsung.
+            ekspresi(static_cast<const ast::EkspresiStmt*>(n->deklarasi)->ekspresi);
+        } else {
+            statement(n->deklarasi);
+        }
+        const std::size_t kd = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, "default")));
+        emit(Op::TEKS, static_cast<std::uint16_t>(kd));
+        emit(Op::EXPORT, 0);
+        return;
+    }
+
+    const std::string_view nama = nama_deklarasi(n->deklarasi);
+    if (n->deklarasi == nullptr || nama.empty()) {
+        statement(n->deklarasi);
+        return;
+    }
+    // `sudah_hoist`: fungsi/kelas sudah dibuat di awal modul (lihat
+    // `Compiler::compile`), jadi jangan dibuat dua kali -- cukup ekspor.
+    if (!sudah_hoist) statement(n->deklarasi, sudah_hoist);
+    const auto s = cari_slot(nama);
+    if (s == std::string::npos) return;  // deklarasi tanpa nama: tidak ada yang bisa diekspor
+    emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+    const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, nama)));
+    emit(Op::TEKS, static_cast<std::uint16_t>(k));
+    emit(Op::EXPORT, 0);
 }
 
 void Compiler::stmt_impor(const ast::ImporDeklarasi* n) {
     // IMPOR: muat modul, taruh ekspornya di stack, lalu bind tiap nama.
+    // Objek ekspor didupe-kan tiap iterasi supaya `GET_PROP` tidak
+    // menghabiskan satu-satunya rujukan.
     if (!n->ada_modul) {
         emit(Op::MBOH);
     } else {
@@ -426,19 +514,31 @@ void Compiler::stmt_impor(const ast::ImporDeklarasi* n) {
         emit(Op::TEKS, static_cast<std::uint16_t>(k));
         emit(Op::IMPORT, 0);
     }
-    if (n->ada_namespace && !n->alias_namespace.empty()) {
-        const std::size_t s = slot_baru(n->alias_namespace);
-        emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
+    if (n->ada_namespace) {
+        // `impor * minangka M` (atau `impor M saka "..."`): objek ekspor
+        // langsung diikat sebagai satu nilai.
+        emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(slot_impor(n->alias_namespace)));
+        return;
+    }
+    if (n->daftar.empty()) {
+        // `impor "./modul.jw"` tanpa pengikat: cukup dievaluasi (sisi
+        // effected modul dijalankan), lalu buang objek ekspornya.
+        emit(Op::POP);
         return;
     }
     for (const ast::ImporSpesifikasi& sp : n->daftar) {
-        // <modul> "nama" -> nilai
-        const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, sp.sumber)));
-        emit(Op::TEKS, static_cast<std::uint16_t>(k));
-        emit(Op::GET_PROP, static_cast<std::uint16_t>(0));
-        const std::size_t s = slot_baru(sp.impor);
-        emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
+        emit(Op::DUP);
+        // `GET_EXPORT` (bukan `GET_PROP`): nama yang tidak diekspor modul harus
+        // menjadi galat, bukan `mboh` -- impor salah ketik adalah kesalahan
+        // program, bukan nilai kosong.
+        // `baku` = `default`: nama baku untuk ekspor default, ditulis dengan
+        // ejaan Jawa supaya konsisten dengan bahasa.
+        const std::string_view sumber = sp.sumber == "baku" ? std::string_view("default") : sp.sumber;
+        const std::size_t k = tambah_nama(Value::obyek(rt::buat_teks(heap_, sumber)));
+        emit(Op::GET_EXPORT, static_cast<std::uint16_t>(k));
+        emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(slot_impor(sp.impor)));
     }
+    emit(Op::POP);
 }
 
 

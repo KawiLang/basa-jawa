@@ -28,7 +28,7 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | VM (fungsi, closure, kelas, pola, try/catch, generator) | selesai |
 | GC mark-and-sweep presisi | selesai |
 | Pustaka standar | sebagian (`tulis`, `Teks`, `Matematika`, `Dhaptar`, `Teks`, `StdAksara`, `Wektu`, `JSON` minimum) |
-| Modul ES (`impor`/`ekspor`) | parsir ada, linker belum |
+| Modul ES (`impor`/`ekspor`) | selesai — impor, ekspor, alias, default, re-export, impor siklik (`docs/modules.md`) |
 | async/await + loop acara | selesai (deterministik, tanpa fiber — `docs/async.md`) |
 | Regex runtime, `Tanggal`, berkas, proses | belum |
 
@@ -139,7 +139,7 @@ src/rt/         Value (NaN-boxing), objek, shape, number
 src/gc/         Heap mark-and-sweep, Handle/HandleScope
 src/stdlib/     Pustaka standar (native functions)
 src/cli/        CLI `jawa`
-docs/           grammar, bytecode, object model, GC, stdlib
+docs/           grammar, bytecode, object model, GC, stdlib, async, modules
 tests/          unit + golden
 ```
 
@@ -153,6 +153,7 @@ tests/          unit + golden
 | [`docs/gc.md`](docs/gc.md) | algoritma GC, akar, karantina, `--gc-stress` |
 | [`docs/stdlib.md`](docs/stdlib.md) | pustaka standar yang tersedia |
 | [`docs/async.md`](docs/async.md) | Janji, `enteni`, loop acara (tanpa fiber) |
+| [`docs/modules.md`](docs/modules.md) | linker modul ES, hoisting, impor siklik |
 | [`DECISIONS.md`](DECISIONS.md) | keputusan desain & penyimpangan dari spesifikasi |
 | [`CHANGELOG.md`](CHANGELOG.md) | riwayat perubahan |
 | [`STATUS.md`](STATUS.md) | status jujur: selesai / belum / cara verifikasi |

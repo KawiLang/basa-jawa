@@ -1,0 +1,16 @@
+// Modul contoh: memakai dua modul lain lalu mengekspor ulang sebagian isinya.
+
+impor { tambah, kali, pangkat } saka "./matematika.jw";
+impor { Persegi } saka "./bentuk.jw";
+
+ekspor { tambah, Persegi };
+
+ekspor gawe jumlah_kuadrat(n) {
+  bali tambah(pangkat(n, 2), pangkat(n, 2));
+}
+
+// Re-export: importer lain cukup mengimpor satu berkas ini.
+ekspor {
+  kali minangka kali;
+  jumlah_kuadrat minangka jumlah;
+};

@@ -48,6 +48,7 @@ set(JAWA_SOURCES
     src/vm/vm_loop.cpp
     src/vm/vm_prop.cpp
     src/vm/vm_async.cpp
+    src/vm/linker.cpp
     src/compile/compiler.cpp
     src/compile/compiler_stmt.cpp
     src/compile/compiler_expr.cpp

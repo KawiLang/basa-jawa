@@ -4,6 +4,7 @@
 // bebas dependensi pihak ketiga.
 #include <cmath>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,27 @@ std::string jalankan(std::string_view sumber) {
     jawa::vm::VM mesin(opt);
     const auto status = mesin.jalankan_sumber(sumber, "<test>");
     if (status != jawa::vm::Status::Selesai) return "<galat>";
+    return keluaran;
+}
+
+/// Peta path -> sumber untuk `VMOptions::baca_berkas`.
+using PetaBerkas = std::map<std::string, std::string>;
+
+/// Jalankan modul `/satu/main.jw` dengan peta berkas virtual.
+std::string jalankan_modul(std::string_view sumber, const PetaBerkas& peta) {
+    std::string keluaran;
+    jawa::vm::VMOptions opt;
+    opt.keluaran = &keluaran;
+    opt.baca_berkas = [&peta](const std::string& p, std::string& keluar) {
+        const auto it = peta.find(p);
+        if (it == peta.end()) return false;
+        keluar = it->second;
+        return true;
+    };
+    jawa::vm::VM mesin(opt);
+    if (mesin.jalankan_sumber(sumber, "/satu/main.jw") != jawa::vm::Status::Selesai) {
+        return "<galat>";
+    }
     return keluaran;
 }
 
@@ -375,7 +397,117 @@ TEST_CASE("async: timer dinyalakan menurut urutan tunda") {
              std::string("dhisik\nB\nA\n"));
 }
 
+// ===========================================================================
+// Modul ES: impor, ekspor, siklus, dan penanganan galat
+//
+// Modul disuplai lewat `VMOptions::baca_berkas` (peta path -> sumber), jadi
+// test tidak menyentuh sistem berkas.
+// ===========================================================================
+
+TEST_CASE("modul: impor nama, alias, dan namespace") {
+    const PetaBerkas peta{
+        {"/satu/util.jw", "ekspor tetep K = 42;\nekspor gawe tambah(a, b) { bali a + b; }\n"},
+    };
+    CHECK_EQ(jalankan_modul("impor { K, tambah } saka \"./util.jw\";\ntulis(tambah(K, 8));\n", peta),
+             std::string("50\n"));
+    CHECK_EQ(jalankan_modul("impor { K minangka N, tambah minangka jumlah } saka \"./util.jw\";\n"
+                            "tulis(jumlah(N, 1));\n",
+                            peta),
+             std::string("43\n"));
+    CHECK_EQ(jalankan_modul("impor * minangka U saka \"./util.jw\";\ntulis(U.tambah(1, 2));\n", peta),
+             std::string("3\n"));
+}
+
+TEST_CASE("modul: ekspor default dan impor untuk efek samping") {
+    const PetaBerkas peta{
+        {"/satu/a.jw", "tulis(\"A\");\nekspor tetep N = 1;\n"},
+        {"/satu/b.jw", "ekspor baku \"bawaan\";\n"},
+    };
+    CHECK_EQ(jalankan_modul("impor \"./a.jw\";\nimpor Utama saka \"./b.jw\";\ntulis(Utama);\n", peta),
+             std::string("A\nbawaan\n"));
+}
+
+TEST_CASE("modul: dievaluasi satu kali walau diimpor berkali-kali") {
+    const PetaBerkas peta{{"/satu/sisi.jw", "tulis(\"sekali\");\nekspor tetep N = 7;\n"}};
+    CHECK_EQ(jalankan_modul("impor { N } saka \"./sisi.jw\";\n"
+                            "impor { N minangka M } saka \"./sisi.jw\";\n"
+                            "tulis(N, M);\n",
+                            peta),
+             std::string("sekali\n7 7\n"));
+}
+
+TEST_CASE("modul: impor bersarang tiga tingkat") {
+    const PetaBerkas peta{
+        {"/satu/a.jw", "ekspor tetep D = 3;\n"},
+        {"/satu/b.jw", "impor { D } saka \"./a.jw\";\nekspor tetep C = D + 1;\n"},
+    };
+    CHECK_EQ(jalankan_modul("impor { C } saka \"./b.jw\";\ntulis(C);\n", peta), std::string("4\n"));
+}
+
+TEST_CASE("modul: impor siklik a<->b tidak menggantung") {
+    const PetaBerkas peta{
+        {"/satu/a.jw", "impor { g } saka \"./b.jw\";\nekspor gawe f() { bali \"f:\" + g(); }\n"},
+        {"/satu/b.jw", "impor { f } saka \"./a.jw\";\nekspor gawe g() { bali \"g\"; }\n"},
+    };
+    CHECK_EQ(jalankan_modul("impor { f } saka \"./a.jw\";\ntulis(f());\n", peta), std::string("f:g\n"));
+}
+
+TEST_CASE("modul: ekspor daftar, alias, dan re-export") {
+    const PetaBerkas peta{
+        {"/satu/dasar.jw", "tetep x = 5; tetep w = 6;\nekspor { x minangka y, w };\n"},
+        {"/satu/tengah.jw", "impor { y } saka \"./dasar.jw\";\nekspor { y minangka z };\n"},
+    };
+    CHECK_EQ(jalankan_modul("impor { y, w } saka \"./dasar.jw\";\ntulis(y, w);\n", peta),
+             std::string("5 6\n"));
+    CHECK_EQ(jalankan_modul("impor { z } saka \"./tengah.jw\";\ntulis(z);\n", peta), std::string("5\n"));
+}
+
+TEST_CASE("modul: ekspor boleh ditulis sebelum deklarasi") {
+    const PetaBerkas peta{{"/satu/a.jw", "ekspor { N };\ntetep N = 8;\n"}};
+    CHECK_EQ(jalankan_modul("impor { N } saka \"./a.jw\";\ntulis(N);\n", peta), std::string("8\n"));
+}
+
+TEST_CASE("modul: galat impor bisa ditangkap pemanggil") {
+    // Tiga jenis kegagalan, semuanya harus jadi galat biasa (bukan crash)
+    // yang bisa ditangkap `coba`/`tangkep` di modul pemanggil.
+    struct Kasus {
+        const char* nama;
+        PetaBerkas peta;
+        std::string_view sumber;
+    };
+    const std::vector<Kasus> kasus{
+        {"nama tidak diekspor",
+         {{"/satu/a.jw", "ekspor gawe ada() { bali 1; }\n"}},
+         "coba { impor { zzz } saka \"./a.jw\"; }\ntangkep (e) { tulis('ditangkep'); }\n"},
+        {"berkas hilang",
+         {},
+         "coba { impor { a } saka \"./hilang.jw\"; }\ntangkep (e) { tulis('ditangkep'); }\n"},
+        {"galat di dalam modul",
+         {{"/satu/a.jw", "ekspor gawe momok() { uncal \"mbocah\"; }\n"}},
+         "coba { impor { momok } saka \"./a.jw\"; momok(); }\ntangkep (e) { tulis('ditangkep'); }\n"},
+    };
+    for (const Kasus& k : kasus) {
+        CHECK_EQ(jalankan_modul(k.sumber, k.peta), std::string("ditangkep\n"));
+    }
+}
+
+TEST_CASE("modul: kelas & closure diekspor sebagai nilai, bukan disalin") {
+    const PetaBerkas peta{
+        {"/satu/a.jw",
+         "golongan Kotak { #s; wiwit(s) { iki.#s = s; } nampa sisi() { bali iki.#s; } }\n"
+         "ekspor { Kotak };\n"},
+    };
+    // `sisi` adalah accessor `nampa`, jadi `k.sisi` sudah bernilai (memanggil
+    // `k.sisi()` akan memanggil HASIL getter, seperti di JavaScript).
+    CHECK_EQ(jalankan_modul("impor { Kotak } saka \"./a.jw\";\n"
+                            "const k = anyar Kotak(4);\n"
+                            "tulis(k.sisi);\n",
+                            peta),
+             std::string("4\n"));
+}
+
 TEST_CASE("kelas: getter & setter (nampa / nyetel)") {
+
     CHECK_EQ(jalankan("golongan P { #x; wiwit(x) { iki.#x = x; } "
                       "nampa v() { bali iki.#x; } nyetel v(n) { iki.#x = n; } } "
                       "const p = anyar P(1); p.v = 9; tulis(p.v);"),

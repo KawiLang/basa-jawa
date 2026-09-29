@@ -2,12 +2,13 @@
 //
 // DESAIN KUNCI (lihat DECISIONS.md D-003)
 // ---------------------------------------
-// Seluruh eksekusi bytecode berjalan di dalam SATU loop `VM::execute()`. Frames
-// prowess dan upvalue disimpan pada array yang dikelola VM, BUKAN pada stack
+// Seluruh eksekusi bytecode berjalan di dalam SATU loop `VM::jalankan_loop()`.
+// Frame dan upvalue disimpan pada array yang dikelola VM, BUKAN pada stack
 // C++. Konsekuensinya:
 //   * rekursi tak hingga pada kode Basa Jawa -> `KleruRentang`, bukan crash;
 //   * `metokake`/`enteni` dapat keluar-masuk loop lewat sinyal `Suspend`;
-//   * reentrancy native->JS dikontrol kedalaman (`--max-tumpukan`).
+//   * reentrancy native->JS dikontrol kedalaman (`--maks-tumpukan`).
+//   * rantai `async` ditunda dengan menyalin frame, bukan fiber (D-023).
 #pragma once
 
 #include <cstdint>
@@ -107,13 +108,19 @@ struct Frame {
 
 /// Modul: satu berkas .jw yang telah dikompilasi.
 struct ModuleRecord {
-    std::string_view nama;
-    std::string_view path;
+    std::string nama;       ///< nama cache (path kanonik)
+    std::string path;       ///< path berkas
     std::string_view sumber;
     ClosureObj* entri = nullptr;    ///< closure fungsi modul
     Value ekspor;                    ///< objek ekspor
     std::unordered_map<std::string, Value> global;  ///< variabel modul
     bool dievaluasi = false;
+    /// Sedang dievaluasi (sudah ada di `VM::modul_tumpukan_`). Mencegah impor
+    /// siklik: `a impor b; b impor a;` tidak menyebabkan rekursi tak hingga —
+    /// impor kedua melihat ekspor yang sudah terkumpul sejauh ini.
+    bool sedang = false;
+    /// Impor siklik terdeteksi saat modul ini dievaluasi.
+    bool impor_siklik = false;
 };
 
 /// Opsi runtime.
@@ -131,6 +138,12 @@ struct VMOptions {
     std::size_t maks_reentrancy = 64;  ///< kedalaman native->JS
     /// Bila diisi, `tulis` menulis ke buffer ini alih-alih stdout (dipakai test).
     std::string* keluaran = nullptr;
+    /// Pembaca berkas untuk linker modul ES. Mengembalikan `false` bila berkas
+    /// tidak ada / tidak bisa dibaca. Kosong = pakai `<fstream>`.
+    ///
+    /// Disuntikkan supaya unit test bisa menguji linker tanpa menyentuh
+    /// sistem berkas, dan supaya embedding bisa menyediakan filesystem sendiri.
+    std::function<bool(const std::string& path, std::string& keluar)> baca_berkas;
 };
 
 /// Status eksekusi.
@@ -251,6 +264,18 @@ public:
     [[nodiscard]] ModuleRecord* cari_modul(std::string_view nama) const;
     Value ambil_global(std::string_view nama);
     void set_global(std::string_view nama, Value v);
+    /// Linker modul ES: muat, kompilasi, dan evaluasi modul, lalu kembalikan
+    /// objek ekspornya. `dari_dir` = direktori modul pengimpor (untuk path relatif).
+    Value muat_modul(std::string_view spesifikasi, std::string_view dari_dir);
+    /// Resolusi spesifikasi modul -> path kanonik (kunci cache).
+    static std::string selesaikan_path(std::string_view spesifikasi, std::string_view dari_dir);
+    /// Kompilasi sumber menjadi closure modul. Menulis diagnostik ke stderr
+    /// dan mengembalikan `nullptr` bila gagal.
+    ClosureObj* kompilasi_modul(std::string_view sumber, std::string_view nama_berkas,
+                                std::string_view dir);
+    /// Evaluasi body modul di frame-nya sendiri lalu kembalikan objek ekspornya.
+    /// Mengembalikan `mboh` bila modul gagal.
+    Value evaluasi_modul(ModuleRecord* rec);
 
     // --------------------------------------------------------- error/trace
     std::string jejak_stack() const;
@@ -362,7 +387,11 @@ private:
     Value proto_dhaptar_ = Value::mboh();
 
 public:
-    /// Modul yang sedang dievaluasi (untuk impor).
+    /// Tumpukan modul yang sedang dievaluasi. Modul A yang mengimpor B
+    /// dievaluasi sementara A masih berjalan, jadi setiap modul punya cakupan
+    /// global sendiri; `modul_aktif` adalah puncak tumpukan ini.
+    std::vector<ModuleRecord*> modul_tumpukan_;
+    /// Modul aktif = puncak tumpukan; `nullptr` bila di luar modul.
     ModuleRecord* modul_aktif = nullptr;
     /// Arena sementara untuk parse (dipakai `jalankan_sumber`).
     support::Arena arena_scratch_;

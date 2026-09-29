@@ -144,6 +144,7 @@ JAWA_OP(MATCH_BIND, 1, "v p - >", "cocog")
 // ------------------------------------------------------------------- lain
 JAWA_OP(IMPORT,     1, "- > m", "modul")
 JAWA_OP(EXPORT,     1, "v - > ", "modul")
+JAWA_OP(GET_EXPORT, 1, "m - v", "modul")
 JAWA_OP(YIELD,      0, "v - r", "fiber")
 JAWA_OP(AWAIT,      0, "v - r", "fiber")
 JAWA_OP(DEBUGGER,   0, "- > ", "lain")

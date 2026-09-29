@@ -588,8 +588,9 @@ NodePtr Parser::parse_ekspor() {
             s.lokal = saat().teks;
             s.ekspor = s.lokal;
             ++idx_;
-            if (cek(Tok::KwAs) || cek(Tok::KwAs)) {
+            if (cek(Tok::KwAs)) {
                 ++idx_;
+                lewati_asi();
                 if (cek(Tok::Ident)) {
                     s.ekspor = saat().teks;
                     ++idx_;
@@ -599,7 +600,10 @@ NodePtr Parser::parse_ekspor() {
             }
             e->daftar.push_back(s);
             lewati_asi();
-            if (!makan(Tok::Comma)) break;
+            // Pemisah opsional: koma, titik koma, atau langsung nama berikutnya
+            // (sesuai tata bahasa `daftar_impor` yang tidak mewajibkan koma).
+            makan(Tok::Comma);
+            makan(Tok::Semi);
             lewati_asi();
         }
         aspek_ke_close(Tok::RBrace, "S003", "\"}\" penutup daftar ekspor");
@@ -661,7 +665,7 @@ NodePtr Parser::parse_impor() {
     } else if (makan(Tok::LBrace)) {
         lewati_asi();
         while (!cek(Tok::RBrace) && !cek(Tok::Eof) && !bag_.penuh()) {
-            if (!cek(Tok::Ident)) {
+            if (!cek(Tok::Ident) && !cek(Tok::KwDefault)) {
                 diagnosa_di("S001", "Ngarep-arep jeneng sing arep diimpor.");
                 sinkronisasi_statement();
                 break;
@@ -670,7 +674,7 @@ NodePtr Parser::parse_impor() {
             s.sumber = saat().teks;
             s.impor = s.sumber;
             ++idx_;
-            if (cek(Tok::KwAs) || cek(Tok::KwAs)) {
+            if (cek(Tok::KwAs)) {
                 ++idx_;
                 lewati_asi();
                 if (cek(Tok::Ident)) {
@@ -683,14 +687,19 @@ NodePtr Parser::parse_impor() {
             }
             im->daftar.push_back(s);
             lewati_asi();
-            if (!makan(Tok::Comma)) break;
+            // Pemisah opsional (sama seperti daftar ekspor).
+            makan(Tok::Comma);
+            makan(Tok::Semi);
             lewati_asi();
         }
         aspek_ke_close(Tok::RBrace, "S003", "\"}\" penutup daftar impor");
     } else if (cek(Tok::Ident)) {
         ast::ImporSpesifikasi s;
-        s.sumber = saat().teks;
-        s.impor = s.sumber;
+        // `impor NAMA saka "modul"` (tanpa kurung kurawal) = impor ekspor
+        // `baku` (default) ke nama lokal `NAMA`. Bandingkan `impor { x } saka
+        // "modul"` yang mengimpor nama `x`.
+        s.sumber = "baku";
+        s.impor = saat().teks;
         ++idx_;
         if (cek(Tok::KwAs) || cek(Tok::KwAs)) {
             ++idx_;
@@ -734,6 +743,11 @@ NodePtr Parser::parse_impor() {
                 aspek_ke_close(Tok::RBrace, "S003", "\"}\" penutup daftar impor");
             }
         }
+    } else if (cek(Tok::Text)) {
+        // `impor "./modul.jw"` -- impor untuk efek samping (tanpa pengikat).
+        im->ada_modul = true;
+        im->modul = saat().nilai_teks;
+        ++idx_;
     } else {
         diagnosa_di("S001", "Nemu \"" + std::string(saat().tampilan()) + "\" sawise impor.");
     }

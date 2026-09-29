@@ -1,0 +1,14 @@
+// Contoh acuan: modul ES (`impor` / `ekspor`).
+//
+// Jalankan dari akar repositori:
+//   jawa run examples/modul/utama.jw
+
+impor { tambah, Persegi } saka "./alat.jw";
+impor { kali, jumlah } saka "./alat.jw";
+impor Bawaan saka "./bentuk.jw";
+
+// Modul dievaluasi satu kali walau diimpor dari dua statement berbeda.
+tulis("luas  = ", anyar Persegi(5).luas);
+tulis(" jumlah = ", jumlah(4));
+tulis(" kali  = ", kali(6, 7));
+tulis(" default = ", Bawaan);

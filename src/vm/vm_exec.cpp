@@ -74,8 +74,16 @@ Status VM::jalankan_sumber(std::string_view sumber, std::string_view nama_berkas
     daftarkan_modul(nama_berkas, nama_berkas, sumber);
     ModuleRecord* rec = cari_modul(nama_berkas);
     if (rec != nullptr) {
-        modul_aktif = rec;
+        // Modul utama juga didorong ke tumpukan modul: `evaluasi_modul`
+        // memulihkan `modul_aktif` ke puncak tumpukan, jadi modul utama harus
+        // ada di sana agar `ekspor` setelah `impor` tetap melihat modul ini.
         rec->entri = clo;
+        // Objek ekspor modul utama juga dibuat di sini, supaya `ekspor` di
+        // berkas yang dijalankan langsung bisa bekerja (modul yang diimpor
+        // membuatnya di `VM::evaluasi_modul`).
+        rec->ekspor = Value::obyek(buat_obyek());
+        modul_tumpukan_.push_back(rec);
+        modul_aktif = rec;
     }
     heap_.bersihkan_akar_sementara();
     pos_berkas_ = std::string(nama_berkas);
@@ -96,7 +104,8 @@ Status VM::jalankan_sumber(std::string_view sumber, std::string_view nama_berkas
         const std::string jejak = jejak_stack();
         std::fwrite(jejak.data(), 1, jejak.size(), stderr);
     }
-    modul_aktif = nullptr;
+    modul_tumpukan_.pop_back();
+    modul_aktif = modul_tumpukan_.empty() ? nullptr : modul_tumpukan_.back();
     return s;
 }
 

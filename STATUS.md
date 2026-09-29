@@ -12,14 +12,14 @@ dan pustaka standar lengkap.
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 15.445 |
-| Opcode bytecode | 119 |
+| Baris kode C++ (`src/` + `tests/`) | 16.811 |
+| Opcode bytecode | 118 (`GET_EXPORT` baru) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 106 |
-| Uji unit | 3 berkas, 92 cek, 42 test |
-| Uji emas | 11 contoh keluaran persis + 11 front-end |
+| Uji unit | 3 berkas, 106 cek, 51 test |
+| Uji emas | 14 contoh keluaran persis (11 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di kelimanya |
-| Dokumentasi | 6 berkas `docs/` + 4 berkas akar |
+| Dokumentasi | 7 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -30,7 +30,7 @@ dan pustaka standar lengkap.
 | 2 | Parser + AST | selesai |
 | 3 | Kompiler bytecode + VM + GC + pustaka standar minimum | **selesai (versi minimum)** |
 | 4 | Bentuk objek: shape, hidden class, inline cache | **belum** (lihat "Yang belum") |
-| 5 | Modul ES, zona mati-temporal, `super` penuh | sebagian |
+| 5 | Modul ES, zona mati-temporal, `super` penuh | modul ES selesai; TDZ & `pilih` pola belum |
 | 6 | Event loop, Promise | **selesai** (loop acara deterministik; tanpa jam nyata) |
 | 7 | Fiber, generator suspend, `metokake` non-eager | belum (async tidak butuh fiber — D-023) |
 | 8 | Pustaka standar lengkap, `Tanggal`, regex, berkas | sebagian |
@@ -62,6 +62,9 @@ Bahasa yang berjalan penuh, termasuk:
 - Template literal, termasuk tag & bersarang.
 - GC mark-and-sweep presisi dengan akar lengkap; `--gc-stress` bersih.
 - CLI: `run`, `cek`, `token`, `ast`, `bytecode`, `versi`, `bantuan`, `-e`.
+- Modul ES: `impor` (nama / alias / namespace / `baku` / tanpa pengikat) dan
+  `ekspor` (deklarasi / `baku` / daftar nama / re-export), termasuk impor
+  siklik antar-modul.
 
 ## Yang BELUM (jujur)
 
@@ -82,10 +85,18 @@ mode dictionary langsung. Properti dibaca dengan `ObyekObj::dict` +
 Field privat juga bukan privat sungguhan: disimpan sebagai slot biasa bernama
 `#x`; privasi dijaga kompilator.
 
-### 3. Modul ES baru di-parse, belum di-link
+### 3. Modul ES: berfungsi, tapi bukan live binding & belum ada modul bawaan
 
-`impor`/`ekspor` bisa di-parse (AST benar) tetapi `IMPORT`/`EXPORT` di VM
-belum menyelesaikan modul. Program multi-berkas tidak jalan.
+`impor`/`ekspor` sudah berfungsi penuh (lihat `docs/modules.md`): impor nama,
+alias, namespace, ekspor `baku`, re-export, impor bersarang, impor siklik, dan
+penanganan galat. Yang belum:
+
+- **Bukan live binding** — nilai yang diedarkan adalah nilai saat statement
+  `ekspor` dievaluasi. Perubahan `const` di modul asal tidak terlihat importer.
+- Modul hanya boleh ber-hoist lewat deklarasi fungsi/kelas. Dua modul yang
+  saling mengimpor `const` akan melihat `mboh`.
+- Belum ada modul bawaan (`std:...`); tidak ada bundling, tidak ada peta
+  alias nama berkas.
 
 ### 4. Pustaka standar minimum
 

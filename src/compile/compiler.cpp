@@ -126,7 +126,66 @@ HasilKompilasi Compiler::compile(const ast::Program* prog) {
     f.n_slot_maks = 1;
     fungsi_stack_.push_back(std::move(f));
 
-    for (const ast::Node* s : prog->body) statement(s);
+    // --- Hoisting ekspor (Fase 5) -----------------------------------------
+    // Dua hal perlu hoist agar `ekspor` dan `impor` bekerja pada modul nyata:
+    //
+    // 1. Deklarasi fungsi/kelas yang DIEKSPOR dibuat lebih dulu, sebelum
+    //    statement `impor`. Tanpa ini, impor siklik
+    //    (`a impor b; b impor a;`) tidak bisa saling memanggil, sebab saat
+    //    `b` diimpor, `a` belum punya nilai untuk `f`.
+    //
+    // 2. `ekspor { x, y }` yang ditulis SEBELUM deklarasinya ditunda sampai
+    //    akhir body modul, ketika slot-nya sudah pasti ada.
+    const std::vector<ast::Node*>& semua_statement = prog->body;
+    std::unordered_set<std::string> sudah_dinaikkan;
+    std::vector<const ast::Node*> dinaikkan;
+
+    // 0. Slot untuk pengikat impor dialokasikan lebih dulu (tanpa emits), supaya
+    //    fungsi yang di-hoist.capture-nya sebagai upvalue SLOT, bukan sebagai
+    //    nama global. Tanpa ini, `a impor b; b impor a` menghasilkan fungsi yang
+    //    memanggil binding global yang belum pernah diisi.
+    for (const ast::Node* s : semua_statement) {
+        if (s == nullptr || s->kind != NK::ImporDeklarasi) continue;
+        const auto* im = static_cast<const ast::ImporDeklarasi*>(s);
+        if (im->ada_namespace && !im->alias_namespace.empty()) {
+            impor_slot_.emplace(std::string(im->alias_namespace), slot_baru(im->alias_namespace));
+        }
+        for (const ast::ImporSpesifikasi& sp : im->daftar) {
+            impor_slot_.emplace(std::string(sp.impor), slot_baru(sp.impor));
+        }
+    }
+
+    for (const ast::Node* s : semua_statement) {
+        const ast::Node* deklarasi = deklarasi_ekspor(s);
+        if (deklarasi == nullptr) continue;
+        if (deklarasi->kind != NK::FungsiDeklarasi && deklarasi->kind != NK::GolonganDeklarasi) continue;
+        const std::string_view nama = nama_deklarasi(deklarasi);
+        if (nama.empty() || sudah_dinaikkan.count(std::string(nama)) != 0) continue;
+        // Statement `ekspor` dikompilasi UTUH (deklarasi + ekspor) di sini, jadi
+        // nama sudah ada di objek ekspor sebelum `impor` mana pun dijalankan.
+        statement(s);
+        dinaikkan.push_back(s);
+        sudah_dinaikkan.insert(std::string(nama));
+    }
+
+    for (const ast::Node* s : semua_statement) {
+        const bool sudah = std::find(dinaikkan.begin(), dinaikkan.end(), s) != dinaikkan.end();
+        statement(s, sudah);
+    }
+
+    // Ekspor tertunda (`ekspor { x }` mendahului deklarasinya).
+    for (const EksporTunda& t : ekspor_tunda_) {
+        const auto s = cari_slot(t.lokal);
+        if (s == std::string::npos) {
+            diagnosa_di("S503", "Jeneng \"" + std::string(t.lokal) + "\" ora kanggo diekspor.",
+                        "Gawe variabel utawa fungsi luwih dhisik, banjur `ekspor` iku.");
+            continue;
+        }
+        emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+        const std::size_t k = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, t.ekspor)));
+        emit(Op::TEKS, static_cast<std::uint16_t>(k));
+        emit(Op::EXPORT, 0);
+    }
 
     // Tutup blok: emit RETURN_UNDEF bila perlu.
     emit(Op::NOP);

@@ -41,19 +41,27 @@ def main() -> int:
         return 1
 
     nama_terdaftar = sorted(f[:-3] for f in os.listdir(CONTOH) if f.endswith('.jw'))
+    # Contoh multi-modul: berkas di `examples/modul/`. Hanya `utama.jw` yang
+    # jadi titik masuk; berkas lain diimpor darinya, dan ikut terkunci karena
+    # golden file-nya sendiri ikut dibandingkan.
+    modul_dir = os.path.join(CONTOH, 'modul')
+    if os.path.isdir(modul_dir):
+        for f in sorted(os.listdir(modul_dir)):
+            if f != 'utama.jw' and f.endswith('.jw'):
+                nama_terdaftar.append(f'modul/{f[:-3]}')
     gagal = 0
     lulus = 0
     dilewati = 0
 
     for nama in nama_terdaftar:
         if nama in SKIP:
-            print(f'[LEWAT] {nama:12s} {SKIP[nama]}')
+            print(f'[LEWAT] {nama:18s} {SKIP[nama]}')
             dilewati += 1
             continue
         sumber = os.path.join(CONTOH, f'{nama}.jw')
         harap = os.path.join(GOLDEN, f'{nama}.out')
         if not os.path.exists(harap):
-            print(f'[GAGAL] {nama:12s} berkas خرج `tests/golden/{nama}.out` belum ada')
+            print(f'[GAGAL] {nama:18s} berkas خرج `tests/golden/{nama}.out` belum ada')
             gagal += 1
             continue
         perintah = [jawa, 'run']
@@ -63,11 +71,11 @@ def main() -> int:
         hasil = subprocess.run(perintah, capture_output=True, text=True, timeout=900)
         dengan = open(harap, encoding='utf-8').read()
         if hasil.stdout == dengan:
-            print(f'[ OK  ] {nama:12s} {len(dengan.splitlines())} baris')
+            print(f'[ OK  ] {nama:18s} {len(dengan.splitlines())} baris')
             lulus += 1
         else:
             gagal += 1
-            print(f'[GAGAL] {nama:12s} keluaran beda')
+            print(f'[GAGAL] {nama:18s} keluaran beda')
             print(f'         harap : {dengan!r}')
             print(f'         nyata : {hasil.stdout!r}')
             if hasil.stderr.strip():

@@ -1,0 +1,17 @@
+// Modul contoh: matematika dasar.
+
+ekspor gawe tambah(a, b) {
+  bali a + b;
+}
+
+ekspor gawe kali(a, b) {
+  bali a * b;
+}
+
+ekspor gawe pangkat(a, n) {
+  tetep hasil = 1;
+  kanggo (ana i = 0; i < n; i = i + 1) {
+    hasil = kali(hasil, a);
+  }
+  bali hasil;
+}

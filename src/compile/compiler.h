@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "gc/heap.h"
@@ -106,6 +107,9 @@ private:
 
     // --- statement ---
     void statement(const ast::Node* n);
+    /// `sudah_hoist` = deklarasi fungsi/kelas ini sudah dibuat di awal modul
+    /// (hoisting ekspor), jadi badan statement cukup mengekspornya.
+    void statement(const ast::Node* n, bool sudah_hoist);
     void stmt_blok(const ast::BlokStmt* n);
     /// `awak` bisa berupa blok ATAU satu statement (`kanggo (...) stmt;`).
     void stmt_awak(const ast::Node* n);
@@ -117,8 +121,21 @@ private:
     void stmt_pilih(const ast::PilihStmt* n);
     void stmt_coba(const ast::CobaStmt* n);
     void stmt_golongan(const ast::GolonganDeklarasi* n);
-    void stmt_ekspor(const ast::EksporDeklarasi* n);
+    void stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist);
     void stmt_impor(const ast::ImporDeklarasi* n);
+    /// `ekspor { x, y }` yang ditunda sampai akhir modul (lihat `Compiler::compile`).
+    struct EksporTunda {
+        std::string_view lokal;
+        std::string_view ekspor;
+    };
+    /// Deklarasi yang dibungkus `ekspor`, atau `nullptr`.
+    [[nodiscard]] static const ast::Node* deklarasi_ekspor(const ast::Node* n);
+    /// Nama yang diekspor deklarasi itu (kosong bila tidak bernama).
+    [[nodiscard]] static std::string_view nama_deklarasi(const ast::Node* d);
+    /// Slot untuk pengikat impor. Dialokasikan lebih awal di `compile()` supaya
+    /// fungsi yang di-hoist capture slot, bukan nama global (lihat catatan
+    /// impor siklik di `Compiler::compile`).
+    std::size_t slot_impor(const std::string_view nama);
     void deklarasi_fungsi(const ast::FungsiDeklarasi* n, bool eksport);
 
     // --- ekspresi ---
@@ -160,6 +177,10 @@ private:
     std::vector<vm::ChunkPtr> semua_chunk_;
     std::size_t optimise_aktif_ = 0;  ///< 0 = nonaktif
     bool ada_fungsi_ = false;
+    /// `ekspor { ... }` yang menunggu akhir modul. Hanya berlaku untuk modul.
+    std::vector<EksporTunda> ekspor_tunda_;
+    /// Slot pengikat impor yang sudah dialokasikan di awal modul.
+    std::unordered_map<std::string, std::size_t> impor_slot_;
 };
 
 }  // namespace jawa::compile

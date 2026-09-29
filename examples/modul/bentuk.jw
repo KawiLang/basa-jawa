@@ -1,0 +1,26 @@
+// Modul contoh: bentuk dasar.
+
+golongan Persegi {
+  #sisi;
+
+  wiwit(sisi) {
+    iki.#sisi = sisi;
+  }
+
+  nampa sisi() {
+    bali iki.#sisi;
+  }
+
+  nampa luas() {
+    bali iki.#sisi * iki.#sisi;
+  }
+
+  nampa deskripsi() {
+    bali "persegi sisi " + iki.#sisi;
+  }
+}
+
+// Ekspor kelas lewat daftar nama:Closure-nya yang diekspor, bukan salinan.
+ekspor { Persegi };
+
+ekspor baku 42;
