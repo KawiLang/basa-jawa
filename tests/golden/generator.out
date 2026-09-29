@@ -1,1 +1,6 @@
-[1, 2, 3, 4, 5]
+sebar   =  [1, 2, 3, 4, 5]
+next    =  1 ,  2 ,  3
+ selesai =  true
+hingga  =  [0, 1, 2, 3, 4, 5]
+libat   =  12
+bali    =  pamungkas

@@ -54,7 +54,7 @@ class TanggalObj;
 class KleruObj;
 class SimbolObj;
 class BigIntObj;
-class FiberObj;
+class GeneratorObj;
 class ArrayObj;
 class TeksObj;
 class ObyekOra;
@@ -83,7 +83,7 @@ enum class OK : uint8_t {
     Kleru,
     Simbol,
     BigInt,
-    Fiber,
+    Generator,     ///< hasil pemanggilan `gawe*` (lazy; lihat D-028)
     BoundFn,
     Proxy,         ///< belum didukung
     ArrayBuffer,   ///< typed array
@@ -450,6 +450,46 @@ public:
     /// Tipe `jawa::vm::Lanjutan*` (non-owning; dimiliki VM) supaya lapisan `rt`
     /// tidak perlu tahu bentuk continuation.
     std::vector<jawa::vm::Lanjutan*> lanjutan_vm;
+};
+
+// ---------------------------------------------------------------------------
+// Generator
+// ---------------------------------------------------------------------------
+
+/// Status generator. `Jalan` berarti body belum selesai (suspended di
+/// `metokake`, atau sedang berjalan).
+enum class GeneratorStatus : uint8_t { Jalan, Selesai, Gagal };
+
+/// Hasil pemanggilan fungsi `gawe*`.
+///
+/// LAZY: body fungsi baru berjalan sampai `metokake` pertama saat objek ini
+/// dibuat. Tiap `metokake` menunda seluruh frame generator (disalin ke
+/// `jawa::vm::Lanjutan`) dan mengembalikan kendali ke pemanggil. Generator tak
+/// berhingga karena itu bisa dipakai (lihat D-028).
+class GeneratorObj : public Obj {
+public:
+    static constexpr OK kKind = OK::Generator;
+    GeneratorStatus status = GeneratorStatus::Jalan;
+    /// Nilai `metokake` terakhir.
+    Value nilai = Value::mboh();
+    /// Nilai balik `bali` (bukan hasil `metokake`); valid setelah selesai.
+    Value nilai_bali = Value::mboh();
+    /// Galat yang dilempar body kalau `status == Gagal`.
+    Value galat = Value::mboh();
+    /// Continuation yang disuspensi (pemilik: VM, non-owning).
+    jawa::vm::Lanjutan* lanjutan = nullptr;
+    /// Closure fungsi generator (dipegang supaya bisa di-root & dipamerkan).
+    Value fungsi = Value::mboh();
+    /// Body sudah pernah sampai `metokake`? `false` = belum ada hasil sama sekali.
+    bool dimulai = false;
+    /// Nilai di `nilai` sudah dilaporkan ke pemanggil. Panggilan `langkah`
+    /// berikutnya baru melanjutkan generator. Ini yang membuat tiap `next()`
+    /// menghasilkan tepat satu `metokake` (sifat JavaScript).
+    bool sudah_dibaca = false;
+    /// Nilai yang diberikan pemanggil lewat `.next(nilai)`.
+    Value kirim = Value::mboh();
+    /// Dampar nilai balik yang diminta pemanggil lewat `.next(nilai)`.
+    bool kirim_pakai = false;
 };
 
 // ---------------------------------------------------------------------------

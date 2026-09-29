@@ -168,8 +168,23 @@ bool VM::suspensi_async(rt::JanjiObj* j) {
 void VM::lanjutkan_async(Lanjutan* lan, Value hasil, bool /*ditolak*/) {
     if (lan == nullptr || lan->dipakai) return;
     lan->dipakai = true;
-    stack_.resize(lan->slot_base);
+    // Pulihkan di ATAS stack saat ini, bukan memaksa ukuran stack ke
+    // `lan->slot_base`. Selama rantai tertunda, pemanggil sudah melanjutkan dan
+    // bisa saja memakan slot yang tadinya menyimpan Janji; `resize` ke
+    // `lan->slot_base` akan mengisi slot itu dengan nilai sampah. Jadi geser
+    // indeks slot semua frame sebesar selisihnya. Upvalue ke rentang itu sudah
+    // ditutup saat ditunda, jadi tidak ada pointer yang perlu ikut bergeser.
+    const std::ptrdiff_t geser =
+        static_cast<std::ptrdiff_t>(stack_.size()) - static_cast<std::ptrdiff_t>(lan->slot_base);
     for (const Value& v : lan->stack) stack_.push_back(v);
+    for (Frame& fr : lan->frame) {
+        fr.slot_base =
+            static_cast<std::size_t>(static_cast<std::ptrdiff_t>(fr.slot_base) + geser);
+        if (fr.target_balas != Frame::kTanpaTarget && fr.target_balas != Frame::kBuangHasil) {
+            fr.target_balas =
+                static_cast<std::size_t>(static_cast<std::ptrdiff_t>(fr.target_balas) + geser);
+        }
+    }
     // Nilai hasil `entani` diletakkan di puncak stack; opcode setelah `AWAIT`
     // mengerapinya sebagai hasil ekspresi. `ditolak` tidak dipakai di sini:
     // jalur penolakan ditangani `unwind_galat` pada frame pemanggil.
@@ -185,9 +200,15 @@ void VM::lanjutkan_async(Lanjutan* lan, Value hasil, bool /*ditolak*/) {
             }
         }
     }
-    // `0`: jalankan sampai `frames_` benar-benar kosong (frame modul sudah
-    // selesai waktu rantai ini disuspensi).
-    (void)jalankan_loop(0);
+    // Ambang loop = indeks frame AKAR rantai async (`k`), bukan jumlah frame
+    // setelah pemulihan. Rantai async boleh memuat frame yang BUKAN pemanggil
+    // -- saat modul ikut menjadi akar (top-level `enteni`), frame modul ikut
+    // dipulihkan dan harus ikut berjalan sampai selesai. Dengan ambang
+    // `frames_.size()`, loop berhenti begitu frame di atas akar hilang, dan
+    // sisa rantai (termasuk frame modul) tidak pernah dijalankan lagi.
+    // Kalau `k == 0`, loop berhenti saat `frames_` kosong.
+    const std::size_t ambang = k;
+    (void)jalankan_loop(ambang);
 }
 
 // ===========================================================================

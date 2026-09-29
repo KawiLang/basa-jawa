@@ -17,6 +17,10 @@
 #include "rt/object.h"
 #include "rt/value.h"
 #include "vm/chunk.h"
+// `jawa::vm::Lanjutan` & `jawa::vm::Upvalue` dibutuhkan untuk menandai isi
+// continuation generator. Aman di sini (bukan header) karena `gc/heap.h` sudah
+// selesai di-include di baris sebelumnya, jadi include keduanya tidakberputar.
+#include "vm/vm.h"
 
 namespace jawa::gc {
 
@@ -204,8 +208,31 @@ void Heap::tandai_anak(Obj* o, Worklist& wl) {
         case rt::OK::Tanggal:
         case rt::OK::Simbol:
         case rt::OK::BigInt:
-        case rt::OK::Fiber:
             break;
+        case rt::OK::Generator: {
+            // Generator memegang closure-nya dan continuation yang disuspensi.
+            // Nilai di stack continuation sudah disalin ke sana, tapi upvalue
+            // yang di-frame masih hidup dan harus ditandai.
+            auto* g = static_cast<rt::GeneratorObj*>(o);
+            mark(g->nilai);
+            mark(g->nilai_bali);
+            mark(g->galat);
+            mark(g->kirim);
+            mark(g->fungsi);
+            if (g->lanjutan != nullptr) {
+                for (const Value& v : g->lanjutan->stack) mark(v);
+                for (const auto& f : g->lanjutan->frame) {
+                    mark(f.this_val);
+                    mark(f.janji_async);
+                    if (f.closure == nullptr) continue;
+                    for (void* pv : f.closure->upvalue) {
+                        auto* cell = static_cast<vm::Upvalue*>(pv);
+                        if (cell != nullptr) mark(cell->get());
+                    }
+                }
+            }
+            break;
+        }
         case rt::OK::Fungsi: {
             auto* f = static_cast<rt::FungsiObj*>(o);
             mark(f->prototipe);
@@ -307,6 +334,8 @@ void Heap::tandai_roots() {
     for (auto& fn : root_visitor_) fn(rv);
     // Root value sementara.
     for (const RootExtra& r : akar_) tandai_objek_objek(r.cadangan);
+    // Akar ber-scope (lihat `Heap::akar_scope_push`).
+    for (const Value& v : akar_scope_) tandai_objek_objek(v);
 }
 
 // ---------------------------------------------------------------------------

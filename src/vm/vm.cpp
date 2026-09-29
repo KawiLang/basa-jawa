@@ -62,6 +62,13 @@ VM::VM(const VMOptions& opt) : opt_(opt), heap_(opt.gc_stress, opt.maks_memori_m
         if (modul_aktif != nullptr) {
             for (const auto& kv : modul_aktif->global) rv.rooted(kv.second);
         }
+        // Konstanta & nama properti setiap chunk program (lihat
+        // `VM::chunk_akar_`).
+        for (const ChunkPtr& c : chunk_akar_) {
+            if (!c) continue;
+            for (const Value& v : c->konstanta) rv.rooted(v);
+            for (const Value& v : c->nama_properti) rv.rooted(v);
+        }
         // Semua modul yang sudah dimuat: closure entri, objek ekspor, dan
         // variabel modul. Tanpa ini objek ekspor bisa tersapu di tengah
         // `ObyekObj::set` (yang mengalokasikan kunci), sehingga `impor` membaca
@@ -306,7 +313,9 @@ void VM::panggil_objek(Value callee, Value this_val, std::vector<Value>& args) {
         case OK::Closure: {
             auto* c = static_cast<ClosureObj*>(o);
             if (c->fungsi->kode->generator) {
-                jalankan_generator_eager(c, this_val, args);
+                // Fungsi `gawe*` menghasilkan objek Generator yang LAZY: body-nya
+                // baru jalan sampai `metokake` pertama (lihat `vm/vm_gen.cpp`).
+                panggil_generator(c, this_val, args);
                 return;
             }
             if (c->fungsi->kode->mengko) {
@@ -348,42 +357,6 @@ void VM::panggil_objek(Value callee, Value this_val, std::vector<Value>& args) {
     }
 }
 
-void VM::jalankan_generator_eager(ClosureObj* fn, Value this_val, std::vector<Value>& args) {
-    // CATATANPhase 3 (lihat DECISIONS.md D-014): generator dijalankan sampai
-    // selesai dan semua hasil `metokake` dikumpulkan menjadi Dhaptar. Ini
-    // "eager generator": benar untuk generator berhingga (seperti contoh acuan
-    // `[...cacah(5)]`), TIDAK untuk generator tak berhingga. Batas jumlah hasil
-    // dilindungi supaya program tidak menggantung tanpa news.
-    constexpr std::size_t kMaksHasil = 1u << 20;
-    rt::ArrayObj* kumpulan = buat_dhaptar();
-    tumbles_yield_.push_back(kumpulan);
-    if (++reentrancy_ > static_cast<int>(opt_.maks_reentrancy)) {
-        --reentrancy_;
-        tumbles_yield_.pop_back();
-        std::fprintf(stderr, "KleruRentang [R003] Reentrancy generator kebijauan (wates: %zu).\n",
-                     opt_.maks_reentrancy);
-        galat_.ada = true;
-        dorong(Value::mboh());
-        return;
-    }
-    // `kBuangHasil`: nilai balik generator tidak relevan (hasilnya sudah
-    // dikumpulkan), jadi jangan sisakan nilai di stack.
-    mulai_frame(fn, this_val, args, Frame::kBuangHasil);
-    (void)jalankan_loop(frames_.size());
-    --reentrancy_;
-    tumbles_yield_.pop_back();
-    if (galat_.ada) {
-        dorong(Value::mboh());
-        return;
-    }
-    if (kumpulan->panjang > kMaksHasil) {
-        dorong(buat_kleru("KleruWates",
-                         "Generator luwih saka 1048576 hasil. Fase 3 memakai generator mode-eager "
-                         "(lihat docs/bytecode.md)."));
-        return;
-    }
-    dorong(Value::obyek(kumpulan));
-}
 
 rt::InstanceObj* VM::instans_baru(rt::ClassObj* kls) {
     auto* inst = heap_.alokasi<InstanceObj>();

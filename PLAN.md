@@ -28,11 +28,11 @@ tanpa UB, tanpa `abort()` senyap, tanpa menandai fase selesai bila ada test mera
 | 0 | Fondasi: build, arena, `Result`, diagnostik, `keywords.def`, `Value`, harness test | **selesai** |
 | 1 | Lexer: token, template, regex/div, ASI, UTF-8, alias ngoko/krama | **selesai** |
 | 2 | Parser & AST: seluruh konstruk, recovery, `grammar.ebnf` | **selesai** (AST + parser + recovery 100%; `grammar.ebnf` menyusul) |
-| 3 | Kompiler & VM inti: scope, emitter, VM stack-based, closure/upvalue | belum |
-| 4 | Object model: Shape, inline cache, objek, dhaptar, prototipe, golongan | belum |
-| 5 | GC: mark–sweep presisi, handle scope, intern lemah, `--gc-stress` | belum |
-| 6 | Galat & pengecualian: hirarki `Kleru`, unwinder, stack trace, batas | belum |
-| 7 | Fiber, generator, `Janji`, `mengko`/`enteni`, event loop, modul ES | belum |
+| 3 | Kompiler & VM inti: scope, emitter, VM stack-based, closure/upvalue | **selesai** |
+| 4 | Object model: Shape, inline cache, objek, dhaptar, prototipe, golongan | **sebagian** (objek & golongan selesai; shape/inline cache belum) |
+| 5 | GC: mark–sweep presisi, handle scope, intern lemah, `--gc-stress` | **selesai** (generasi incremental belum) |
+| 6 | Galat & pengecualian: hirarki `Kleru`, unwinder, stack trace, batas | **sebagian** (hirarki & batas selesai; jejak stack sumber belum) |
+| 7 | Fiber, generator, `Janji`, `mengko`/`enteni`, event loop, modul ES | **selesai tanpa fiber** (D-023/D-028) |
 | 8 | Pustaka standar: `Teks`, `Angka`, `Matematika`, `JSON`, `Regex`, `Tanggal`, berkas, izin | belum |
 | 9 | Fitur expert: `cocog`, pipeline, tipe bertahap, optimizer, superinstruction | belum |
 | 10 | Tooling: REPL, `fmt`, `ubah`, `tes`, `bench`, embedding API, native C ABI, aksara/pasaran | belum |
@@ -46,8 +46,8 @@ Risiko diurutkan dari yang paling mungkin menggagalkan proyek.
 
 | # | Risiko | Mitigasi | Fase |
 |---|---|---|---|
-| R1 | Rekursi C++ saat pemanggilan fungsi JS → stack overflow native | Panggilan JS→JS **tidak** memakai rekursi C++; satu loop `execute()` dengan stack frame eksplisit + **fiber** (frame & stack sendiri) | 3, 7 |
-| R2 | GC presisi salah rooting → use-after-free | Root eksplisit: stack VM, frame, upvalue, handle native RAII, antrian. `--gc-stress` menjalankan **seluruh** suite | 5 |
+| R1 | Rekursi C++ saat pemanggilan fungsi JS → stack overflow native | Panggilan JS→JS **tidak** memakai rekursi C++; satu loop bytecode dengan frame eksplisit. Suspensi (`enteni`/`metokake`) menyalin frame ke continuation, **tanpa fiber** (D-023, D-028) | 3, 7 |
+| R2 | GC presisi salah rooting → use-after-free | Root eksplisit: stack VM, frame, upvalue, handle native RAII, akar ber-scope (`ScopedRoot`), konstanta chunk, antrian async, dan store modul. `--gc-stress` menjalankan **seluruh** suite | 5 |
 | R3 | Ambiguitas parser (arrow vs kurung, destructuring, regex vs div, `cocog`) | Pratt + cover grammar + backtracking terbatas, token `newline_before` untuk ASI, tokenizer "re-scan on demand" | 2 |
 | R4 | `enteni`/`metokake` butuh keluar-masuk loop C++ | Sinyal `Suspend` yang keluar dari loop `execute()`; state fiber disimpan di frame VM; titik suspensi dijamin di luar builtin native (dijaga `RAII` assertion) | 7 |
 | R5 | Stack nilai yang dapat tumbuh memindahkan pointer, membatalkan rujukan | Stack nilai berupa arena yang hanya tumbuh; setiap objek yang dirujuk frame di-*pin* lewat `HandleScope`; tidak ada realloc pada lintasan quenteh | 3, 5 |
@@ -110,12 +110,13 @@ Risiko diurutkan dari yang paling mungkin menggagalkan proyek.
 - [x] VM stack-based, tanpa rekursi C++ untuk JS→JS (lihat `DECISIONS.md` D-015)
 - [x] Aritmetika, kontrol alur, fungsi, closure, upvalue
 - [x] `tulis`, teks, angka (format terpendek round-trip)
-- [x] Kelas, pola `cocog`, `coba`/`tangkep`, pipeline, generator mode-eager
+- [x] Kelas, pola `cocog`, `coba`/`tangkep`, pipeline, generator (lazy, diimplementasikan di Fase 7)
 - [x] GC mark-and-sweep presisi + karantina + akar sementara
-- [x] 10 dari 11 contoh acuan menghasilkan keluaran persis
+- [x] 11 dari 11 contoh acuan menghasilkan keluaran persis
 
-Belum di Fase 3: `async`/event loop, generator suspend, TDZ, hidden class
-(inline cache). Lihat `STATUS.md` § "Yang BELUM".
+`async`/event loop (Fase 6) dan generator suspend (Fase 7) juga sudah selesai.
+Belum: TDZ, `pilih` dengan pola, hidden class (inline cache). Lihat
+`STATUS.md` § "Yang BELUM".
 
 ### Fase 4 — Object model — **BELUM**
 (Fase 3 memakai mode dictionary yang benar; hidden class & inline cache belum.)
@@ -137,11 +138,15 @@ Belum di Fase 3: `async`/event loop, generator suspend, TDZ, hidden class
 - [ ] Katalog pesan `messages.def` + snapshot test
 - [ ] Batas langkah/tumpukan/memori
 
-### Fase 7 — Fiber, async, modul
-- [ ] Fiber (frame + stack sendiri), generator
-- [ ] `Janji` + event loop + microtask/macrotask
-- [ ] `mengko`/`enteni`, async generator, `kanggo enteni`
-- [ ] Modul ES: cache, live binding, siklus, dinamis, top-level `enteni`
+### Fase 7 — Async, generator, modul — **SELESAI tanpa fiber**
+- [x] `Janji` + event loop deterministik (mikrotugas mendahului timer)
+- [x] `mengko`/`enteni`, termasuk top-level `enteni`
+- [x] Generator lazy `gawe*` + `metokake` (continuation, tanpa fiber — D-028)
+- [x] `Wektu` (timer) + method Janji (`then`, `tangkep`)
+- [x] Modul ES: cache, impor siklik, alias, `baku`, re-export (D-025 s/d D-027)
+- [ ] Live binding (ekspor bukan nilai-yang-dihidupi) — lihat `docs/modules.md`
+- [ ] Async generator (`gawe mengko`), `kanggo enteni`
+- [ ] `Janji.all` / `race` / `anySelesai`
 
 ### Fase 8 — Pustaka standar
 - [ ] `Teks`, `Angka`, `Matematika`, `JSON`, `Regex`, `Tanggal`, `Peta`, `Himpunan`
@@ -166,3 +171,22 @@ Belum di Fase 3: `async`/event loop, generator suspend, TDZ, hidden class
 - [ ] Tuning, benchmark terdokumentasi
 - [ ] Fuzz penuh
 - [ ] Dokumentasi final + `CHANGELOG.md` + `v1.0.0`
+
+---
+
+## Catatan Fase 6 & 7
+
+Kedua fase itu selesai **tanpa fiber**, padahal rencana awal menyebut fiber
+sebagai syarat. Alasannya tercatat di `DECISIONS.md`:
+
+- **D-023** — `entani` menunda rantai async dengan menyalin frame ke
+  continuation (`struct Lanjutan`), bukan dengan stack C++ terpisah.
+- **D-028** — generator `metokake` memakai mechanism yang **sama persis**.
+  D-019 ("generator mode-eager") dicabut.
+- **D-029** — konstanta setiap chunk harus di-root selama program berjalan
+  (bug GC yang hanya muncul dengan `--gc-stress`).
+- **D-030** — nilai yang dipop dari stack lalu dipakai selama banyak alokasi
+  perlu akar ber-scope (`gc::ScopedRoot`).
+
+Konsekuensinya `FIBER_CREATE` / `FIBER_RESUME` adalah opcode mati: ruang nama
+merek itu dijaga, tapi tidak pernah dipakai.

@@ -104,6 +104,14 @@ struct Frame {
     Value janji_async = Value::mboh();
     /// Frame ini adalah akar rantai `async` (bukan pemanggilan `mengko` bersarang).
     bool akar_async = false;
+    /// Generator yang memiliki frame ini (lihat `VM::suspensi_generator`).
+    /// `nullptr` di luar generator. Frame di dalam generator (fungsi yang
+    /// dipanggil dari body-nya) mewarisi penanda yang sama lewat
+    /// `Frame::agen_turunan`.
+    rt::GeneratorObj* agen = nullptr;
+    /// Frame ini adalah AKAR generator (bukan fungsi yang dipanggil dari
+    /// body-nya). Penanda ini menentukan titik pemangkasan saat `metokake`.
+    bool akar_agen = false;
 };
 
 /// Modul: satu berkas .jw yang telah dikompilasi.
@@ -155,7 +163,7 @@ struct GalatRuntime {
     bool ada = false;
 };
 
-/// Rantai `async` yang disuspensi `entani` pada Janji yang masih menunggu.
+/// Rantai `async` atau generator yang disuspensi (`entani` / `metokake`).
 ///
 /// Berisi SALINAN frame dan nilai stack, karena stack VM dipakai ulang oleh
 /// kode lain sementara rantai ini tertunda. Upvalue yang menunjuk ke rentang
@@ -164,12 +172,18 @@ struct GalatRuntime {
 struct Lanjutan {
     std::vector<Frame> frame;
     std::vector<Value> stack;
-    /// Indeks stack saat rantai dimulai (tempat nilai hasil `entani` diletakkan).
+    /// Indeks stack saat rantai dimulai (tempat nilai hasil `entani`/`metokake`
+    /// diletakkan saat pemulihan).
     std::size_t slot_base = 0;
-    /// Janji yang sedang ditunggu.
+    /// Janji yang sedang ditunggu (rantai `async` saja).
     rt::Value janji = rt::Value::mboh();
     bool ditolak = false;
     bool dipakai = false;
+    /// Nilai `dasar_async_` saat ditunda; dipulihkan saat dilanjutkan,
+    /// supaya generator di dalam rantai async tidak merusak akar rantainya.
+    std::size_t dasar_async = 0;
+    /// Generator pemilik (continuation generator); `nullptr` untuk async.
+    rt::GeneratorObj* agen = nullptr;
 };
 
 class VM {
@@ -315,8 +329,21 @@ private:
     void mulai_frame(ClosureObj* fn, Value this_val, std::vector<Value>& args,
                     std::size_t target_balas = static_cast<std::size_t>(-1));
     /// Alokasikan instans kosong untuk sebuah class.
-    /// Jalankan generator (`gawe*`) mode-eager: kumpulkan hasil `metokake`.
-    void jalankan_generator_eager(ClosureObj* fn, rt::Value this_val, std::vector<rt::Value>& args);
+    // ------------------------------------------------------------ generator
+    /// Pemanggilan fungsi `gawe*`: buat objek Generator lalu jalankan body-nya
+    /// sampai `metokake` pertama. Nilai balik pemanggilan adalah objek Generator
+    /// (bukan Dhaptar hasil) -- lihat D-028.
+    void panggil_generator(ClosureObj* fn, Value this_val, std::vector<Value>& args);
+    /// Tunda generator pada `metokake`: salin frame generator ke `Lanjutan`,
+    /// lalu pangkas supaya pemanggil melanjutkan dari instruksi setelah `CALL`.
+    /// `true` bila berhasil disuspensi.
+    bool suspensi_generator(rt::GeneratorObj* g, Value hasil);
+    /// Lanjutkan generator yang tertunda dan jalankan sampai `metokake` berikutnya
+    /// atau body selesai. Nilai `metokake` berikutnya diletakkan di `g->nilai`.
+    void lanjutkan_generator(rt::GeneratorObj* g, Value kirim, bool pakai_kirim);
+    /// Hasil satu langkah generator: `{ nilai, selesai }`.
+    /// `nullptr` bila galat (galat sudah diset di `galat_`).
+    ObyekObj* langkah_generator(rt::GeneratorObj* g, Value kirim, bool pakai_kirim);
     rt::ClassObj* kelas_dari(rt::Value v) const;
     rt::InstanceObj* instans_baru(rt::ClassObj* kls);
     /// Tutup semua upvalue terbuka pada frame yang baru selesai.
@@ -334,8 +361,6 @@ private:
     std::vector<Frame> frames_;
     /// Sel upvalue terbuka (urutan tidak menurun menurut indeks stack).
     std::vector<Upvalue*> open_upvalues_;
-    /// Target `metokake` untuk generator mode-eager (lihat `panggil_objek`).
-    std::vector<rt::ArrayObj*> tumbles_yield_;
     /// Indeks stack tempat spread terakhir dimulai (lihat `SPREAD_PUSH`).
     std::vector<std::size_t> spread_base_;
     /// Arena sel upvalue yang sudah ditutup (dimiliki VM, dibersihkan penuh).
@@ -382,6 +407,14 @@ private:
     SourcePos pos_sumber_;
     bool dalam_reentrancy_ = false;
     std::vector<std::function<void(gc::RootVisitor&)>> root_visitor_;
+    /// SEMUA chunk program (modul utama + modul terimpor) sebagai akar GC.
+    ///
+    /// Penting: konstanta & nama properti sebuah chunk sudah dibuat waktu
+    /// KOMPILASI, tapi `FungsiObj` chunk anak baru dibuat runtime saat opcode
+    /// `CLOSURE` dieksekusi. Menu bukan root sebelum itu, konstanta string anak bisa
+    /// tersapu -- dan program yang baru rusak setelah beberapa alokasi, bukan
+    /// seketika.-root di sini menutup celah itu.
+    std::vector<ChunkPtr> chunk_akar_;
     /// Cache prototype (root GC; bukan `static` supaya bebas bila ada >1 VM).
     Value proto_dasar_ = Value::mboh();
     Value proto_dhaptar_ = Value::mboh();

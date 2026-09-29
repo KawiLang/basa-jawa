@@ -281,7 +281,7 @@ seluruh objek hidup tampak hilang (bug yang sempat muncul).
 
 ---
 
-## D-019. Generator mode-eager (penyimpangan sementara)
+## D-019. ~~Generator mode-eager~~ — DICABUT oleh D-028
 
 **Keputusan.** `gawe* f() { ... metokake x; ... }` dijalankan sampai selesai;
 semua hasil `metokake` dikumpulkan menjadi `ArrayObj` yang dikembalikan. Ada
@@ -300,8 +300,8 @@ umum (mis. `gawe* tabel(){ ... }` yang tidak pernah dipanggil). Dicatat di
 ## D-020. Field privat dijaga kompilator, bukan runtime
 
 **Keputusan.** Field privat `#nama` disimpan sebagai slot biasa dengan nama
-berawalan `#`. Privasi dijaga kompilator (nama `#x` tidak bisa ditulis di luar
-kelas).
+berawalan `#`. Privasi dijaga kompilator: nama `#x` tidak bisa ditulis di luar
+kelas, jadi tidak bocor lewat refleksi.
 
 **Alasan.** Slot instance berbasis `vector<Value>` + `vector<string_view>` lebih
 sederhana dan cukup untuk semantik yang dibutuhkan; `#Brand` + slot privat
@@ -416,7 +416,7 @@ instruksi setelah `IMPORT`.
   bytecode.
 
 **Catatan implementasi.** Ambang loop dihitung dari JUMLAH FRAME, bukan indeks
-stack. memakai indeks stack membuat loop langsung keluar (kondisi `2 < 3` sudah
+stack. Memakai indeks stack membuat loop langsung keluar (kondisi `2 < 3` sudah
 terpenuhi) sehingga body modul tak pernah berjalan — gejalanya `ekspor` melihat
 `modul_aktif == nullptr`.
 
@@ -469,6 +469,118 @@ diekspor modul**. Opcode `GET_PROP` tidak berubah.
   adalah beda ejaan atau lupa `ekspor`.
 - Galat diteruskan lewat `unwind_galat`, jadi `coba`/`tangkep` di modul
   pemanggil bisa menanganinya (bukan `galat_.ada` langsung).
+
+---
+
+## D-028. Generator lazy memakai continuation yang sama dengan async
+
+**Konteks.** D-019 menetapkan generator "mode-eager": `gawe* g() {...}` dijalankan
+sampai selesai dan semua hasil `metokake` dikumpulkan jadi Dhaptar, dengan
+pengaman 2^20 hasil. Itu benar untuk generator berhingga dan **salah** untuk
+generator tak berhingga. D-019 juga menyebut fiber sebagai jalan ke lazy
+generator.
+
+Fase 6 (D-023) membuktikan fiber tidak diperlukan untuk async: `enteni` cukup
+menyalin frame ke continuation. Pertanyaannya, apakah mechanism yang sama bisa
+dipakai untuk generator.
+
+**Keputusan.** Ya. `metokake` memakai `struct Lanjutan` yang persis sama dengan
+rantai async (`src/vm/vm_gen.cpp`):
+
+- `VM::suspensi_generator` menyalin frame `akar_agen`..teratas + nilai stack,
+  menutup upvalue yang menunjuk ke rentang itu, lalu memangkas `frames_`/`stack_`.
+- `VM::lanjutkan_generator` menyalin balik dan menjalankan loop bytecode lagi.
+- `FIBER_CREATE` / `FIBER_RESUME` **tidak pernah dipakai**.
+
+D-019 dicabut.
+
+**Alasan.**
+
+- Tinggi call stack tidak bertambah, jadi generator tak berhingga bisa dipakai.
+- Satu mechanism, satu bentuk lompatan, satu bentuk galat. Tidak ada jalur
+  eksekusi kedua (sejalan dengan D-003/D-015/D-023).
+- `VMOptions::maks_tumpukan` tetap berlaku: generator yang bersarang banyak
+  (`for (const x saka g1) for (const y saka g2)`) tetap menghasilkan
+  `KleruRentang`, bukan crash.
+- Pengaman 2^20 hasil tidak perlu lagi: pemanggilan tidak lagi berjalan sampai
+  selesai.
+
+**Konsekuensi (disengaja).** Pemanggil `mengko`/generator harus **meminta
+langkah berikutnya**; tidak ada penjadwalan otomatis. `g.next()` mengembalikan
+`{nilai, selesai}` dengan sifat JavaScript; spread `[...g]` dan
+`for..of` keduanya memintanya satu langkah pada satu waktu.
+
+**Dua bug nyata yang muncul selama implementasi (keduanya ditemukan lewat
+pengujian):**
+
+1. **Pemulihan continuation harus menggeser indeks slot, bukan memaksa ukuran
+   stack.** Selama generator tertunda, pemanggil sudah melanjutkan dan bisa
+   saja memakan slot yang tadinya menyimpan objek generator (`SPREAD_PUSH` mem-pop
+   nilai itu). `stack_.resize(lan->slot_base)` mengisi slot yang sudah dibuang
+   dengan nilai sampah. Gejalanya `[undefined, 1, 2, 3]` untuk generator 3 hasil.
+   Perbaikan: dorong nilai tersimpan di atas stack saat ini, lalu geser
+   `slot_base` dan `target_balas` setiap frame sebesar selisihnya. Upvalue ke
+   rentang itu sudah ditutup saat ditunda, jadi tidak ada pointer yang ikut
+   bergeser.
+2. **Ambang loop resume tidak boleh `0`.** Dengan `0`, loop resuming melanjutkan
+   eksekusi frame pemanggil di dalam loop bersarang. Untuk generator ambangnya
+   `frames_.size()` setelah pemulihan; untuk async ambangnya indeks frame **akar**
+   rantai (`k`), karena saat modul ikut menjadi akar (top-level `enteni`) frame
+   modul ikut dipulihkan dan harus ikut berjalan sampai selesai.
+
+---
+
+## D-029. Konstanta chunk harus di-root selama program berjalan
+
+**Konteks.** `Heap::bersihkan_akar_sementara()` (D-018) mengosongkan daftar akar
+sementara kompilator setelah `FungsiObj` modul menjadi root. Tujuannya: konstanta
+string modul tidak tertahan selamanya.
+
+**Bug yang ditemukan.** Konstan untuk **fungsi anak** ikut hilang dari daftar itu
+padahal `FungsiObj`-nya belum ada. `FungsiObj` sebuah fungsi anak baru dibuat
+runtime, saat opcode `CLOSURE` dieksekusi — bisa jauh setelah modul di-root. lalu
+`bersihkan_akar_sementara()` dipanggil, konstanta string anak tidak punya akar
+sama sekali. Program yang baru rusak setelah beberapa alokasi, bukan seketika.
+
+Gejalanya sangat menyesatkan: pada program kecil (yang langsung memanggil
+fungsi tersebut) tidak ada koleksi di antara waktu itu, jadi tidak terlihat.
+Pada program yang lebih panjang, konstanta `"pamungkas"` tersapu dan memorinya
+dipakai ulang `TeksObj` lain; program membaca string yang salah — dan hanya
+dalam mode `--gc-stress`.
+
+**Keputusan.** `VM::chunk_akar_` menyimpan **semua** chunk program (modul utama +
+fungsi anak + modul terimpor), dan root visitor menandai `konstanta` serta
+`nama_properti` setiap chunk. Daftar itu dibersihkan bersama VM.
+
+**Alasan.** Benar secara lokal dan sederhana: setiap konstan chunk benar-benar
+dipakai sepanjang program, jadi menahannya bukan kebocoran.
+Akar yang "lebih ketat" -- misalnya melepas konstanta yang tidak lagi dirujuk --
+butuh analisis yang belum ada dan tidak dibutuhkan sekarang.
+
+**Efek samping yang bagus.** Konstanta `nama_properti` ikut tertahan, termasuk
+nama yang hanya dipakai untuk `GET_GLOBAL`/`GET_PROP` di chunk anak yang belum
+dibuat closure-nya.
+
+---
+
+## D-030. Nilai yang dipop dari stack perlu akar ber-scope
+
+**Konteks.** Beberapa opcode mempop nilai dari stack lalu memakainya selama
+*banyak* alokasi. Contoh: `SPREAD_PUSH` mem-pop objek yang akan di-spread, lalu
+menjalankan generator sampai habis (yang bisa memicu ribuan alokasi).
+
+**Bug.** Selama nilai itu tidak ada di stack, ia juga tidak ada di root GC.
+Dengan `--gc-stress` (koleksi tiap alokasi) objeknya bisa tersapu di tengah,
+bersama nilai yang dipegang frame yang sedang disuspensi.
+
+**Keputusan.** `gc::ScopedRoot` — RAII satu nilai yang didorong ke
+`Heap::akar_scope_` (deque, push/pop LIFO) dan ditandai sebagai root.
+Dipakai di `SPREAD_PUSH`.
+
+**Catatan.** `gc::Handle` yang sudah ada **bukan** root GC — dia hanya menjaga
+alamat salinan nilai lokal (dirancang untuk `HandleScope` yang mendaftarkan
+slot-nya ke heap). Pemakaian `Handle` sendirian di opcode akan terlihat benar
+tetapi tidak efectuar apa pun.
 
 
 ---

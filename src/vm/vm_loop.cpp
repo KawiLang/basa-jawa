@@ -317,7 +317,14 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
             // `MAKE_ARRAY_SPREAD` menghitung totalnya dari situ.
             case Op::SPREAD_PUSH: {
                 const Value src = ambil();
-                spread_base_.push_back(stack_.size());
+                // `src` dipop dari stack, jadi selama statement ini berjalan
+                // (yang bisa memicu ribuan alokasi -- `metokake`,
+                // `langkah_generator`) nilainya tidak ada di root GC. Tanpa akar
+                // ini generator bisa tersapu di tengah, dan nilai yang dipegang
+                // frame yang disuspensi ikut hilang.
+                const gc::ScopedRoot akar_src(heap_, src);
+                const std::size_t spread_dasar = stack_.size();
+                spread_base_.push_back(spread_dasar);
                 Obj* o = objek(src);
                 if (o == nullptr) break;
                 if (o->h.kind == OK::Array) {
@@ -328,6 +335,38 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                     for (std::size_t i = 0; i < rt::panjang_code_point(s); ++i) {
                         dorong(Value::obyek(rt::buat_teks(heap_, rt::potong_code_point(s, i, i + 1))));
                     }
+                } else if (o->h.kind == OK::Generator) {
+                    // Spread menjalankan generator sampai habis, sama seperti
+                    // `[...gen]`. Generator tak berhingga akan menghabiskan
+                    // space tanpa akhir, persis seperti di JavaScript.
+                    //
+                    // Nilai dikumpulkan di buffer LOKAL dulu, bukan langsung
+                    // didorong ke stack: setiap `metokake` memangkas stack ke
+                    // `slot_base` frame generator, jadi nilai yang sudah
+                    // didorong akan terhapus.
+                    constexpr std::size_t kMaks = 1u << 24;
+                    std::vector<Value> kumpulan;
+                    kumpulan.reserve(8);
+                    auto* g = static_cast<rt::GeneratorObj*>(o);
+                    for (std::size_t ke = 0; ke < kMaks; ++ke) {
+                        ObyekObj* langkah = langkah_generator(g, Value::mboh(), false);
+                        if (langkah == nullptr) return Status::Galat;  // galat di body
+                        Value selesai = Value::mboh();
+                        langkah->get(Value::obyek(rt::buat_teks(heap_, "selesai")), selesai);
+                        if (selesai.bool_value()) break;
+                        Value v = Value::mboh();
+                        langkah->get(Value::obyek(rt::buat_teks(heap_, "nilai")), v);
+                        kumpulan.push_back(v);
+                    }
+                    if (kumpulan.size() >= kMaks) {
+                        const Value k = buat_kleru(
+                            "KleruWates",
+                            "Generator ngalihake luwih saka 16777216 nilai nalika disebarake "
+                            "menyang Dhaptar.");
+                        if (unwind_galat(k)) break;
+                        return Status::Galat;
+                    }
+                    for (const Value& v : kumpulan) dorong(v);
                 }
                 break;
             }
@@ -539,18 +578,40 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
             // Teks, atau objek dengan `nilai` (dhaptar) / pasangan `kunci`+`nilai`.
             // Stack setelah `ITER_INIT`: [iterable, indeks].
             case Op::ITER_INIT: {
+
                 const Value obj = ambil();
                 dorong(obj);
                 dorong(Value::angka_int32(0));
                 break;
             }
             case Op::ITER_NEXT: {
+
                 if (stack_.size() < 2) return gagal(*this, "I003", "ITER_NEXT tanpa iterator aktif.");
                 const Value idx = stack_[stack_.size() - 1];
                 const Value iter = stack_[stack_.size() - 2];
                 Obj* o = objek(iter);
                 bool ada = false;
                 Value hasil = Value::mboh();
+                if (o != nullptr && o->h.kind == OK::Generator) {
+                    // Generator: satu langkah = satu `metokake`. Indeks di stack
+                    // tidak dipakai; kontinuasi yang menentukan posisi. Ini yang
+                    // membuat `for..of` dan spread bisa berhenti kapan saja --
+                    // termasuk untuk generator tak berhingga.
+                    auto* g = static_cast<rt::GeneratorObj*>(o);
+                    ObyekObj* langkah = langkah_generator(g, Value::mboh(), false);
+                    if (langkah == nullptr) return Status::Galat;  // galat di body
+                    bool selesai = false;
+                    langkah->get(Value::obyek(rt::buat_teks(heap_, "selesai")), hasil);
+                    selesai = hasil.bool_value();
+                    hasil = Value::mboh();
+                    if (!selesai) {
+                        langkah->get(Value::obyek(rt::buat_teks(heap_, "nilai")), hasil);
+                        ada = true;
+                    }
+                    dorong(hasil);
+                    dorong(Value::boolean(ada));
+                    break;
+                }
                 if (o != nullptr && o->h.kind == OK::Array) {
                     auto* a = static_cast<ArrayObj*>(o);
                     const std::size_t i = static_cast<std::size_t>(idx.as_number());
@@ -678,6 +739,15 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                     }
                     if (f.akar_async) dasar_async_ = kTanpaAsync;
                 }
+                if (f.agen != nullptr && f.akar_agen) {
+                    // Body generator selesai (`bali` atau jatuh dari akhir).
+                    // Nilai balik disimpan di generator, bukan dikembalikan ke
+                    // pemanggil -- pemanggil tetap memegang objek Generator.
+                    f.agen->status = rt::GeneratorStatus::Selesai;
+                    f.agen->nilai = v;
+                    f.agen->nilai_bali = v;
+                    f.agen->lanjutan = nullptr;
+                }
                 tutup_upvalue_frame(base);
                 stack_.resize(base);
                 frames_.pop_back();
@@ -703,6 +773,15 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                     }
                     if (f.akar_async) dasar_async_ = kTanpaAsync;
                 }
+                if (f.agen != nullptr && f.akar_agen) {
+                    // Body generator selesai (`bali` atau jatuh dari akhir).
+                    // Nilai balik disimpan di generator, bukan dikembalikan ke
+                    // pemanggil -- pemanggil tetap memegang objek Generator.
+                    f.agen->status = rt::GeneratorStatus::Selesai;
+                    f.agen->nilai = v;
+                    f.agen->nilai_bali = v;
+                    f.agen->lanjutan = nullptr;
+                }
                 tutup_upvalue_frame(base);
                 stack_.resize(base);
                 frames_.pop_back();
@@ -719,7 +798,10 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
             }
 
             // ---------------------------------------------------------- kontrol
-            case Op::JUMP: f.ip = ins.a; break;
+            case Op::JUMP: {
+                f.ip = ins.a;
+                break;
+            }
             // Catatan: lompatan bersyarat MEMBATAS (peek), tidak pops. Nilai
             // dibuang oleh `POP` eksplisit dari kompilator, supaya nilai bisa
             // dipakai lagi pada cabang lain (lihat `LogikaExpr`).
@@ -888,17 +970,21 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 if (ekspor != nullptr) ekspor->set(heap_, nama_v, nilai);
                 break;
             }
-            // `metokake x`. Di dalam generator mode-eager (lihat
-            // `panggil_objek`), nilai dikumpulkan lalu eksekusi dilanjutkan.
             case Op::YIELD: {
+                // `metokake nilai`. Di dalam generator, seluruh frame generator
+                // disuspensi (disalin ke `Lanjutan`) supaya pemanggil langsung
+                // melanjutkan -- lihat `vm/vm_gen.cpp` & D-028.
                 const Value v = ambil();
-                if (!tumbles_yield_.empty()) {
-                    // Kumpulkan lalu eksekusi dilanjutkan. Nilainya tetap
-                    // didorong supaya `POP` dari statement `metokake x;` seimbang.
-                    tumbles_yield_.back()->dorong(v, &heap_);
-                    dorong(v);
-                    continue;
+                if (f.agen != nullptr) {
+                    if (suspensi_generator(f.agen, v)) break;  // pemanggil lanjut
+                    const Value k = buat_kleru(
+                        "KleruKonteks",
+                        "`metokake` mungake ing generator (fungsi `gawe*`).");
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
                 }
+                // `metokake` di luar generator: tidak ada yang menunda, jadi
+                // nilai dikembalikan sebagai ekspresi biasa.
                 dorong(v);
                 break;
             }

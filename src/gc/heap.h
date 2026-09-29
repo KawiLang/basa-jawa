@@ -130,6 +130,16 @@ public:
     void akar_sementara(Value v) { akar_sementara_.push_back(v); }
     void bersihkan_akar_sementara() { akar_sementara_.clear(); }
 
+    // --- akar ber-scope (RAII) ------------------------------------------
+    // `HandleScope` untuk nilai yang sudah ada; ini untuk nilai yang
+    // dipop dari stack lalu dipakai selama banyak alokasi (mis. generator yang
+    // dijalankan lewat `SPREAD_PUSH`). Push/pop LIFO, jadi tidak menggeser
+    // entri lain.
+    void akar_scope_push(Value v) { akar_scope_.push_back(v); }
+    void akar_scope_pop() {
+        if (!akar_scope_.empty()) akar_scope_.pop_back();
+    }
+
     /// Slot handle RAII; alamat stabil karena memakai `std::deque`.
     Value* tambah_handle(Value v);
 
@@ -171,6 +181,7 @@ private:
         Value cadangan{};
     };
     std::deque<Value> akar_sementara_;
+    std::deque<Value> akar_scope_;
 
     std::vector<Obj*> semua_;
     std::vector<Obj*> abu_;  // untuk incremental (Fase 11)
@@ -206,6 +217,24 @@ struct RootVisitor {
         if (visit == nullptr) return;
         for (Value* p = mulai; p < akhir; ++p) visit(*p);
     }
+};
+
+/// RAII: satu nilai yang dijaga sebagai akar GC selama objek ini hidup.
+///
+/// Berbeda dengan `HandleScope` (yang punya slot berindeks), ini untuk nilai
+/// yang SUDAH ada lalu dipop dari stack dan dipakai selama banyak alokasi --
+/// misalnya generator yang dijalankan lewat `SPREAD_PUSH`.
+class ScopedRoot {
+public:
+    ScopedRoot(Heap& h, Value v) : heap_(&h) { h.akar_scope_push(v); }
+    ~ScopedRoot() { heap_->akar_scope_pop(); }
+    ScopedRoot(const ScopedRoot&) = delete;
+    ScopedRoot& operator=(const ScopedRoot&) = delete;
+    ScopedRoot(ScopedRoot&&) = delete;
+    ScopedRoot& operator=(ScopedRoot&&) = delete;
+
+private:
+    Heap* heap_;
 };
 
 }  // namespace jawa::gc

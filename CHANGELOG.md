@@ -380,3 +380,99 @@ benar-benar jalan. `impor`/`ekspor` sebelumnya di-parse dengan benar tetapi
 
 ---
 
+## [0.6.0] — Fase 7 (sebagian): generator lazy, tanpa fiber
+
+Rilis kelima. 0.5.0 menutup linker modul ES; 0.6.0 menghapus penyimpangan
+generator mode-eager. **Tidak ada fiber** — generator memakai continuation yang
+sama dengan rantai `async` (D-028).
+
+### Ditambahkan
+
+**Generator LAZY** (`src/vm/vm_gen.cpp`, baru)
+- `VM::panggil_generator` membuat objek `GeneratorObj`; body jalan sampai
+  `metokake` pertama, lalu objek itu dikembalikan ke pemanggil.
+- `VM::suspensi_generator` — `metokake` menyalin frame generator + nilai stack ke
+  `Lanjutan`, menutup upvalue yang menunjuk ke rentang itu, lalu memangkas
+  `frames_`/`stack_`. Pemanggil melanjutkan dari instruksi setelah `CALL`.
+- `VM::lanjutkan_generator` — memulihkan continuation dan menjalankan loop lagi.
+- `VM::langkah_generator` — dua tahap supaya satu `langkah` = satu `metokake`
+  (nilai saat ini dilaporkan lebih dulu, dilanjutkan pada panggilan berikutnya).
+- `FIBER_CREATE` / `FIBER_RESUME` **tidak pernah dipakai**.
+- `OK::Generator` menggantikan `OK::Fiber` di model objek.
+
+**API generator**
+- `g.next()` -> `{ nilai, selesai }` (sifat JavaScript: saat selesai `nilai` =
+  `mboh`, nilai `bali` tersedia lewat `g.bali`).
+- `g.nilai`, `g.bali`, `g.selesai`, `g.jenis`, `jenis(g) == "generator"`.
+- Spread `[...g]` menjalankan generator sampai habis (dengan pengaman 2^24 nilai
+  -> `KleruWates`).
+- `for..of` lewat `ITER_NEXT`; bisa dihentikan `mandheg` di tengah.
+- Galat di body dilempar ke pemanggil `.next()`.
+
+**Akar GC ber-scope** (`gc::ScopedRoot`)
+- `Heap::akar_scope_push/pop` + `ScopedRoot` (RAII, LIFO) untuk nilai yang
+  dipop dari stack lalu dipakai selama banyak alokasi.
+- Dipakai di `SPREAD_PUSH`: tanpa ini generator yang sedang di-spread bisa
+  tersapu di tengah.
+
+**Akar konstanta chunk** (`VM::chunk_akar_`)
+- Semua chunk program (modul utama + fungsi anak + modul terimpor) di-root
+  selama program berjalan: konstanta & `nama_properti`-nya ditandai.
+
+**Pengujian**
+- 11 test unit baru: spread, lazy, tak berhingga + `mandheg`, `next()` +
+  `selesai`, nilai `bali`, closure/upvalue saat suspend, galat di body, dua
+  generator terpisah, generator tanpa `metokake`, dan dua test kebocoran stack
+  untuk `yen`/`liyane`.
+- `examples/generator.jw` diperluas jadi contoh acuan lengkap (6 baris keluaran).
+
+### Diperbaiki (bug nyata)
+
+| Bug | Gejala | Akar masalah |
+|---|---|---|
+| **Generator tak berhingga tidak bisa dipakai** | jalan sampai selesai / pengaman 2^20 | mode-eager (D-019) |
+| **Nilai asing di awal spread generator** | `[undefined, 1, 2, 3]` | continuation dipulihkan dengan `stack_.resize(lan->slot_base)`; pemanggil sudah memakan slot itu, jadi terisi nilai sampah. Harus menggeser `slot_base`/`target_balas` |
+| **Frame pemanggil dieksekusi dua kali saat resume** | bytecode mengulang | ambang `jalankan_loop(0)` pada resume; harus `frames_.size()` (generator) atau indeks akar rantai (async) |
+| **`yen`/`nalika` membocorkan nilai kondisi di stack** | tidak terlihat, tapi loop panjang tumbuh tanpa batas | `POP` hanya ada di jalur "benar"; harus SATU `POP` di akhir yang dipakai kedua jalur |
+| **Konstanta string fungsi anak bisa tersapu** | program membaca string yang salah, hanya dengan `--gc-stress` | `bersihkan_akar_sementara()` menghapus konstanta anak sebelum `FungsiObj`-nya ada (dibuat runtime saat `CLOSURE`) |
+| **Generator yang di-spread bisa tersapu** | crash atau nilai salah dengan `--gc-stress` | nilai dipop dari `SPREAD_PUSH` tidak ada di root GC selama ribuan alokasi |
+| **`case OK::Teks` jatuh ke blok `Generator`** | segfault saat GC | salah letak `break` saat menambah `case` baru |
+
+**Catatan.** Bug `POP` di `yen`/`nalika` sudah ada sejak Fase 3 dan tidak
+terlihat karena program pendek jarang membaca tumpukan. Bug konstanta hanya
+muncul dalam mode `--gc-stress`, yang membuatnya jauh lebih sulit dicari daripada
+gejalanya.
+
+### Status verifikasi
+
+| Preset | Hasil |
+|---|---|
+| `release` | build 0 warning; `ctest` 6/6 hijau; 62/62 unit test |
+| `asan` (ASan+LSan) | 6/6 hijau; 12/12 contoh bersih dengan `--gc-stress` |
+| `ubsan` | 6/6 hijau; 0 runtime error |
+| `tsan` | 6/6 hijau; 0 data race |
+| `nonanbox` (mode nilai 16-byte) | 6/6 hijau |
+| `--gc-stress` | 14/14 contoh emas tetap identik |
+
+**Metrik**: 118 opcode, 17.395 baris C++, 62 unit test / 117 cek, 14 contoh emas,
+8 berkas `docs/`.
+
+### Perubahan keputusan
+
+- **D-019 (generator mode-eager) DICABUT** oleh D-028.
+- **D-028**: generator lazy memakai continuation yang sama dengan async; fiber
+  tidak pernah dipakai untuk apa pun.
+- **D-029**: konstanta chunk di-root selama program berjalan.
+- **D-030**: nilai yang dipop dari stack perlu akar ber-scope.
+
+### Penyimpangan yang disengaja
+
+- Tidak ada `g.return()` untuk memaksa generator berhenti dari luar; pemanggil
+  harus melepaskannya.
+- Spread generator tak berhingga menghabiskan space tanpa akhir (seperti
+  JavaScript), dibatasi 2^24 nilai dengan `KleruWates`.
+- `g.next(x)` menerima nilai tapi `metokake` belum punya bentuk kirim nilai
+  keluar.
+
+---
+

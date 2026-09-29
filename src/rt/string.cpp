@@ -101,6 +101,7 @@ std::string_view nama_jenis(Value v) {
             case OK::Golongan: return "golongan";
             case OK::Instance: return "obyek";
             case OK::Janji: return "janji";
+            case OK::Generator: return "generator";
             case OK::Peta: return "peta";
             case OK::Himpunan: return "himpunan";
             case OK::Regex: return "regex";

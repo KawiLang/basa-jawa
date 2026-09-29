@@ -158,6 +158,48 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
                 if (nama_j == "hasil") return j->hasil;
                 return Value::mboh();
             }
+            case OK::Generator: {
+                // Properti & method generator (lihat `vm/vm_gen.cpp`).
+                const std::string_view nama_g = sv(kunci);
+                auto* g = static_cast<rt::GeneratorObj*>(cur);
+                if (nama_g == "next") {
+                    auto* n = heap_.alokasi<rt::NativeFnObj>();
+                    n->h.kind = OK::Native;
+                    n->fn = [](VM& v, Value this_val, std::vector<Value>& args) -> Value {
+                        auto* gen = this_val.is_obyek()
+                                        ? static_cast<rt::GeneratorObj*>(this_val.mutable_pointer())
+                                        : nullptr;
+                        if (gen == nullptr || gen->h.kind != OK::Generator) {
+                            return v.buat_kleru("KleruJinis", "Ora bisa nelep `next`: iki dudu generator.");
+                        }
+                        const bool ada_argumen = !args.empty();
+                        ObyekObj* langkah =
+                            v.langkah_generator(gen, ada_argumen ? args[0] : Value::mboh(), ada_argumen);
+                        if (langkah == nullptr) {
+                            // Galat di body generator dilempar ke pemanggil `next`.
+                            return v.galat_.nilai;
+                        }
+                        return Value::obyek(langkah);
+                    };
+                    n->nama = singsan(nama_g);
+                    n->jumlah_param = 0;
+                    return Value::obyek(n);
+                }
+                if (nama_g == "jenis") {
+                    const char* n = g->status == rt::GeneratorStatus::Selesai ? "selesai"
+                                  : g->status == rt::GeneratorStatus::Gagal   ? "galat"
+                                                                           : "jalan";
+                    return Value::obyek(rt::buat_teks(heap_, n));
+                }
+                if (nama_g == "selesai") {
+                    return Value::boolean(g->status == rt::GeneratorStatus::Selesai);
+                }
+                // Nilai `metokake` terakhir.
+                if (nama_g == "nilai") return g->nilai;
+                // Nilai balik `bali` (bukan hasil `metokake`).
+                if (nama_g == "bali") return g->nilai_bali;
+                return Value::mboh();
+            }
             case OK::Kleru: {
                 auto* k = static_cast<const rt::KleruObj*>(cur);
                 const std::string_view nama = sv(kunci);

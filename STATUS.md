@@ -12,14 +12,14 @@ dan pustaka standar lengkap.
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 16.811 |
+| Baris kode C++ (`src/` + `tests/`) | 17.395 |
 | Opcode bytecode | 118 (`GET_EXPORT` baru) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 106 |
-| Uji unit | 3 berkas, 106 cek, 51 test |
+| Uji unit | 3 berkas, 117 cek, 62 test |
 | Uji emas | 14 contoh keluaran persis (11 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di kelimanya |
-| Dokumentasi | 7 berkas `docs/` + 4 berkas akar |
+| Dokumentasi | 8 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -32,7 +32,7 @@ dan pustaka standar lengkap.
 | 4 | Bentuk objek: shape, hidden class, inline cache | **belum** (lihat "Yang belum") |
 | 5 | Modul ES, zona mati-temporal, `super` penuh | modul ES selesai; TDZ & `pilih` pola belum |
 | 6 | Event loop, Promise | **selesai** (loop acara deterministik; tanpa jam nyata) |
-| 7 | Fiber, generator suspend, `metokake` non-eager | belum (async tidak butuh fiber — D-023) |
+| 7 | Fiber, generator suspend, `metokake` non-eager | **generator selesai tanpa fiber** (D-028; `FIBER_*` tidak pernah dipakai) |
 | 8 | Pustaka standar lengkap, `Tanggal`, regex, berkas | sebagian |
 | 9 | FFI, JIT, threading | belum |
 | 10 | Incremental/generational GC | belum |
@@ -55,7 +55,9 @@ Bahasa yang berjalan penuh, termasuk:
 - Operator pipeline `|>`, `??`, `lan`/`utawa` (short-circuit), `saka`/`ing`.
 - `bener`/`salah`/`kosong`/`mboh` sebagai tipe tersendiri.
 - Anotasi tipe bertahap pada parameter & nilai balik → `KleruTipe`.
-- `gawe*` generator + `metokake` + spread `[...]`.
+- `gawe*` generator LAZY: `metokake` menunda generator (bukan menjalankan
+  sampai habis), jadi generator tak berhingga bisa dipakai. `.next()` ->
+  `{nilai, selesai}`, spread `[...]`, `for..of`, dan `mandheg` di tengah.
 - `mengko gawe` (async) + `enteni` (await) dengan loop acara deterministik:
   Janji, `.then`/`.tangkep`, `Wektu.tundha`, top-level `enteni`, dan galat
   yang menjadi penolakan Janji. Tanpa fiber (lihat `docs/async.md`).
@@ -68,14 +70,7 @@ Bahasa yang berjalan penuh, termasuk:
 
 ## Yang BELUM (jujur)
 
-### 1. Generator mode-eager
-
-`gawe* g() { ... }` dijalankan **sampai selesai**; semua hasil `metokake`
-dikumpulkan menjadi Dhaptar. Benar untuk generator berhingga, salah untuk
-generator tak berhingga. Ada pengaman 2²⁰ hasil agar program tidak menggantung
-tanpa pemberitahuan. Lazy generator butuh fiber.
-
-### 2. Bentuk objek belum: tidak ada hidden class/inline cache
+### 1. Bentuk objek belum: tidak ada hidden class/inline cache
 
 `Shape` & `ShapeTable` ada dan punya transisi, tapi `VM::buat_obyek()` memakai
 mode dictionary langsung. Properti dibaca dengan `ObyekObj::dict` +
@@ -85,7 +80,7 @@ mode dictionary langsung. Properti dibaca dengan `ObyekObj::dict` +
 Field privat juga bukan privat sungguhan: disimpan sebagai slot biasa bernama
 `#x`; privasi dijaga kompilator.
 
-### 3. Modul ES: berfungsi, tapi bukan live binding & belum ada modul bawaan
+### 2. Modul ES: berfungsi, tapi bukan live binding & belum ada modul bawaan
 
 `impor`/`ekspor` sudah berfungsi penuh (lihat `docs/modules.md`): impor nama,
 alias, namespace, ekspor `baku`, re-export, impor bersarang, impor siklik, dan
@@ -98,7 +93,7 @@ penanganan galat. Yang belum:
 - Belum ada modul bawaan (`std:...`); tidak ada bundling, tidak ada peta
   alias nama berkas.
 
-### 4. Pustaka standar minimum
+### 3. Pustaka standar minimum
 
 Ada: `tulis`, `Teks`, `Angka`, `Boole`, `jenis`, `Matematika`, `Dhaptar`
 (9 method), `Teks` (8 method), `StdAksara`, `JSON.gawe_teks` (stub),
@@ -107,7 +102,7 @@ Belum: `Tanggal`, regex runtime, `Peta`/`Himpunan` komprehensif, berkas, proses,
 `Janji.all`/`race`/`anySelesai`, dan I/O async.
 Lihat `docs/stdlib.md` dan `docs/async.md`.
 
-### 5. Bagian lain yang belum
+### 4. Bagian lain yang belum
 
 - `pilih` (`switch`) hanya menguji kesamaan nilai; `kasus` dengan pola
   destruktur dan `baku` perlu diperluas.

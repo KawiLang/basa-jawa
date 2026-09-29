@@ -404,6 +404,119 @@ TEST_CASE("async: timer dinyalakan menurut urutan tunda") {
 // test tidak menyentuh sistem berkas.
 // ===========================================================================
 
+// ===========================================================================
+// Generator LAZY (`gawe*` + `metokake`)
+// ===========================================================================
+
+TEST_CASE("generator: spread menghasilkan semua hasil") {
+    CHECK_EQ(jalankan("gawe* cacah(n) { kanggo (ana i = 1; i <= n; i++) metokake i; }\n"
+                      "tulis([...cacah(5)]);\n"),
+             std::string("[1, 2, 3, 4, 5]\n"));
+}
+
+TEST_CASE("generator: lazy -- body jalan sampai metokake pertama") {
+    // Sisi kanan `tulis` dievaluasi lebih dulu, tapi body generator sudah
+    // sampai `metokake` pertama SAAT dipanggil (bukan nanti). Baris "A" tetap
+    // tercetak sebelum "1" karena `metokake` mengembalikan kendali.
+    CHECK_EQ(jalankan("gawe* g() { metokake 1; metokake 2; }\n"
+                      "const x = g();\n"
+                      "tulis('A');\n"
+                      "tulis(x.next().nilai);\n"
+                      "tulis(x.next().nilai);\n"),
+             std::string("A\n1\n2\n"));
+}
+
+TEST_CASE("generator: tak berhingga bisa dipakai dan dihentikan") {
+    // Generator tak berhingga dulu mustahil: mode-eager berjalan sampai selesai.
+    CHECK_EQ(jalankan("gawe* tak_henti() { ana i = 0; nalika (bener) { metokake i; i = i + 1; } }\n"
+                      "ana n = 0;\n"
+                      "kanggo (ana x saka tak_henti()) {\n"
+                      "  yen (n >= 4) mandheg;\n"
+                      "  tulis(x);\n"
+                      "  n = n + 1;\n"
+                      "}\n"),
+             std::string("0\n1\n2\n3\n"));
+}
+
+TEST_CASE("generator: next() mengembalikan {nilai, selesai}") {
+    CHECK_EQ(jalankan("gawe* g() { metokake 1; }\n"
+                      "const x = g();\n"
+                      "tulis(x.next().selesai);\n"
+                      "tulis(x.next().selesai);\n"),
+             std::string("false\ntrue\n"));
+}
+
+TEST_CASE("generator: nilai balik 'bali' tidak jadi hasil") {
+    // `next()` setelah selesai melaporkan `mboh` (sifat JavaScript); nilai
+    // `bali` tersedia lewat properti `bali`.
+    CHECK_EQ(jalankan("gawe* g() { metokake 1; bali 99; }\n"
+                      "const x = g();\n"
+                      "x.next();\n"
+                      "tulis(jenis(x.next().nilai));\n"
+                      "tulis(x.bali);\n"),
+             std::string("mboh\n99\n"));
+}
+
+TEST_CASE("generator: closure & upvalue bertahan saat suspend") {
+    CHECK_EQ(jalankan("gawe* ngitung(mulai) {\n"
+                      "  ana i = mulai;\n"
+                      "  nalika (bener) { metokake i; i = i + 1; }\n"
+                      "}\n"
+                      "const x = ngitung(10);\n"
+                      "tulis(x.next().nilai);\n"
+                      "tulis(x.next().nilai);\n"
+                      "tulis(x.next().nilai);\n"),
+             std::string("10\n11\n12\n"));
+}
+
+TEST_CASE("generator: galat di body dilempar ke pemanggil next()") {
+    CHECK_EQ(jalankan("gawe* g() { metokake 1; uncal 'bose'; }\n"
+                      "const x = g();\n"
+                      "coba { x.next(); x.next(); } tangkep (e) { tulis('ditangkep'); }\n"),
+             std::string("ditangkep\n"));
+}
+
+TEST_CASE("generator: dua generator tak saling ganggu") {
+    CHECK_EQ(jalankan("gawe* a() { metokake 1; metokake 2; }\n"
+                      "gawe* b() { metokake 'x'; metokake 'y'; }\n"
+                      "const x = a();\n"
+                      "const y = b();\n"
+                      "tulis(x.next().nilai);\n"
+                      "tulis(y.next().nilai);\n"
+                      "tulis(x.next().nilai);\n"
+                      "tulis(y.next().nilai);\n"),
+             std::string("1\nx\n2\ny\n"));
+}
+
+TEST_CASE("generator: yang tanpa metokake langsung selesai") {
+    // `mboh_` bukan `mboh`: `mboh` adalah kata kunci `undefined`.
+    CHECK_EQ(jalankan("gawe* tanpa_yield() { bali 1; }\n"
+                      "tulis(jenis(tanpa_yield().next().selesai));\n"),
+             std::string("boole\n"));
+}
+
+TEST_CASE("kondisi: `yen` tidak membocorkan nilai di stack") {
+    // Setiap `yen` pernah membocorkan nilai kondisi pada jalur false, sehingga
+    // loop panjang tumbuh di stack tanpa batas. 50.000 iterasi cukup untuk
+    // melewati batas stack JVM biasa kalau bocorannya masih ada.
+    CHECK_EQ(jalankan("ana n = 0;\n"
+                      "nalika (n < 50000) {\n"
+                      "  n = n + 1;\n"
+                      "  yen (n > 2) { yen (n > 3) { yen (n > 4) { } } }\n"
+                      "}\n"
+                      "tulis('n=', n);\n"),
+             std::string("n= 50000\n"));
+}
+
+TEST_CASE("kondisi: `liyane` juga tidak membocorkan nilai") {
+    CHECK_EQ(jalankan("ana x = 0;\n"
+                      "kanggo (ana i = 0; i < 1000; i = i + 1) {\n"
+                      "  yen (i % 2 === 0) { x = x + 1; } liyane { x = x - 1; }\n"
+                      "}\n"
+                      "tulis('x=', x);\n"),
+             std::string("x= 0\n"));
+}
+
 TEST_CASE("modul: impor nama, alias, dan namespace") {
     const PetaBerkas peta{
         {"/satu/util.jw", "ekspor tetep K = 42;\nekspor gawe tambah(a, b) { bali a + b; }\n"},

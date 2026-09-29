@@ -117,25 +117,30 @@ void Compiler::stmt_awak(const ast::Node* n) {
 }
 
 void Compiler::stmt_yen(const ast::YenStmt* n) {
+    // `kondisi; JUMP_IF_FALSE lanjut; <lalu> JUMP akhir; [liyane] ; POP`
+    //
+    // Nilai kondisi dibuang oleh SATU `POP` di akhir, yang dipakai kedua jalur:
+    // jalur benar lewat `JUMP akhir`, jalur salah mendarat langsung
+    // di `POP`. Kalau `POP` diletakkan sebelum `<lalu>`, jalur salah akan
+    // mendarat di `POP` yang sudah dipakai jalur benar -- dan kalau body-nya
+    // kosong, `POP` itu dieksekusi dua kali -- sekali lewat jalur benar, sekali
+    // lagi karena jalur salah mendarat di instruksi yang sama.
     ekspresi(n->kondisi);
     const std::size_t lompat_lanjut = emit(Op::JUMP_IF_FALSE, 0);
-    emit(Op::POP);
     stmt_awak(n->lalu);
-    if (n->ada_liyane) {
-        const std::size_t lompat_akhir = emit(Op::JUMP, 0);
-        patch(lompat_lanjut, fn().chunk->ukuran_kode());
-        statement(n->liyane);
-        patch(lompat_akhir, fn().chunk->ukuran_kode());
-    } else {
-        patch(lompat_lanjut, fn().chunk->ukuran_kode());
-    }
+    const std::size_t lompat_akhir = emit(Op::JUMP, 0);
+    patch(lompat_lanjut, fn().chunk->ukuran_kode());
+    if (n->ada_liyane) statement(n->liyane);
+    patch(lompat_akhir, fn().chunk->ukuran_kode());
+    emit(Op::POP);
 }
 
 void Compiler::stmt_nalika(const ast::NalikaStmt* n) {
+    // Sama seperti `stmt_yen`: satu `POP` di akhir dipakai jalur keluar. Kalau
+    // tidak, setiap statement `nalika` yang selesai membocorkan nilai kondisi.
     const std::size_t mulai = fn().chunk->ukuran_kode();
     ekspresi(n->kondisi);
     const std::size_t keluar = emit(Op::JUMP_IF_FALSE, 0);
-    emit(Op::POP);
     // Target `terusna` = awal body (setelah uji kondisi).
     FungsiKonteks::Loop loop;
     loop.terusna_tujuan = fn().chunk->ukuran_kode();
@@ -148,6 +153,7 @@ void Compiler::stmt_nalika(const ast::NalikaStmt* n) {
     // Lompatan `terusna` menunjuk ke `mulai` (uji kondisi lagi).
     for (std::size_t p : Loop.patch_terusna) patch(p, mulai);
     patch(keluar, fn().chunk->ukuran_kode());
+    emit(Op::POP);
 }
 
 void Compiler::stmt_lakoni(const ast::LakoniStmt* n) {

@@ -1,4 +1,53 @@
+// Generator LAZY: `metokake` menunda generator, bukan menjalankan sampai habis.
+
 gawe* cacah(n) {
   kanggo (ana i = 1; i <= n; i++) metokake i;
 }
-tulis([...cacah(5)]);
+
+// Generator tak berhingga: tinggi call stack tidak bertambah.
+gawe* cacah_nol(mulai, akhir) {
+  ana i = mulai;
+  nalika (i < akhir) {
+    metokake i;
+    i = i + 1;
+  }
+}
+
+// Fungsi biasa yang menerima generator dan mengonsumsinya bertahap.
+gawe jumlah_sampai(g, batas) {
+  ana total = 0;
+  nalika (bener) {
+    tetep langkah = g.next();
+    yen (langkah.selesai) mandheg;
+    yen (langkah.nilai >= batas) mandheg;
+    total = total + langkah.nilai;
+  }
+  bali total;
+}
+
+// 1. Spread menjalankan generator sampai habis.
+tulis("sebar   = ", [...cacah(5)]);
+
+// 2. `next()` mengambil satu hasil per panggilan.
+tetep g = cacah(3);
+tulis("next    = ", g.next().nilai, ", ", g.next().nilai, ", ", g.next().nilai);
+tulis(" selesai = ", g.next().selesai);
+
+// 3. Tak berhingga, dibatasi oleh pemanggil.
+tulis("hingga  = ", [...cacah_nol(0, 6)]);
+
+// 4. Menghentikan generator dari luar lebih awal.
+tetep m = cacah(100);
+m.next();
+m.next();
+tulis("libat   = ", jumlah_sampai(m, 6));
+
+// 5. Nilai `bali` berbeda dari hasil `metokake`.
+gawe* bali_aja() {
+  metokake "satu";
+  bali "pamungkas";
+}
+tetep a = bali_aja();
+a.next();        // "satu"
+a.next();        // body selesai; nilai `bali` baru tersedia
+tulis("bali    = ", a.bali);

@@ -116,6 +116,9 @@ ClosureObj* VM::kompilasi_modul(const std::string_view sumber, const std::string
     // `FungsiObj::nama` dan `Chunk::nama` adalah `string_view`, jadi nama
     // modul harus punya pemilik yang bertahan. `singsahan_teks_` adalah deque
     // (alamat elemen stabil) dan hanya dibersihkan bersama VM.
+    // Lihat `VM::chunk_akar_`: konstanta chunk anak belum punya `FungsiObj`
+    // sampai `CLOSURE` dieksekusi, jadi harus di-root lewat sini.
+    for (const ChunkPtr& c : hasil.semua) chunk_akar_.push_back(c);
     singsahan_teks_.push_back(std::string(nama_berkas));
     const std::string_view nama_tetap = singsahan_teks_.back();
 

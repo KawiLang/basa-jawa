@@ -25,10 +25,11 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | Lexer (Unicode, template, regex, escape) | selesai |
 | Parser + AST (kelas, pola, modul, tipe bertahap) | selesai |
 | Kompiler → bytecode | selesai |
-| VM (fungsi, closure, kelas, pola, try/catch, generator) | selesai |
+| VM (fungsi, closure, kelas, pola, try/catch, generator lazy) | selesai |
 | GC mark-and-sweep presisi | selesai |
 | Pustaka standar | sebagian (`tulis`, `Teks`, `Matematika`, `Dhaptar`, `Teks`, `StdAksara`, `Wektu`, `JSON` minimum) |
 | Modul ES (`impor`/`ekspor`) | selesai — impor, ekspor, alias, default, re-export, impor siklik (`docs/modules.md`) |
+| Generator lazy (`gawe*` + `metokake`) | selesai — tanpa fiber, tak berhingga bisa dipakai (`docs/generator.md`) |
 | async/await + loop acara | selesai (deterministik, tanpa fiber — `docs/async.md`) |
 | Regex runtime, `Tanggal`, berkas, proses | belum |
 
@@ -139,7 +140,7 @@ src/rt/         Value (NaN-boxing), objek, shape, number
 src/gc/         Heap mark-and-sweep, Handle/HandleScope
 src/stdlib/     Pustaka standar (native functions)
 src/cli/        CLI `jawa`
-docs/           grammar, bytecode, object model, GC, stdlib, async, modules
+docs/           grammar, bytecode, object model, GC, stdlib, async, modules, generator
 tests/          unit + golden
 ```
 
@@ -154,6 +155,7 @@ tests/          unit + golden
 | [`docs/stdlib.md`](docs/stdlib.md) | pustaka standar yang tersedia |
 | [`docs/async.md`](docs/async.md) | Janji, `enteni`, loop acara (tanpa fiber) |
 | [`docs/modules.md`](docs/modules.md) | linker modul ES, hoisting, impor siklik |
+| [`docs/generator.md`](docs/generator.md) | generator lazy, continuation, penggeseran stack |
 | [`DECISIONS.md`](DECISIONS.md) | keputusan desain & penyimpangan dari spesifikasi |
 | [`CHANGELOG.md`](CHANGELOG.md) | riwayat perubahan |
 | [`STATUS.md`](STATUS.md) | status jujur: selesai / belum / cara verifikasi |

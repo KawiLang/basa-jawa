@@ -203,11 +203,11 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 | 110 | `EXPORT` | 1 | `v - > ` | Simpan nilai ke objek ekspor modul aktif. |
 | 111 | `GET_EXPORT` | 1 | `m - v` | Baca nama dari objek ekspor. Nama yang tidak ada = galat (bukan `mboh`). |
 
-## Async  (`fiber`, 2 opcode)
+## Async & generator  (`fiber`, 2 opcode)
 
 | # | Opcode | Operand | Tumpukan | Keterangan |
 |---:|---|---:|---|---|
-| 112 | `YIELD` | 0 | `v - r` | `metokake`. Pada mode-eager, nilai dikumpulkan lalu eksekusi dilanjutkan. |
+| 112 | `YIELD` | 0 | `v - r` | `metokake`. Menunda generator: frame generator disalin ke continuation lalu pemanggil melanjutkan (lihat `docs/generator.md`). |
 | 113 | `AWAIT` | 0 | `v - r` | `enteni`. Janji yang sudah selesai langsung dipakai; yang masih menunggu menunda seluruh rantai `async` (lihat `docs/async.md`). |
 
 ## Lain-lain  (`lain`, 3 opcode)
@@ -230,7 +230,6 @@ Opcode berikut ada di `.def` agar ruang nama stabil, tapi memicu
 `KleruInternal [I001]` bila bytecode memakainya:
 
 - `BIGINT` (BigInt runtime, Fase 8)
-- `FIBER_CREATE` / `FIBER_RESUME` (fiber untuk `metokake` suspend, Fase 7)
 - `TDZ_CHECK` (zona mati-temporal, Fase 5)
 
 ## BatasanISA sementara

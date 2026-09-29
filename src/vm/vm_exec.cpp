@@ -85,6 +85,9 @@ Status VM::jalankan_sumber(std::string_view sumber, std::string_view nama_berkas
         modul_tumpukan_.push_back(rec);
         modul_aktif = rec;
     }
+    // Semua chunk (modul utama + fungsi anak) di-root selama program berjalan;
+    // lihat `VM::chunk_akar_`.
+    for (const ChunkPtr& c : hasil.semua) chunk_akar_.push_back(c);
     heap_.bersihkan_akar_sementara();
     pos_berkas_ = std::string(nama_berkas);
 
