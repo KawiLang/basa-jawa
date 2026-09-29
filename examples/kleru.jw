@@ -1,0 +1,8 @@
+coba {
+  ana o = kosong;
+  tulis(o.x);
+} tangkep (e) {
+  tulis(e.jeneng, "-", e.pesan);
+} intrigasan {
+  tulis("Rampung");
+}

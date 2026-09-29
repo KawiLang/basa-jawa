@@ -1,0 +1,12 @@
+gawe deskripsi(x) {
+  bali cocog (x) {
+    kasus 0 => "nol",
+    kasus [a, b] => `pasangan ${a},${b}`,
+    kasus {jeneng, umur} yen umur >= 17 => `${jeneng} wis dewasa`,
+    kasus _ => "liyane"
+  };
+}
+tulis(deskripsi(0));
+tulis(deskripsi([1, 2]));
+tulis(deskripsi({jeneng: "Sari", umur: 20}));
+tulis(deskripsi("x"));

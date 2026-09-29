@@ -1,0 +1,546 @@
+// Katalog pesan dwibahasa Basa Jawa.
+//
+// SATU SUMBER KEBENARAN untuk seluruh pesan galat. Format:
+//   JAWA_MSG(kode, jenis, jawa, indonesia, saran)
+//
+//   kode      : "L001", "S012", "T003", "R001", "I001", "C001"
+//   jenis     : DiagKind::Lexer / Sintaks / Scope / Tipe / Runtime / Internal / CLI
+//   jawa      : pesan bahasa Jawa
+//   indonesia : pesan bahasa Indonesia
+//   saran     : saran perbaikan (boleh kosong)
+//
+// Placeholder yang boleh dipakai di dalam teks pesan:
+//   {nama}    diisi dari argumen format (lihat format_message_pakai)
+//   {a} {b}   argumen tambahan untuk pesan berformat
+
+// ------------------------------------------------------------------- CLI (C)
+JAWA_MSG("C001", DiagKind::CLI,
+         "Nyalin sing ora weruh: {0}",
+         "Opsi tidak dikenal: {0}",
+         "Jalankan `jawa bantuan` kanggo ndelengi dhaptar lengkap opsi.")
+
+JAWA_MSG("C002", DiagKind::CLI,
+         "Watanabe argumen kanggo {0}.",
+         "Jumlah argumen salah untuk {0}.",
+         "")
+
+JAWA_MSG("C003", DiagKind::CLI,
+         "Berkas ora ketemu: {0}",
+         "Berkas tidak ditemukan: {0}",
+         "Pastikan path bener lan file ana.")
+
+JAWA_MSG("C004", DiagKind::CLI,
+         "Izin durung ana: {0}",
+         "Izin belum diberikan: {0}",
+         "Tambahake --izin=... utawa --izin-semua.")
+
+JAWA_MSG("C005", DiagKind::CLI,
+         "Perintah ora weruh: {0}",
+         "Perintah tidak dikenal: {0}",
+         "Coba `jawa bantuan`.")
+
+JAWA_MSG("C006", DiagKind::CLI,
+         "Format salah ing {0}.",
+         "Format tidak valid di {0}.",
+         "")
+
+// ----------------------------------------------------------------- Lexer (L)
+JAWA_MSG("L001", DiagKind::Lexer,
+         "Karo sing ora ngalapis: {0}",
+         "Karakter tidak dikenal: {0}",
+         "Nganggo backtick kanggo karakter khusus.")
+
+JAWA_MSG("L002", DiagKind::Lexer,
+         "String ora ketutup.",
+         "String literal tidak ditutup.",
+         "Tambahake tanda kutip penutup.")
+
+JAWA_MSG("L003", DiagKind::Lexer,
+         "Template ora ketutup.",
+         "Template literal tidak ditutup.",
+         "Tambahake backtick penutup.")
+
+JAWA_MSG("L004", DiagKind::Lexer,
+         "Escape ora valid: \\{0}",
+         "Escape tidak valid: \\{0}",
+         "Escape sing sah: \\n \\t \\r \\0 \\\\ \\' \\\" \\xHH \\uXXXX \\u{X…}.")
+
+JAWA_MSG("L005", DiagKind::Lexer,
+         "Nomor ora valid: {0}",
+         "Angka tidak valid: {0}",
+         "Priksa nomer, separator _ utawa radix.")
+
+JAWA_MSG("L006", DiagKind::Lexer,
+         "Komentar ora ketutup.",
+         "Blok komentar tidak ditutup.",
+         "Tambahake */.")
+
+JAWA_MSG("L007", DiagKind::Lexer,
+         "UTF-8 ora valid ing baris {0}, kolom {1}.",
+         "UTF-8 tidak valid di baris {0}, kolom {1}.",
+         "Simpen berkas nganggo encoding UTF-8.")
+
+JAWA_MSG("L008", DiagKind::Lexer,
+         "Regex ora valid: {0}",
+         "Regex tidak valid: {0}",
+         "Priksa kurung kurawal, [] lan backslash.")
+
+JAWA_MSG("L009", DiagKind::Lexer,
+         "Panjangan identifier ngluwihi wates ({0} karakter).",
+         "Panjang identifier melebihi batas ({0} karakter).",
+         "Ngité identifier luwih cendhek.")
+
+JAWA_MSG("L010", DiagKind::Lexer,
+         "Dudu nomer integer luwih gedhe saka wates.",
+         "Bilangan bulat lebih besar dari batas.",
+         "Nganggo BasaJawa.BigInt kanggo angka gedhe.")
+
+// --------------------------------------------------------------- Sintaks (S)
+JAWA_MSG("S001", DiagKind::Sintaks,
+         "Nemu {0} nanging ngarep-arep ekspresi.",
+         "Ditemukan {0} tetapi diharapkan ekspresi.",
+         "Tambahake operand utawa kurung.")
+
+JAWA_MSG("S002", DiagKind::Sintaks,
+         "Nemu {0} nanging ngarep-arep {1}.",
+         "Ditemukan {0} tetapi diharapkan {1}.",
+         "")
+
+JAWA_MSG("S003", DiagKind::Sintaks,
+         "Kurung kurawal ora ketutup.",
+         "Blok kurung kurawal tidak ditutup.",
+         "Tambahake } ing sakasore blok.")
+
+JAWA_MSG("S004", DiagKind::Sintaks,
+         "Wiwit mung ana ing jero golongan.",
+         "`wiwit` hanya boleh ada di dalam class.",
+         "Pindhahke wiwit menyang jero NPengwe class.")
+
+JAWA_MSG("S005", DiagKind::Sintaks,
+         "Ngarep-arep ) sawise kondisi \"yen\", nanging nemu {0}.",
+         "Diharapkan ) setelah kondisi if, tetapi ditemukan {0}.",
+         "Tambahake ) sadurunge { (buka blok).")
+
+JAWA_MSG("S006", DiagKind::Sintaks,
+         "Ngarep-arep {0} nanging program cendhek.",
+         "Diharapkan {0} tetapi program berakhir.",
+         "Lengkapi program.")
+
+JAWA_MSG("S007", DiagKind::Sintaks,
+         "Nalika tanpa kondisi sing bisa.",
+         "Loop while tidak memiliki kondisi yang bisa.",
+         "Pake `nalika (bener) { ... mandheg; }` kanggo loop tanpa kondhisi.")
+
+JAWA_MSG("S008", DiagKind::Sintaks,
+         "Kasus \"kasus\" ora duwe nilai.",
+         "Kasus `kasus` tidak memiliki nilai.",
+         "Tulis `kasus <nilai>:`.")
+
+JAWA_MSG("S009", DiagKind::Sintaks,
+         "Label ora weruh: {0}",
+         "Label tidak dikenal: {0}",
+         "Nanging label iki ora ana ing sakalingkup.")
+
+JAWA_MSG("S010", DiagKind::Sintaks,
+         "Fungsi panah ora duwe awak.",
+         "Arrow function tanpa body.",
+         "Wengkoni awak blok {} utawa expression.")
+
+JAWA_MSG("S011", DiagKind::Sintaks,
+         "Pola cocog ora lengkap.",
+         "Pola match tidak lengkap.",
+         "Tutup kurung pola `]` utawa `}`.")
+
+JAWA_MSG("S012", DiagKind::Sintaks,
+         "Papan ketemu ora cocok ing nduwe modul.",
+         "Duplikasi deklarasi nama modul yang sama.",
+         "Ganti jeneng modul utawa ekspor ulang saka modul liyane.")
+
+JAWA_MSG("S013", DiagKind::Sintaks,
+         "Argumen ora cocok kanggo {0}.",
+         "Jumlah argumen tidak cocok untuk {0}.",
+         "")
+
+JAWA_MSG("S014", DiagKind::Sintaks,
+         "Baris anyar ora diidinke ing ASI. Nanging engko kepengin.",
+         "Baris baru tidak diizinkan oleh ASI, tapi di sini diizinkan.",
+         "Tambahake titik koma utawa pake --tanpa-ketat-titik-koma.")
+
+JAWA_MSG("S015", DiagKind::Sintaks,
+         "Eksyen ora bisa ing ngisor iki: {0}",
+         "Pernyataan tidak valid di sini: {0}",
+         "")
+
+JAWA_MSG("S016", DiagKind::Sintaks,
+         "Ora ana expression ing blok match.",
+         "Tidak ada ekspresi yang akan dicocokkan.",
+         "Tulis `cocog (nilai) { ... }` ingki ada nilai sing dicocokake.")
+
+JAWA_MSG("S017", DiagKind::Sintaks,
+         "Accessor mung bisa ing simulator sederhana.",
+         "Accessor hanya bisa untuk properti sederhana.",
+         "Gunakan `nampa [nama]()` kanggo getter komputat.")
+
+JAWA_MSG("S018", DiagKind::Sintaks,
+         "Nama {0} ora valid.",
+         "Nama {0} tidak valid.",
+         "Jeneng kudu identifier Unicode sing sah.")
+
+JAWA_MSG("S019", DiagKind::Sintaks,
+         "Ngarep-arep nama sawise `turunan`.",
+         "Diharapkan nama setelah `turunan`.",
+         "Tulis `golongan A turunan B { ... }`.")
+
+JAWA_MSG("S020", DiagKind::Sintaks,
+         "Ora bisaDeclaration nanging {0}.",
+         "Tidak bisa mendeklarasikan {0}.",
+         "Ora bisa deklarasi apa-apa ing kono tempat.")
+
+JAWA_MSG("S021", DiagKind::Sintaks,
+         "Ekspresi ora ilerne ing operand unary.",
+         "Ekspresi tidak valid pada operand unary.",
+         "")
+
+JAWA_MSG("S022", DiagKind::Sintaks,
+         "Ora bisa nggunakake {0} ing expression iki.",
+         "Tidak bisa memakai {0} di ekspresi ini.",
+         "Pake statement, utawa hesan keyword ing ngono tempat.")
+
+JAWA_MSG("S023", DiagKind::Sintaks,
+         "Operator {0} ora bisa digabungake karo {1} tanpa kurung.",
+         "Operator {0} tidak boleh digabung dengan {1} tanpa kurung.",
+         "Bungkus salah sawijining karo ( ... ).")
+
+JAWA_MSG("S024", DiagKind::Sintaks,
+         "Ekspresi destructuring tanpa sumber.",
+         "Ekspresi destructuring tanpa sumber.",
+         "Tulis `ana [a, b] = dhaptar;` utawa `({a} = objek);`.")
+
+JAWA_MSG("S025", DiagKind::Sintaks,
+         "Ekspresi kosong ora bisa digunakake ing kono tempat.",
+         "Ekspresi kosong tidak diizinkan di sini.",
+         "")
+
+// --------------------------------------------------------------- Scope (S4xx)
+JAWA_MSG("S401", DiagKind::Scope,
+         "Jeneng \"{0}\" wis kinandal ing iki tanpa var utawa tetep.",
+         "Nama \"{0}\" sudah dideklarasikan di sini tanpa var atau const.",
+         "Ganti jeneng utawa watesi ing scope liya.")
+
+JAWA_MSG("S402", DiagKind::Scope,
+         "Jeneng \"{0}\" durung ana. Apa maksudmu \"{1}\"?",
+         "Nama \"{0}\" belum ada. Maksudmu \"{1}\"?",
+         "Cek typo utawa deklarasi variabel kasebut.")
+
+JAWA_MSG("S403", DiagKind::Scope,
+         "Ora bisa maca \"{0}\" sadurunge deklarasi (TDZ).",
+         "Tidak bisa membaca \"{0}\" sebelum deklarasi (TDZ).",
+         "Pindahkan akses variabel sawise deklarasi.")
+
+JAWA_MSG("S404", DiagKind::Scope,
+         "Bali, mandheg, terusna, metokake, enteni ora bisa ing ngono tempat iki.",
+         "return, break, continue, yield, await tidak valid di tempat ini.",
+         "Pindahake utawa dibungkus ing fungsi.")
+
+JAWA_MSG("S405", DiagKind::Scope,
+         "iki mung ana ing fungsi utawa method.",
+         "`iki` hanya valid di dalam fungsi atau method.",
+         "")
+
+JAWA_MSG("S406", DiagKind::Scope,
+         "induk mung ana ing method turunan.",
+         "`induk` hanya valid di method subclass.",
+         "Pake `induk()` nanging ana ing method konstruktor/turunan.")
+
+JAWA_MSG("S407", DiagKind::Scope,
+         "Ora bisa ngunakake iki sadurunge induk() ing konstruktor.",
+         "Tidak bisa memakai iki sebelum induk() di konstruktor.",
+         "Panggil induk(...) sadurunge ng accessing iki.")
+
+JAWA_MSG("S408", DiagKind::Scope,
+         "Tetep ora kena diowahi: {0}",
+         "const tidak bisa diubah: {0}",
+         "Ganti `tetep` karo `ana` yen variabel kudu bisa diowahi.")
+
+JAWA_MSG("S409", DiagKind::Scope,
+         "Kode sawise bali ora bakal dieksekusi.",
+         "Kode setelah return tidak akan dieksekusi.",
+         "Hapus kode sing ora akan dieksekusi.")
+
+JAWA_MSG("S410", DiagKind::Scope,
+         "Kode sawise mandheg ora bakal dieksekusi.",
+         "Kode setelah break tidak akan dieksekusi.",
+         "")
+
+JAWA_MSG("S411", DiagKind::Scope,
+         "Kode sawise terusna ora bakal dieksekusi.",
+         "Kode setelah continue tidak akan dieksekusi.",
+         "")
+
+JAWA_MSG("S412", DiagKind::Scope,
+         "Ora bisa ndeklarasi {0} ing modul iki.",
+         "Tidak bisa mendeklarasikan {0} di modul ini.",
+         "Modul bisa nduwe nanging satu deklarasi `baku` (default).")
+
+JAWA_MSG("S413", DiagKind::Scope,
+         " Jeneng sing diimpor \"{0}\" ora bisa diowahi.",
+         "Nama yang diimpor \"{0}\" hanya baca.",
+         "Impor minangka jeneng anyar utawa ekspor muterake sing liya.")
+
+JAWA_MSG("S414", DiagKind::Scope,
+         "Ora bisa nyebutake \"{0}\" sadurunge deklarasi (hoisting ora kanggo ana).",
+         "Tidak bisa menyebut \"{0}\" sebelum deklarasi.",
+         "Deklarasi variabel sadurunge digunakake.")
+
+JAWA_MSG("S415", DiagKind::Scope,
+         "Parametru \"{0}\" wis kinandal ing iki.",
+         "Parameter \"{0}\" sudah dideklarasikan di sini.",
+         "Ganti ngareng parametru.")
+
+JAWA_MSG("S416", DiagKind::Scope,
+         "Ora bisa nemu modul: {0}",
+         "Tidak bisa menemukan modul: {0}",
+         "Priksa path lan ngurjana modul wis ana.")
+
+JAWA_MSG("S417", DiagKind::Scope,
+         "Ekspor \"{0}\" ora ana ing modul iki.",
+         "Ekspor \"{0}\" tidak ada di modul ini.",
+         "Cek ngareng sing diimpor saka modul liyane.")
+
+JAWA_MSG("S418", DiagKind::Scope,
+         "Baris anyar ing sangarep ( ... ) bisa salah lanthus.",
+         "Baris baru di depan ( bisa salah lanjut.",
+         "Tambahake titik koma sawise baris sadurunge.")
+
+// ------------------------------------------------------------------ Tipe (T)
+JAWA_MSG("T001", DiagKind::Tipe,
+         "Nilai {0} ora cocog karo tipe {1}.",
+         "Nilai {0} tidak cocok dengan tipe {1}.",
+         "Ganti nilai utawa tipe annotasi.")
+
+JAWA_MSG("T002", DiagKind::Tipe,
+         "Tipe bali ora cocog karo {0}, nanging ana {1}.",
+         "Tipe return tidak cocok dengan {0}, tetapi ada {1}.",
+         "Bali nilai sing sesuai utawaowahi anotasi bali.")
+
+JAWA_MSG("T003", DiagKind::Tipe,
+         "Ora bisa ngakses properti \"{0}\" ing tipe {1}.",
+         "Tidak bisa mengakses properti \"{0}\" pada tipe {1}.",
+         "Priksa nama properti utawa gunakan tipe anyar.")
+
+JAWA_MSG("T004", DiagKind::Tipe,
+         "Ora bisa nelep {0} minangka {1}.",
+         "Tidak bisa memanggil {0} sebagai {1}.",
+         "Priksa signature fungsi.")
+
+JAWA_MSG("T005", DiagKind::Tipe,
+         "Tipe {0} ora duwe basa member \"{1}\".",
+         "Tipe {0} tidak punya member \"{1}\".",
+         "Gunakan optional chaining `?.` utawa cek deklarasi.")
+
+JAWA_MSG("T006", DiagKind::Tipe,
+         "Pola match iki ora lengkap (bisa ora ketemu)",
+         "Pola match ini tidak lengkap (tidak semua nilai tertangani).",
+         "Tambahake kasus `_ => ...` utawa `kasus Utasain` bila perlu.")
+
+// ------------------------------------------------------------- Runtime (R)
+JAWA_MSG("R001", DiagKind::Runtime,
+         "Ora bisa maca properti \"{0}\" saka {1}.",
+         "Tidak bisa membaca properti \"{0}\" dari {1}.",
+         "Pake `?.` utawa cek objek karo `jinis`/`mboh`.")
+
+JAWA_MSG("R002", DiagKind::Runtime,
+         "Ora bisa nelep {0}: iki dudu fungsi.",
+         "Tidak bisa memanggil {0}: ini bukan fungsi.",
+         "Pastikan variabel ngemot fungsi.")
+
+JAWA_MSG("R003", DiagKind::Runtime,
+         "Tumpukan luber (wates: {0} frame).",
+         "Stack overflow (batas: {0} frame).",
+         "Gunakan iterasi utawa tail call untuk rekursi.")
+
+JAWA_MSG("R004", DiagKind::Runtime,
+         "Ora bisa nggaweDhumpukanake {0} saka {1}.",
+         "Tidak bisa mengubah {0} pada {1}.",
+         "")
+
+JAWA_MSG("R005", DiagKind::Runtime,
+         "Jumlah argumen {0} ora cocok:/arep {1}, nanging {2}.",
+         "Jumlah argumen {0} tidak cocok: diharapkan {1}, diterima {2}.",
+         "Priksa signature fungsi.")
+
+JAWA_MSG("R006", DiagKind::Runtime,
+         "Ora bisa konvensi {0} menyawi {1}.",
+         "Tidak bisa mengonversi {0} ke {1}.",
+         "")
+
+JAWA_MSG("R007", DiagKind::Runtime,
+         "Dharga {0} ora bisa digunakake minangka indeks.",
+         "Nilai {0} tidak bisa dipakai sebagai indeks.",
+         "Indeks kudu angka utawa teks.")
+
+JAWA_MSG("R008", DiagKind::Runtime,
+         "Indeks {0} ing {1} ora ana (dawa: {2}).",
+         "Indeks {0} pada {1} tidak ada (panjang: {2}).",
+         "Priksa wates indeks.")
+
+JAWA_MSG("R009", DiagKind::Runtime,
+         "Ora bisa(ThreadTracer) iterasi {0}.",
+         "Tidak bisa mengiterasi {0}.",
+         "Pastikan punya `Simbol.pengulang`.")
+
+JAWA_MSG("R010", DiagKind::Runtime,
+         "Kebocoran memori (wates: {0} MB).",
+         "Kehabisan memori (batas: {0} MB).",
+         "Kurangi data ing program; bisa uga bug internal yen muncul tanpa disengaja.")
+
+JAWA_MSG("R011", DiagKind::Runtime,
+         "Jumlah langkah maksimum terlampaui ({0}).",
+         "Jumlah langkah maksimum terlampaui ({0}).",
+         "Cek infinite loop; pake --max-langkah kanggo diagnostik.")
+
+JAWA_MSG("R012", DiagKind::Runtime,
+         "Weton: ngowahi \"%s\" dadi Sabuk liwih asring.",
+         "Peringatan: akses \"%s\" terlalu sering.",
+         "Gunakan cache utawa kurangi pekerjaan ing loop.")
+
+JAWA_MSG("R013", DiagKind::Runtime,
+         "Dharga iki dudu BigInt.",
+         "Nilai ini bukan BigInt.",
+         "")
+
+JAWA_MSG("R014", DiagKind::Runtime,
+         "Ora bisa nggunakake BigInt karo {0}.",
+         "Tidak bisa memakai BigInt dengan {0}.",
+         "Konversi karo Number(...) utawa tetep integer 32-bit.")
+
+JAWA_MSG("R015", DiagKind::Runtime,
+         "Ekspresi generator durung wis entek.",
+         "Ekspresi generator belum selesai.",
+         "Tutup blok metokake utawa Sina metokake ing fungsi `gawe*`.")
+
+JAWA_MSG("R016", DiagKind::Runtime,
+         "Ora bisa nggunakake `iki` ing fungsi panah (iki iku lexikal).",
+         "Tidak bisa memakai `iki` di arrow function (iki bersifat leksikal).",
+         "Gunakan fungsi biasa yen butuh `iki` dinamis.")
+
+JAWA_MSG("R017", DiagKind::Runtime,
+         "Janji ditolak tanpa Ditangani: {0}",
+         "Janji ditolak tanpa ditangani: {0}",
+         "Tambahake `.tangkep(...)` utawa `coba { ... }`.")
+
+JAWA_MSG("R018", DiagKind::Runtime,
+         "Ora bisa uncal nilai iki minangka kelas: {0}.",
+         "Tidak bisa memanggil nilai ini sebagai kelas: {0}.",
+         "Pake `new` utawa `anyar` nalika constructing.")
+
+JAWA_MSG("R019", DiagKind::Runtime,
+         "Ora bisa nggunakake non-objek ing{} ing NduweKap/ngembly.",
+         "Tidak bisa memakai non-objek pada operasi ini.",
+         "")
+
+JAWA_MSG("R020", DiagKind::Runtime,
+         "Lingkaran: dharta nuduhake awake dhewe ing Trik.",
+         "Sirkular: nilai merujuk ke dirinya sendiri saat diformat.",
+         "")
+
+JAWA_MSG("R021", DiagKind::Runtime,
+         "Izin durung ana kanggo {0}.",
+         "Izin belum diberikan untuk {0}.",
+         "Tambahake --izin kanggo ngrantijining akses iki.")
+
+JAWA_MSG("R022", DiagKind::Runtime,
+         "Ora bisa muat modul native: {0}",
+         "Tidak bisa memuat modul native: {0}",
+         "Pastikan path .so/.dll/.dylib bener.")
+
+JAWA_MSG("R023", DiagKind::Runtime,
+         "Dharga kasebut dudu nomer (NaN/Infinity) ing division.",
+         "Nilai tersebut bukan angka (NaN/Infinity) pada pembagian.",
+         "")
+
+JAWA_MSG("R024", DiagKind::Runtime,
+         "Modur holo wis ora dimuat: {0}",
+         "Modul yang diminta belum dimuat: {0}",
+         "PImpor modul kasebut sadurunge digunakake.")
+
+JAWA_MSG("R025", DiagKind::Runtime,
+         "Ora bisa nggunakake objek abdi nalika initializing hurip.",
+         "Tidak bisa memakai objek frozen saat menginisialisasi field.",
+         "")
+
+JAWA_MSG("R026", DiagKind::Runtime,
+         "Ora bisa nggunakake nomer gedhe saka number utawa vice versa.",
+         "Tidak bisa memakai angka besar sebagai number atau sebaliknya.",
+         "")
+
+JAWA_MSG("R027", DiagKind::Runtime,
+         "Regex: dh Voltage (backtracking) liwih gedhe ({0}).",
+         "Regex: backtracking terlalu banyak ({0}).",
+         "Sederhanake pola utawa wates kompleksitas regex.")
+
+JAWA_MSG("R028", DiagKind::Runtime,
+         "Pola regex ora valid ing compiled: {0}",
+         "Pola regex tidak valid saat dikompilasi: {0}",
+         "Priksa kurung, [] lan backslash.")
+
+JAWA_MSG("R029", DiagKind::Runtime,
+         "Nyalin indeks {0} ora valid ing dhaptar (dawa: {1}).",
+         "Indeks {0} tidak valid pada array (panjang: {1}).",
+         "")
+
+JAWA_MSG("R030", DiagKind::Runtime,
+         "Ora bisa nggunakake motif iki minangka regex.",
+         "Nilai ini bukan regex yang valid.",
+         "")
+
+JAWA_MSG("R031", DiagKind::Runtime,
+         "Dharga iki dudu fungsi utawa kelas sing bisa dipanggil.",
+         "Nilai ini bukan fungsi atau kelas yang bisa dipanggil.",
+         "")
+
+JAWA_MSG("R032", DiagKind::Runtime,
+         "Reader modulo dening {0}.",
+         "Pembagian dengan modulo oleh {0}.",
+         "")
+
+JAWA_MSG("R033", DiagKind::Runtime,
+         "Ngirisake teks Ora valid ing JSON: {0}",
+         "Teks JSON tidak valid: {0}",
+         "Priksa format RFC 8259.")
+
+JAWA_MSG("R034", DiagKind::Runtime,
+         "Nilai iki punya referensi sirkular ing JSON.",
+         "Nilai ini memiliki referensi sirkular di JSON.",
+         "Gunakan struktur tanpa lingkaran.")
+
+JAWA_MSG("R035", DiagKind::Runtime,
+         "JSON: rekursi liwih tekel (kedalaman: {0}).",
+         "JSON: rekursi terlalu dalam (kedalaman: {0}).",
+         "Kurangi kedalaman data.")
+
+JAWA_MSG("R036", DiagKind::Runtime,
+         "Ora bisa nggunakake {0} ing mode `ketat`: mung ngoko utawa krama.",
+         "Tidak bisa memakai {0} di mode `ketat`: hanya ngoko atau krama.",
+         "Pakai ngoko utawa krama tanpa mencampur.")
+
+JAWA_MSG("R037", DiagKind::Runtime,
+         "Ora bisa nggunakake `jenis` ing {0}.",
+         "Tidak bisa memakai `jenis` pada {0}.",
+         "")
+
+// -------------------------------------------------------------- Internal (I)
+JAWA_MSG("I001", DiagKind::Internal,
+         "Bug ing interpreter: {0}",
+         "Bug di interpreter: {0}",
+         "Mohon laporkan karo minimal reproduksi: {0}.")
+
+JAWA_MSG("I002", DiagKind::Internal,
+         "Kondisi internal ora kepanthèden: {0}",
+         "Kondisi internal tidak terpenuhi: {0}",
+         "Bug interpreter; mohon laporkan.")
+
+JAWA_MSG("I003", DiagKind::Internal,
+         "Kegagalan eksternal: {0}",
+         "Kegagalan eksternal: {0}",
+         "Coba jalankan maneh.")

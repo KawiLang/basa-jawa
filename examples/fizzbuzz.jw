@@ -1,0 +1,6 @@
+kanggo (ana i = 1; i <= 15; i++) {
+  yen (i % 15 === 0) { tulis("FizzBuzz"); }
+  liyane yen (i % 3 === 0) { tulis("Fizz"); }
+  liyane yen (i % 5 === 0) { tulis("Buzz"); }
+  liyane { tulis(i); }
+}

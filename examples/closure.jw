@@ -1,0 +1,6 @@
+gawe cacahan() {
+  ana n = 0;
+  bali () => ++n;
+}
+tetep c = cacahan();
+tulis(c(), c(), c());

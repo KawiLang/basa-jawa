@@ -1,0 +1,312 @@
+// Unit test runtime: NaN-boxing, model objek, GC, dan eksekusi VM.
+//
+// Semua test memakai harness sendiri (lihat tests/harness.h) supaya proyek tetap
+// bebas dependensi pihak ketiga.
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "gc/heap.h"
+#include "harness.h"
+#include "rt/number.h"
+#include "rt/object.h"
+#include "rt/string.h"
+#include "rt/value.h"
+#include "vm/vm.h"
+
+using jawa::rt::Value;
+
+namespace {
+
+/// Jalankan program Basa Jawa dan kembalikan teks yang ditulis `tulis`.
+/// Output dialihkan ke buffer VM supaya test tidak bergantung pada stdout.
+std::string jalankan(std::string_view sumber) {
+    std::string keluaran;
+    jawa::vm::VMOptions opt;
+    opt.keluaran = &keluaran;
+    jawa::vm::VM mesin(opt);
+    const auto status = mesin.jalankan_sumber(sumber, "<test>");
+    if (status != jawa::vm::Status::Selesai) return "<galat>";
+    return keluaran;
+}
+
+}  // namespace
+
+// ===========================================================================
+// NaN-boxing
+// ===========================================================================
+
+TEST_CASE("nilai: ukuran & trivially copyable") {
+    // Ukuran mengikuti mode nilai: 8 byte dengan NaN-boxing, 16 byte dengan
+    // union bertag (`JAWA_NO_NAN_BOX`, dipakai pada platform dengan LA57).
+#ifdef JAWA_NO_NAN_BOX
+    CHECK_EQ(sizeof(Value), std::size_t{16});
+#else
+    CHECK_EQ(sizeof(Value), std::size_t{8});
+#endif
+    CHECK(std::is_trivially_copyable_v<Value>);
+}
+
+TEST_CASE("nilai: tag dasar") {
+    CHECK(Value::mboh().is_mboh());
+    CHECK(Value::kosong().is_kosong());
+    CHECK(Value::boolean(true).is_boole());
+    CHECK(Value::boolean(true).bool_value());
+    CHECK(!Value::boolean(false).bool_value());
+    CHECK(Value::number(1.5).is_number());
+    CHECK(Value::angka_int32(7).is_int32());
+    CHECK_EQ(Value::angka_int32(7).as_i32(), 7);
+}
+
+TEST_CASE("nilai: nan punya tag tersendiri") {
+    const Value n = Value::number(std::nan(""));
+    CHECK(n.is_nan_angka());
+    CHECK(!n.is_mboh());
+    CHECK(n.is_angka());
+    CHECK(std::isnan(n.as_number()));
+}
+
+TEST_CASE("nilai: objek & teks") {
+    const Value t = Value::obyek(reinterpret_cast<const void*>(0x1000));
+    CHECK(t.is_obyek());
+    CHECK(!t.is_number());
+    CHECK_EQ(t.pointer(), reinterpret_cast<const void*>(0x1000));
+}
+
+TEST_CASE("nilai: perbandingan & kunci hash") {
+    CHECK(Value::number(1.0) == Value::number(1.0));
+    CHECK(Value::number(1.0) != Value::number(2.0));
+    CHECK(Value::number(std::nan("")).key() == Value::number(std::nan("")).key());
+    CHECK(Value::mboh() == Value::mboh());
+}
+
+TEST_CASE("nilai: kebenaran (truthiness)") {
+    CHECK(!jawa::rt::benar(Value::mboh()));
+    CHECK(!jawa::rt::benar(Value::kosong()));
+    CHECK(!jawa::rt::benar(Value::boolean(false)));
+    CHECK(!jawa::rt::benar(Value::number(0.0)));
+    CHECK(!jawa::rt::benar(Value::number(std::nan(""))));
+    CHECK(jawa::rt::benar(Value::number(-1.0)));
+    CHECK(jawa::rt::benar(Value::obyek(reinterpret_cast<const void*>(0x2000))));
+}
+
+// ===========================================================================
+// Format angka
+// ===========================================================================
+
+TEST_CASE("angka: format sesuai ECMAScript") {
+    CHECK_EQ(jawa::rt::number_to_string(1.0), std::string("1"));
+    CHECK_EQ(jawa::rt::number_to_string(1.5), std::string("1.5"));
+    CHECK_EQ(jawa::rt::number_to_string(0.1 + 0.2), std::string("0.30000000000000004"));
+    CHECK_EQ(jawa::rt::number_to_string(1e21), std::string("1e+21"));
+    CHECK_EQ(jawa::rt::number_to_string(-0.0), std::string("0"));
+}
+
+TEST_CASE("angka: penguraian ketat") {
+    double d = 0.0;
+    CHECK(jawa::rt::parse_number_strict("42", d));
+    CHECK_EQ(d, 42.0);
+    CHECK(jawa::rt::parse_number_strict("-3.5", d));
+    CHECK_EQ(d, -3.5);
+    CHECK(!jawa::rt::parse_number_strict("abc", d));
+    CHECK(!jawa::rt::parse_number_strict("", d));
+}
+
+TEST_CASE("angka:exactly_int32") {
+    CHECK(jawa::rt::exactly_int32(5.0));
+    CHECK(!jawa::rt::exactly_int32(5.5));
+    CHECK(!jawa::rt::exactly_int32(1e30));
+}
+
+// ===========================================================================
+// Model objek
+// ===========================================================================
+
+TEST_CASE("objek: properti lewat dict & perbandingan isi") {
+    jawa::gc::Heap heap;
+    auto* o = heap.alokasi<jawa::rt::ObyekObj>();
+    o->h.kind = jawa::rt::OK::Obyek;
+    o->shape = jawa::rt::ShapeTable::instance().kosong();
+    o->slot = nullptr;
+    o->jumlah_slot = 0;
+
+    const Value k1 = Value::obyek(jawa::rt::StringTable::buat(heap, "nama"));
+    const Value k2 = Value::obyek(jawa::rt::StringTable::buat(heap, "nama"));
+    CHECK(k1 != k2);  // objek berbeda
+    CHECK(jawa::rt::nilai_sama(k1, k2));  // tapi isinya sama
+
+    o->define(heap, k1, Value::number(1.0), jawa::rt::AttrWritable);
+    Value keluar = Value::mboh();
+    CHECK(o->get(k2, keluar));
+    CHECK_EQ(keluar.as_number(), 1.0);
+}
+
+TEST_CASE("peta: pasang / cari / hapus") {
+    jawa::gc::Heap heap;
+    auto* p = heap.alokasi<jawa::rt::PetaObj>();
+    p->h.kind = jawa::rt::OK::Peta;
+    const Value k = Value::number(1.0);
+    CHECK(p->pasang(k, Value::number(10.0)));
+    CHECK(p->pasang(k, Value::number(20.0)) == false);  // sudah ada
+    const auto* e = p->cari(k);
+    REQUIRE(e != nullptr);
+    CHECK_EQ(e->nilai.as_number(), 20.0);
+    CHECK(p->hapus(k));
+    CHECK(p->cari(k) == nullptr);
+}
+
+TEST_CASE("dhaptar: dorong & perkecil") {
+    jawa::gc::Heap heap;
+    auto* a = heap.alokasi<jawa::rt::ArrayObj>();
+    a->h.kind = jawa::rt::OK::Array;
+    a->init(jawa::rt::ShapeTable::instance().kosong(), 2);
+    for (int i = 0; i < 100; ++i) a->dorong(Value::number(static_cast<double>(i)));
+    CHECK_EQ(a->panjang, std::size_t{100});
+    CHECK_EQ(a->get(0).as_number(), 0.0);
+    CHECK_EQ(a->get(99).as_number(), 99.0);
+    a->perkecil();
+    CHECK_EQ(a->panjang, std::size_t{100});
+}
+
+// ===========================================================================
+// GC
+// ===========================================================================
+
+TEST_CASE("gc: mark & sweep membebaskan yang tak terjangkau") {
+    jawa::gc::Heap heap;
+    auto* akar = heap.alokasi<jawa::rt::ObyekObj>();
+    akar->h.kind = jawa::rt::OK::Obyek;
+    akar->shape = jawa::rt::ShapeTable::instance().kosong();
+    heap.akar(Value::obyek(akar));
+    const std::size_t sebelum = heap.statistik().jumlah_objek;
+
+    for (int i = 0; i < 200; ++i) {
+        (void)jawa::rt::StringTable::buat(heap, "buangan");
+    }
+    CHECK(heap.statistik().jumlah_objek >= sebelum);
+    // Setelah koleksi, yang tersisa hanya akar + karantina alokasi terakhir
+    // (lihat `Heap::kKarantina`), jadi jumlahnya TIDAK tumbuh tanpa batas.
+    heap.koleksi_full();
+    const std::size_t sesudah = heap.statistik().jumlah_objek;
+    CHECK(sesudah <= sebelum + 128);
+    for (int ronde = 0; ronde < 5; ++ronde) {
+        for (int i = 0; i < 200; ++i) {
+            (void)jawa::rt::StringTable::buat(heap, "buangan");
+        }
+        heap.koleksi_full();
+    }
+    CHECK(heap.statistik().jumlah_objek <= sesudah + 128);
+}
+
+TEST_CASE("gc: HandleScope menjaga nilai tetap hidup") {
+    jawa::gc::Heap heap;
+    jawa::gc::HandleScope scope(heap);
+    Value* slot = scope.slot(Value::mboh());
+    const std::size_t sebelum = heap.statistik().jumlah_objek;
+    for (int i = 0; i < 200; ++i) {
+        // Handle menjaga nilai lama tetap hidup; koleksi di tengah jalan harus
+        // TIDAK membebaskan objek yang ditunjuk handle.
+        *slot = Value::obyek(jawa::rt::StringTable::buat(heap, "tetep"));
+        heap.koleksi_full();
+    }
+    // Karantina alokasi (lihat `Heap::kKarantina`) menahan 64 objek terakhir,
+    // jadi jumlahnya dibatasi, bukan tepat 1.
+    CHECK(heap.statistik().jumlah_objek <= sebelum + 65);
+    CHECK(slot->is_obyek());
+}
+
+TEST_CASE("gc: stress tidak merusak heap") {
+    jawa::gc::Heap heap(/*stress=*/true);
+    for (int i = 0; i < 200; ++i) {
+        (void)jawa::rt::StringTable::buat(heap, "x");
+    }
+    // Mode stress: tiap alokasi memicu koleksi penuh; jumlah objek harus
+    // tetap kecil (tidak menumpuk tanpa akar).
+    CHECK(heap.statistik().jumlah_objek <= 128);
+}
+
+// ===========================================================================
+// VM
+// ===========================================================================
+
+TEST_CASE("vm: hello dunia") { CHECK_EQ(jalankan("tulis(\"halo\");"), std::string("halo\n")); }
+
+TEST_CASE("vm: aritmetika") {
+    CHECK_EQ(jalankan("tulis(1 + 2 * 3);"), std::string("7\n"));
+    CHECK_EQ(jalankan("tulis(2 ** 10);"), std::string("1024\n"));
+    CHECK_EQ(jalankan("tulis(7 % 3);"), std::string("1\n"));
+}
+
+TEST_CASE("vm: tanpa koersi implisit (D-007)") {
+    // `Angka + Teks` harus jadi galat, bukan "1a".
+    jawa::vm::VMOptions opt;
+    jawa::vm::VM mesin(opt);
+    const auto status = mesin.jalankan_sumber("tulis(1 + \"a\");", "<test>");
+    CHECK(status != jawa::vm::Status::Selesai);
+}
+
+TEST_CASE("vm: variabel & fungsi") {
+    CHECK_EQ(jalankan("ana x = 4; gawe f(a) { bali a * 2; } tulis(f(x));"), std::string("8\n"));
+}
+
+TEST_CASE("vm: rekursi") {
+    CHECK_EQ(jalankan("gawe fib(n) { yen (n < 2) { bali n; } bali fib(n-1) + fib(n-2); } tulis(fib(15));"),
+             std::string("610\n"));
+}
+
+TEST_CASE("vm: closure & upvalue") {
+    CHECK_EQ(jalankan("gawe c() { ana n = 0; bali () => ++n; } tetep f = c(); tulis(f(), f(), f());"),
+             std::string("1 2 3\n"));
+}
+
+TEST_CASE("vm: loop & break/continue") {
+    CHECK_EQ(jalankan("kanggo (ana i = 0; i < 5; i++) { yen (i === 1) { terusna; } "
+                      "yen (i === 3) { mandheg; } tulis(i); }"),
+             std::string("0\n2\n"));
+}
+
+TEST_CASE("vm: dhaptar & metode bawaan") {
+    CHECK_EQ(jalankan("tulis([1,2,3].gabung(\"-\"));"), std::string("1-2-3\n"));
+    CHECK_EQ(jalankan("tulis([1,2,3].saring(x => x > 1).peta(x => x * 10).gabung(\",\"));"),
+             std::string("20,30\n"));
+}
+
+TEST_CASE("vm: objek & kelas") {
+    CHECK_EQ(jalankan("golongan P { #n; wiwit(n) { iki.#n = n; } nampa nilai() { bali iki.#n; } } "
+                      "tulis(anyar P(9).nilai);"),
+             std::string("9\n"));
+}
+
+TEST_CASE("vm: pola cocog") {
+    CHECK_EQ(jalankan("tulis(cocog (0) { kasus 0 => \"nol\", kasus _ => \"liyane\" })"),
+             std::string("nol\n"));
+    CHECK_EQ(jalankan("tulis(cocog (\"x\") { kasus 0 => \"nol\", kasus _ => \"liyane\" })"),
+             std::string("liyane\n"));
+}
+
+TEST_CASE("vm: coba / tangkep") {
+    // `tulis` memisahkan argumen dengan satu spasi, jadi ada dua spasi di sini.
+    CHECK_EQ(jalankan("coba { uncal \"x\"; } tangkep (e) { tulis(\"ditangkep\", e); }"),
+             std::string("ditangkep x\n"));
+}
+
+TEST_CASE("vm: pipeline") { CHECK_EQ(jalankan("tulis(5 |> (x => x + 1) |> (x => x * 2));"),
+                                        std::string("12\n")); }
+
+TEST_CASE("vm: generator mode-eager") {
+    CHECK_EQ(jalankan("gawe* g() { metokake 1; metokake 2; } tulis([...g()]);"), std::string("[1, 2]\n"));
+}
+
+TEST_CASE("vm: template literal") {
+    CHECK_EQ(jalankan("tulis(`a${1 + 1}b c`);"), std::string("a2b c\n"));
+}
+
+TEST_CASE("vm: batas frame rekursif menghasilkan galat") {
+    jawa::vm::VMOptions opt;
+    opt.maks_tumpukan = 200;
+    jawa::vm::VM mesin(opt);
+    // Rekursi tak hingga harus menghasilkan KleruRentang, bukan crash.
+    const auto status = mesin.jalankan_sumber("gawe f() { bali f(); } f();", "<test>");
+    CHECK(status == jawa::vm::Status::Galat);
+}

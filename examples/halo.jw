@@ -1,0 +1,2 @@
+tetep jeneng = "Budi";
+tulis(`Halo, ${jeneng}!`);

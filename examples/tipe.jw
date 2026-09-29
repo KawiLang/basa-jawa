@@ -1,0 +1,3 @@
+gawe tambah(a: angka, b: angka): angka { bali a + b; }
+tulis(tambah(2, 3));
+coba { tambah("2", 3); } tangkep (e) { tulis(e.jeneng); }

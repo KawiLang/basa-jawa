@@ -1,0 +1,4 @@
+gawe* cacah(n) {
+  kanggo (ana i = 1; i <= n; i++) metokake i;
+}
+tulis([...cacah(5)]);

@@ -1,0 +1,12 @@
+golongan Kewan {
+  #jeneng;
+  wiwit(jeneng) { iki.#jeneng = jeneng; }
+  nampa jeneng() { bali iki.#jeneng; }
+  swara() { tulis(`${iki.#jeneng} ngeluarke swara`); }
+}
+golongan Kucing turunan Kewan {
+  swara() { induk.swara(); tulis("meong!"); }
+}
+tetep k = anyar Kucing("Tom");
+k.swara();
+tulis(k.jeneng);

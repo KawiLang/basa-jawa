@@ -1,0 +1,32 @@
+---
+Checks: >
+  bugprone-*,performance-*,modernize-*,misc-*,
+  readability-*,cert-*,concurrency-*,
+  -bugprone-easily-swappable-parameters,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-use-trailing-return-type,
+  -performance-no-int-to-ptr,
+  -cert-err58-cpp
+WarningsAsErrors: 'clang-diagnostic-*,-clang-analyzer-*'
+HeaderFilterRegex: '(include/jawa|src)/.*\.(h|hpp)$'
+FormatStyle: file
+CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '60'
+  - key: readability-identifier-naming.ClassCase
+    value: PascalCase
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.VariableCase
+    value: camelBack
+  - key: readability-identifier-naming.EnumConstantCase
+    value: PascalCase
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: cppcoreguidelines-avoid-magic-numbers
+    value: '0'
+...

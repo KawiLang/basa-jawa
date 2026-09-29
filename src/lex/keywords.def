@@ -1,0 +1,80 @@
+// Kata kunci Basa Jawa — SATU SUMBER KEBENARAN.
+//
+// Dipakai oleh: lexer, `jawa token`, `jawa ubah` (alih tutur), dokumentasi,
+// dan test. Nama token enum didefinisikan di src/lex/token.h.
+//
+// Format tiap baris:
+//   JAWA_KEYWORD("ngoko", "krama", TokenId, "css_name")
+//
+//   "ngoko"    : ejaan Jawa ngoko (bahasa sehari-hari) -- WAJIB string literal
+//   "krama"    : alias krama (sopan); string kosong berarti sama dengan ngoko
+//   TokenId    : nama enumerator di src/lex/token.h
+//   "css_name" : nama untuk dokumentasi/tabel kata kunci
+//
+// Aturan:
+//   - Semua kata kunci huruf kecil, case-sensitive.
+//   - Alias krama memetakan ke token yang sama (boleh dicampur, kecuali --ketat-krama).
+//   - Kata kunci kontekstual ditandai di is_contextual_keyword() pada src/lex/token.h.
+
+// ---------------------------------------------------------------- variabel
+JAWA_KEYWORD("ana", "wonten", KwAna, "ana")
+JAWA_KEYWORD("tetep", "", KwConst, "tetep")
+JAWA_KEYWORD("gawe", "damel", KwFunction, "gawe")
+JAWA_KEYWORD("var", "", KwVar, "var")
+
+// ------------------------------------------------------------- alur kendali
+JAWA_KEYWORD("bali", "wangsul", KwReturn, "bali")
+JAWA_KEYWORD("yen", "menawi", KwIf, "yen")
+JAWA_KEYWORD("liyane", "sanes", KwElse, "liyane")
+JAWA_KEYWORD("nalika", "", KwWhile, "nalika")
+JAWA_KEYWORD("lakoni", "tindakaken", KwDo, "lakoni")
+JAWA_KEYWORD("kanggo", "kangge", KwFor, "kanggo")
+JAWA_KEYWORD("enteni", "nenggo", KwAwait, "enteni")
+JAWA_KEYWORD("pilih", "", KwSwitch, "pilih")
+JAWA_KEYWORD("kasus", "", KwCase, "kasus")
+JAWA_KEYWORD("baku", "", KwDefault, "baku")
+JAWA_KEYWORD("mandheg", "kendel", KwBreak, "mandheg")
+JAWA_KEYWORD("terusna", "lajengaken", KwContinue, "terusna")
+JAWA_KEYWORD("uncal", "", KwThrow, "uncal")
+JAWA_KEYWORD("coba", "", KwTry, "coba")
+JAWA_KEYWORD("tangkep", "", KwCatch, "tangkep")
+JAWA_KEYWORD("pungkasan", "", KwFinally, "finally")
+
+// ------------------------------------------------- modul & class
+JAWA_KEYWORD("ekspor", "", KwExport, "ekspor")
+JAWA_KEYWORD("impor", "", KwImport, "impor")
+JAWA_KEYWORD("saka", "saking", KwFrom, "saka")  // "of" (kanggo saka) & "from" (impor saka)
+JAWA_KEYWORD("minangka", "", KwAs, "minangka")
+JAWA_KEYWORD("golongan", "", KwClass, "golongan")
+JAWA_KEYWORD("turunan", "", KwExtends, "turunan")
+JAWA_KEYWORD("wiwit", "", KwConstructor, "wiwit")
+JAWA_KEYWORD("anyar", "enggal", KwNew, "anyar")
+JAWA_KEYWORD("statis", "", KwStatic, "statis")
+JAWA_KEYWORD("induk", "", KwSuper, "induk")
+JAWA_KEYWORD("iki", "puniki", KwThis, "iki")
+
+// ------------------------------------------- accessor & iterasi (kontekstual)
+JAWA_KEYWORD("nampa", "nampi", KwGet, "nampa")
+JAWA_KEYWORD("nyetel", "", KwSet, "nyetel")
+
+// ----------------------------------------------------------------- operator
+JAWA_KEYWORD("jinis", "", KwTypeof, "jinis")
+JAWA_KEYWORD("instansi_saka", "", KwInstanceof, "instansi_saka")
+JAWA_KEYWORD("ing", "", KwIn, "ing")
+JAWA_KEYWORD("busak", "", KwDelete, "busak")
+JAWA_KEYWORD("lan", "saha", KwAnd, "lan")
+JAWA_KEYWORD("utawa", "utawi", KwOr, "utawa")
+JAWA_KEYWORD("ora", "boten", KwNot, "ora")
+JAWA_KEYWORD("mengko", "mangke", KwAsync, "mengko")
+JAWA_KEYWORD("metokake", "medalaken", KwYield, "metokake")
+JAWA_KEYWORD("cocog", "", KwMatch, "cocog")
+JAWA_KEYWORD("apa_wae", "", KwAny, "apa_wae")
+JAWA_KEYWORD("ora_tau", "", KwNever, "ora_tau")
+
+// -------------------------------------------------------------------- nilai
+JAWA_KEYWORD("bener", "leres", KwTrue, "bener")
+JAWA_KEYWORD("salah", "lepat", KwFalse, "salah")
+JAWA_KEYWORD("kosong", "", KwNull, "kosong")
+JAWA_KEYWORD("mboh", "", KwUndefined, "mboh")
+JAWA_KEYWORD("DuduAngka", "", KwNaNIdent, "DuduAngka")
+JAWA_KEYWORD("Tak_Wates", "", KwInfinityIdent, "Tak_Wates")

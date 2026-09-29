@@ -1,0 +1,261 @@
+(* ==========================================================================
+   Tata bahasa Basa Jawa (EBNF, ISO/IEC 14977)
+
+   Definisi ini adalah SUMBER KEBENARAN sintaks. Parser di src/parse/
+   mengikutinya; test_parser.cpp memverifikasi setiap bentuk yang tertulis di
+   sini.
+
+   Konvensi:
+     - `::=` mendefinisikan, `|` alternatif, `*` nol kali atau lebih,
+       `+` satu kali atau lebih, `?` opsional, `,` berurutan.
+     - Kata kunci ditulis TEBAL; pengenal dan literal ditulis apa adanya.
+     - Setiap production yang bisa kosong ditulis eksplisit supaya tidak ada
+       ambiguitas "epsilon".
+     - ASI (automatic semicolon insertion) mengikuti JavaScript: statement
+       diakhiri `;`, `}`, atau baris baru; `lewati_asi()` di lexer
+       mengimplementasikannya. Bila ambigu, `;` eksplisit lebih aman.
+   ========================================================================== *)
+
+(* ---------------------------------------------------------------- literal *)
+angka           = [ "-" ] digit, { digit }, [ "." digit, { digit } ],
+                   [ ( "e" | "E" ) [ "+" | "-" ] digit, { digit } ] ;
+angka_desimal   = "0", { digit | "_" } ;
+angka_HEX       = "0", ( "x" | "X" ), hex_digit, { hex_digit | "_" } ;
+angka_OCT       = "0", ( "o" | "O" ), oct_digit, { oct_digit | "_" } ;
+angka_BIN       = "0", ( "b" | "B" ), bin_digit, { bin_digit | "_" } ;
+angka_besar     = angka, "n" ;
+digit           = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+hex_digit       = digit | "a".."f" | "A".."F" ;
+oct_digit       = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" ;
+bin_digit       = "0" | "1" ;
+
+teks            = '"', { char_teks | escape }, '"' |
+                   "'", { char_teks | escape }, "'" ;
+char_teks       = ? semua karakter Unicode kecuali kutip & backslash & newline ? ;
+escape          = "\\", ( "b" | "f" | "n" | "r" | "t" | "v" | "0" |
+                          "x", hex_digit, hex_digit |
+                          "u", ( "{", hex_digit, { hex_digit }, "}" |
+                                  hex_digit, hex_digit, hex_digit, hex_digit ) |
+                          newline ) ;   (* newline = line continuation *)
+
+template        = "`", { bagian_template }, "`" ;
+bagian_template = ( teks | escape ), { teks | escape } |
+                   "${", ekspresi, "}" ;
+
+regex           = "/", { regex_karakter | regex_escape }, "/", [ regex_flag, { regex_flag } ] ;
+regex_flag      = "g" | "i" | "m" | "s" | "u" | "y" ;
+
+bener           = **bener** | **leres** ;
+salah           = **salah** | **lepat** ;
+kosong          = **kosong** ;
+mboh            = **mboh** ;
+dudu_angka      = **DuduAngka** ;
+tak_wates       = **Tak_Wates** ;
+pengali_wahyu    = **Ini** ;
+pundung_iki     = **Iki** ;
+
+pengenal        = pengenal_awal, { pengenal_lanjut } ;
+pengenal_awal   = id_awal ;            (* termasuk U+A980..A9DF: aksara Jawa *)
+pengenal_lanjut = id_lanjut ;
+id_awal         = ? Unicode ID_Start atau "$" atau "_" atau aksara Jawa ? ;
+id_lanjut       = ? Unicode ID_Continue atau Combining_Mark atau ZWNJ/ZWJ
+                      atau aksara Jawa ? ;
+pengarahan      = "#", pengenal ;
+
+(* ------------------------------------------------------------------ types *)
+tipe            = tipe_sederhana, { "|", tipe_sederhana } ;
+tipe_sederhana  = nama_tipe | tipe_kurung | tipe_dhaptar | tipe_peta |
+                  tipe_fungsi | tipe_opsional ;
+nama_tipe       = "angka" | "teks" | "dhaptar" | "peta" | "pola" | "nama" |
+                  "fungsi" | "bener" | "mboh" | "apa_wae" | pengenal ;
+tipe_kurung     = "(", tipe, ")" ;
+tipe_dhaptar    = "dhaptar", "<", tipe, ">" ;
+tipe_peta       = "peta", "<", tipe, ",", tipe, ">" ;
+tipe_fungsi     = ( "fungsi" | "gawe" ), "(", [ daftar_tipe ], ")",
+                  [ "=>", tipe ] ;
+tipe_opsional   = tipe_sederhana, "?" ;
+daftar_tipe     = tipe, { ",", tipe }, [ ",", "..." ] ;
+
+(* -------------------------------------------------------------- program *)
+program         = { statement_awal } ;
+statement_awal  = **impor** | **ekspor** ;
+blok            = "{", { statement }, "}" ;
+
+statement       = deklarasi_fungsi
+                | deklarasi_kelas
+                | deklarasi_variabel
+                | deklarasi_impor
+                | deklarasi_ekspor
+                | statement_if
+                | statement_while
+                | statement_do
+                | statement_for
+                | statement_switch
+                | statement_try
+                | statement_throw
+                | statement_break
+                | statement_continue
+                | statement_return
+                | statement_debugger
+                | statement_kosong
+                | statement_blok
+                | statement_ekspresi
+                | ";" ;
+
+(* ---------------------------------------------------------- deklarasi *)
+(* `ana` = let (dapat diubah), `tetep` = const, `var` = var (fungsi-scoped) *)
+deklarasi_variabel  = Binding, ( pengenal | pola_destruktur ), [ anotasi_tipe ],
+                      [ "=", inisialisasi ], { ",", pengenal,
+                      [ anotasi_tipe ], [ "=", inisialisasi ] }, ";" ;
+inisialisasi        = ekspresi | dhaptar_obyek ;
+Binding            = **ana** | **wonten** | **tetep** | **var** ;
+anotasi_tipe        = ":", tipe ;
+
+deklarasi_fungsi  = [ **mengko** ], [ "*" ], **gawe**, pengenal,
+                    "(", [ daftar_parameter ], ")", [ ":", tipe ],
+                    ( blok | ekspresi_panahan ) ;
+(* also: pengenal, ( [ daftar_parameter ], ")", [ ":", tipe ], blok *)
+daftar_parameter  = [ "..." ], parameter, { ",", [ "..." ], parameter } ;
+parameter         = ( pengenal | "{" , { nama_pola, [ ":", nama_pola ] }, "}" |
+                      "[", { nama_pola }, "]" ), [ anotasi_tipe ],
+                    [ "=", ekspresi ] ;
+nama_pola         = pengenal | pengarahan ;
+
+fungsi_panahan    = **mengko**, [ "*" ],
+                    ( parameter_panahan | "(", [ daftar_parameter ], ")" ),
+                    "=>", ( blok | ekspresi ) ;
+parameter_panahan = pengenal, [ anotasi_tipe ] ;
+
+deklarasi_kelas  = **golongan**, pengenal, [ **turunan**, ekspresi ],
+                   "{", { anggota_kelas }, "}" ;
+anggota_kelas    = medan_kelas | metode_kelas | aksesor_kelas | blok_statis ;
+medan_kelas      = [ "#" ], pengenal, [ anotasi_tipe ],
+                   [ "=", ekspresi ], { ",", pengenal, [ "=", ekspresi ] },
+                   ";" ;
+metode_kelas     = [ **statis** ], [ **asinkron** ], [ "*" ], [ "#" ],
+                   ( **gawe** )? , pengenal, "(", [ daftar_parameter ], ")",
+                   [ ":", tipe ], ( blok | ekspresi_panahan ) ;
+blok_statis      = **statis**, blok ;
+aksesor_kelas    = [ **statis** ], ( **nampa** | **setel** ), pengenal,
+                   "(", ")", [ ":", tipe ], blok ;
+
+deklarasi_impor  = **impor**, [ default_spesifikasi, **saka** ],
+                   ( string | template ), [ ";" ] ;
+default_spesifikasi = ( pengenal | "{" , { pengenal, [ "saka" , pengenal ] }, "}" ) ;
+daftar_impor     = ( [ "*" ], **saka** , pengenal |
+                     "{" , { nama_impor, [ **saka** , nama_impor ] }, "}" ) ;
+nama_impor       = ( pengenal | [ pengenal, **saka** ], string ) ;
+deklarasi_ekspor = **ekspor**, ( deklarasi_fungsi | deklarasi_kelas |
+                                deklarasi_variabel | daftar_ekspor ) ;
+daftar_ekspor    = "{", { pengenal, [ **saka** , pengenal ] }, "}" ;
+
+(* --------------------------------------------------------- statement *)
+statement_if        = **yen**, "(", ekspresi, ")", statement,
+                      { **liyane**, **yen**, "(", ekspresi, ")", statement },
+                      [ **liyane**, statement ] ;
+statement_while     = **nalika**, "(", ekspresi, ")", statement ;
+statement_do        = **lakoni**, statement, **nganti**, "(", ekspresi, ")" ;
+statement_for       = **kanggo**, "(", [ for_header ], ")", statement ;
+for_header          = ( deklarasi_variabel_no_semicolon | ekspresi ),
+                      [ ";", ekspresi ], [ ";", ekspresi ] |
+                      ( deklarasi_variabel_no_semicolon | pengenal ),
+                      **saka**, ekspresi, [ **saka**, pengenal ] |
+                      pengenal, **saka**, ekspresi ;
+deklarasi_variabel_no_semicolon = Binding, pengenal, [ "=", ekspresi ] ;
+statement_switch    = **pilih**, "(", ekspresi, ")", "{",
+                      { **kasus**, ekspresi, statement_1, [ **maneh** ], statement_1,
+                        { **maneh**, statement_1 } } |
+                        **baku**, [ ":" ], statement_1, { **maneh**, statement_1 } },
+                      "}" ;
+statement_1         = statement_1a ;
+statement_1a        = statement | blok | **maneh**, statement ;
+statement_try       = **coba**, blok,
+                      { **tangkep**, [ "(", pengenal, [ ":", tipe ], ")" ], blok },
+                      [ **intrigasan**, blok ] ;
+statement_throw     = **uncal**, ekspresi, ";" ;
+statement_break     = **mandheg**, [ pengenal ], ";" ;
+statement_continue  = **terusna**, [ pengenal ], ";" ;
+statement_return    = **bali**, [ ekspresi ], ";" ;
+statement_debugger  = **debugger**, ";" ;
+statement_kosong    = ";" ;
+statement_blok      = blok ;
+statement_ekspresi  = ekspresi, ";" ;
+
+(* --------------------------------------------------------- ekspresi *)
+ekspresi        = ekspresi_penugasan, { ",", ekspresi_penugasan } ;
+ekspresi_penugasan = pola_atau_ekspresi, [ operator_penugasan, pola_atau_ekspresi ] ;
+pola_atau_ekspresi = ekspresi_kondisional ;
+operator_penugasan = ( AssignOp ) ? "=" | "+=" | "-=" | "*=" | "/=" | "%=" |
+                   "**=" | "<<=" | ">>=" | ">>>=" | "&=" | "|=" | "^=" |
+                   "&&=" | "||=" | "??=" ;
+ekspresi_kondisional = ekspresi_pelecahan, [ "?", ekspresi_penugasan,
+                                            ":", ekspresi_penugasan ] ;
+ekspresi_pelecahan   = [ "await" ], ekspresi_pipeline ;
+ekspresi_pipeline    = ekspresi_logika_OR, { "**saka" , ekspresi_logika_OR } ;
+ekspresi_logika_OR   = ekspresi_logika_AND, { "**utawa" , ekspresi_logika_AND } ;
+ekspresi_logika_AND  = ekspresi_bit_OR, { "**lan" , ekspresi_bit_OR } ;
+ekspresi_bit_OR      = ekspresi_bit_XOR, { "|", ekspresi_bit_XOR } ;
+ekspresi_bit_XOR     = ekspresi_bit_AND, { "^", ekspresi_bit_AND } ;
+ekspresi_bit_AND     = ekspresi_kabinasi, { "&", ekspresi_kabinasi } ;
+ekspresi_kabinasi    = ekspresi_perbandingan, { ( "==" | "!=" | "===" | "!==" ), ekspresi_perbandingan } ;
+ekspresi_perbandingan = ekspresi_relasional, { ( "<" | ">" | "<=" | ">=" | "saka" | "ing" ), ekspresi_relasional } ;
+ekspresi_relasional  = ( ShiftOp ) , ( ekspresi_tambah ) ;
+ShiftOp             = [ "+" | "-" ] ;
+ekspresi_tambah     = term, { ( "+" | "-" ), term } ;
+ekspresi_kali        = unary, { ( "*" | "/" | "%" ), unary } ;
+unary               = ( UnaryOp | AwaitOp ) , unary | UnaryOp ;
+UnaryOp             = "!" | "-" | "+" | "~" | "jinis" | "busak" |
+                       "metokake" | "entani" | "kudu" | "nanging" ;
+AwaitOp             = "**entani**" | "**nanging**" ;
+term                = ( [ AwaitOp ] , ( Call | Member | UnaryOp | literal |
+                       dhaptar_obyek | fungsi_panahan | ClassExpression |
+                       this_expr | super_expr | incremen |
+                       ( "(" , ekspresi, ")" ) ) ) ;
+Call                = Member , Arguments ;
+Arguments           = "(" , [ ekspresi_penugasan_list ], ")" ;
+ClassExpression     = ( **enggal** | **antepas** ) , ( Member | Arguments ) ;
+pola_ekspresi       = ( "_" | pola ), ( "|" , pola ) ;
+pola                = ( "[" , [ pola_dhaptar ], "]" |
+                       "{" , [ pola_objek ], "}" |
+                       ( "_" | pengenal | pengarahan | literal ) ,
+                       [ **yen** , "(" , ekspresi , ")" ] ) ;
+pola_dhaptar        = ( [ "..." ], pola ), { ",", ( [ "..." ], pola ) } ;
+pola_objek          = ( spread_pola | pola ), { ",", ( spread_pola | pola ) } ;
+spread_pola         = "..." , ( pengenal | "{" , { pengenal, [ ":", pola ] }, "}" ) ;
+incremen            = ( "++" | "--" ), pengenal | pengenal, ( "++" | "--" ) ;
+this_expr           = **iki** ;
+super_expr          = **induk** ;
+Call                = Expression, Arguments ;
+
+ekspresi_penugasan_list = ekspresi_penugasan, { ",", ekspresi_penugasan } ;
+Member              = Primary, MemberTail ;
+MemberTail          = ( "." , ( pengenal | pengarahan ) ) |
+                       ( "[" , ekspresi , "]" ) |
+                       ( "?." , ( "(" , Arguments, ")" | pengenal ) ) |
+                       Template ;
+Primary             = literal | dhaptar_obyek | Identifier | this_expr |
+                       super_expr | ( "new" , ClassExpression ) | fungsi_panahan |
+                       ClassExpression | Template ;
+Identifier          = pengenal ;
+
+(* ----------------------------------------------------------- literal *)
+literal        = angka | angka_besar | teks | template | regex |
+                  bener | salah | kosong | mboh | dudu_angka | tak_wates ;
+dhaptar_obyek  = ( "[" , [ AssignmentExpressionList ] , "]" , { "," } ) |
+                  ( "{" , { PropertyDefinitionList | CoverInitializedName } ,
+                        [ "," ] , "}" ) ;
+AssignmentExpressionList = ( AssignmentExpression | "..." , AssignmentExpression ) ,
+                            { "," , ( AssignmentExpression | "..." , AssignmentExpression ) } ;
+PropertyDefinitionList     = PropertyDefinition ,
+                            { "," , PropertyDefinition } , [ "," ] ;
+PropertyDefinition         = ( PropertyName | "[" , AssignmentExpression , "]" ) ,
+                            ( ":" , AssignmentExpression | ( getsetter | method ) ) ;
+getsetter      = ( **nampa** | "**get**" | **setel** | "**set**" ) ,
+                  "(" , ")" , "{" , { statement } , "}" ;
+method         = ( "**gawe**" , [ "*" ] ) , pengenal , "(" ,
+                  [ FormalParameters ] , ")" , ( Block | AssignmentExpression ) ;
+CoverInitializedName = pengenal , ( "=" , AssignmentExpression ) ;
+PropertyName   = IdentifierName | teks | angka | ComputedPropertyName ;
+IdentifierName = pengenal | **gawe** | **mbuw** | **nampa** | **setel** |
+                  **statis** | **asinkron** | **wiwit** | **pustaka** ;
+ComputedPropertyName = "[" , AssignmentExpression , "]" ;

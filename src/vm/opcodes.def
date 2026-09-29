@@ -1,0 +1,152 @@
+// Opcode Basa Jawa — SATU SUMBER KEBENARAN.
+//
+// Format instruksi: 1 byte opcode + operand Opsional.
+//   - instruksi tanpa operand : 1 byte
+//   - instruksi dengan 1 operand u16 : 3 byte (1 + 2)
+//
+// Semua operand adalah index (konstanta, lokal, upvalue, jump, dst, dst2, dll).
+// Tanda tangan efek stack memakai notasi "kiri kanan -> hasil".
+//
+// Format: JAWA_OP(Nama, baris_kode, tanda_tangan, grup)
+//   baris_kode : 0 = tanpa operand, 1 = satu operand u16, 2 = dua operand u16
+//   tanda_tangan: dokumentasi efek stack
+//   grup        : pengelompokan untuk disassembler
+
+#ifndef JAWA_OP
+#error "Sertakan opcodes.def sebelum memakainya"
+#endif
+
+// ------------------------------------------------------------------ konstanta
+JAWA_OP(NOP,        0, "-", "kontrol")
+JAWA_OP(KOSONG,     0, "- -> kosong", "konstanta")
+JAWA_OP(MBOH,       0, "- -> mboh", "konstanta")
+JAWA_OP(BENER,      0, "- -> bener", "konstanta")
+JAWA_OP(SALAH,      0, "- -> salah", "konstanta")
+JAWA_OP(KONSTAN,     1, "- -> v", "konstanta")
+JAWA_OP(NOMOR,      1, "- -> n", "konstanta")
+JAWA_OP(TOSTRING,    0, "a - s", "konstanta")
+JAWA_OP(CONCAT,     0, "a b - s", "konstanta")
+JAWA_OP(BIGINT,     1, "- -> n", "konstanta")
+JAWA_OP(TEKS,       1, "- -> t", "konstanta")
+JAWA_OP(NIL,        0, "- -> -", "konstanta")   // initialize local to undefined
+JAWA_OP(UNDEF,      0, "- -> -", "konstanta")
+JAWA_OP(GET_GLOBAL, 1, "- -> v", "variabel")
+JAWA_OP(SET_GLOBAL, 1, "v - >", "variabel")
+JAWA_OP(GET_MODULE, 1, "- -> v", "variabel")
+JAWA_OP(SET_MODULE, 1, "v - >", "variabel")
+JAWA_OP(GET_LOCAL,  1, "- -> v", "variabel")
+JAWA_OP(SET_LOCAL,  1, "v - >", "variabel")
+JAWA_OP(DEF_LOCAL,  1, "v - >", "variabel")
+JAWA_OP(GET_UPVAL,  1, "- -> v", "variabel")
+JAWA_OP(SET_UPVAL,  1, "v - >", "variabel")
+JAWA_OP(GET_CELL,   1, "- -> v", "variabel")
+JAWA_OP(SET_CELL,   1, "v - >", "variabel")
+JAWA_OP(CLOSE_UPVAL,1, "- -> -", "variabel")
+JAWA_OP(TDZ_CHECK,  1, "- -> -", "variabel")
+
+// ------------------------------------------------------------------ operator
+JAWA_OP(POP,        0, "v - >", "stack")
+JAWA_OP(DUP,        0, "v - v v", "stack")
+JAWA_OP(SWAP,       0, "a b - b a", "stack")
+JAWA_OP(DUP2,       0, "a b - a b a b", "stack")
+JAWA_OP(ROT3,       0, "a b c - c a b", "stack")
+
+JAWA_OP(ADD,        0, "a b - r", "aritmetika")
+JAWA_OP(SUB,        0, "a b - r", "aritmetika")
+JAWA_OP(MUL,        0, "a b - r", "aritmetika")
+JAWA_OP(DIV,        0, "a b - r", "aritmetika")
+JAWA_OP(MOD,        0, "a b - r", "aritmetika")
+JAWA_OP(POW,        0, "a b - r", "aritmetika")
+JAWA_OP(NEG,        0, "a - r", "aritmetika")
+JAWA_OP(INC,        0, "a - r", "aritmetika")
+JAWA_OP(DEC,        0, "a - r", "aritmetika")
+JAWA_OP(BIT_AND,    0, "a b - r", "bitwise")
+JAWA_OP(BIT_OR,     0, "a b - r", "bitwise")
+JAWA_OP(BIT_XOR,    0, "a b - r", "bitwise")
+JAWA_OP(BIT_NOT,    0, "a - r", "bitwise")
+JAWA_OP(SHL,        0, "a b - r", "bitwise")
+JAWA_OP(SHR,         0, "a b - r", "bitwise")
+JAWA_OP(USHR,        0, "a b - r", "bitwise")
+
+JAWA_OP(EQ,         0, "a b - r", "perbandingan")
+JAWA_OP(NE,         0, "a b - r", "perbandingan")
+JAWA_OP(SEQ,        0, "a b - r", "perbandingan")
+JAWA_OP(SNE,        0, "a b - r", "perbandingan")
+JAWA_OP(LT,         0, "a b - r", "perbandingan")
+JAWA_OP(LE,         0, "a b - r", "perbandingan")
+JAWA_OP(GT,         0, "a b - r", "perbandingan")
+JAWA_OP(GE,         0, "a b - r", "perbandingan")
+JAWA_OP(SAME_VALUE, 0, "a b - r", "perbandingan")
+JAWA_OP(NOT,        0, "a - r", "perbandingan")
+JAWA_OP(CEK_TIPE,  1, "v k - v", "tipe")
+JAWA_OP(TYPEOF,     0, "a - t", "perbandingan")
+JAWA_OP(INSTANCEOF, 0, "a b - r", "perbandingan")
+JAWA_OP(IN,         0, "a b - r", "perbandingan")
+JAWA_OP(TYPEOF_KIND,1, "- -> t", "perbandingan")
+
+// -------------------------------------------------------------------- objek
+JAWA_OP(GET_PROP,   2, "o k - v", "objek")
+JAWA_OP(SET_PROP,   2, "o k v - v", "objek")
+JAWA_OP(GET_INDEX,  0, "o k - v", "objek")
+JAWA_OP(SET_INDEX,  0, "o k v - v", "objek")
+JAWA_OP(GET_SUPER,  1, "o k - v", "objek")
+JAWA_OP(SET_SUPER,  1, "o v k - v", "objek")
+JAWA_OP(DEFINE,     2, "o k v - v", "objek")
+JAWA_OP(DEFINE_METHOD, 2, "o k f - >", "objek")
+JAWA_OP(DEFINE_ACCESSOR, 2, "o k f - >", "objek")
+JAWA_OP(DEFINE_FIELD,   1, "v - >", "objek")
+JAWA_OP(DELETE,     0, "o k - r", "objek")
+JAWA_OP(GET_PROTO,  0, "o - p", "objek")
+JAWA_OP(SET_PROTO,  0, "o p - o", "objek")
+JAWA_OP(MAKE_OBJECT,0, "- > o", "objek")
+JAWA_OP(MAKE_ARRAY, 1, "n v... - a", "objek")
+JAWA_OP(MAKE_ARRAY_SPREAD, 0, "v... - a", "objek")
+JAWA_OP(SPREAD_PUSH,0, "i - i...", "objek")
+JAWA_OP(SPREAD,     0, "dst src - >", "objek")
+JAWA_OP(ARRAY_PUSH, 1, "a v - >", "objek")
+JAWA_OP(ITER_INIT,  0, "o i - i", "objek")
+JAWA_OP(ITER_NEXT,  0, "i - v >", "objek")
+
+// ------------------------------------------------------------------- fungsi
+JAWA_OP(CLOSURE,    1, "- > c", "fungsi")
+JAWA_OP(CALL,       0, "f a... - r", "fungsi")
+JAWA_OP(CALL_METHOD,1, "o f a... - r", "fungsi")
+JAWA_OP(CALL_SPREAD, 0, "f a... - r", "fungsi")
+JAWA_OP(TAIL_CALL,  0, "f a... - r", "fungsi")
+JAWA_OP(RETURN,     0, "v - >", "fungsi")
+JAWA_OP(RETURN_UNDEF,0, "- > ", "fungsi")
+JAWA_OP(NEW,        0, "c a... - o", "fungsi")
+JAWA_OP(FUNCTION,   1, "- > f", "fungsi")
+JAWA_OP(CLASS,      0, "p n i - c", "fungsi")
+JAWA_OP(INHERIT,    0, "c p - c", "fungsi")
+
+// ------------------------------------------------------------------- kontrol
+JAWA_OP(JUMP,       1, "- > ", "kontrol")
+JAWA_OP(JUMP_IF_FALSE, 1, "c - >", "kontrol")
+JAWA_OP(JUMP_IF_TRUE,  1, "c - >", "kontrol")
+JAWA_OP(JUMP_IF_NOT_NULLISH, 0, "v - >", "kontrol")
+JAWA_OP(JUMP_IF_NULLISH, 1, "c - >", "kontrol")
+JAWA_OP(LOOP,       1, "- > ", "kontrol")
+JAWA_OP(TEST_TRUTHY,0, "c - >", "kontrol")
+
+// ------------------------------------------------------------------ galat
+JAWA_OP(THROW,      0, "v - > ", "galat")
+JAWA_OP(TRY_BEGIN,  2, "- t i > ", "galat")
+JAWA_OP(TRY_END,    0, "- > ", "galat")
+JAWA_OP(FINALLY_END,0, "- > ", "galat")
+
+// ------------------------------------------------------------------ cocog
+JAWA_OP(IS_OBJECT,  0, "v - b", "objek")
+JAWA_OP(IS_ARRAY,   0, "v - b", "objek")
+JAWA_OP(MATCH_TEST, 1, "v p - >", "cocog")
+JAWA_OP(MATCH_BIND, 1, "v p - >", "cocog")
+
+// ------------------------------------------------------------------- lain
+JAWA_OP(IMPORT,     1, "- > m", "modul")
+JAWA_OP(EXPORT,     1, "v - > ", "modul")
+JAWA_OP(YIELD,      0, "v - r", "fiber")
+JAWA_OP(AWAIT,      0, "v - r", "fiber")
+JAWA_OP(DEBUGGER,   0, "- > ", "lain")
+JAWA_OP(NOP_LINE,   1, "- > ", "lain")
+JAWA_OP(UNDEF_LINE, 1, "- > ", "lain")
+JAWA_OP(GET_GLOBAL_FUNC, 1, "- > f", "variabel")

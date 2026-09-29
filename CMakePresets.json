@@ -1,0 +1,45 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "JAWA_BUILD_TESTS": "ON"
+      }
+    },
+    { "name": "debug",   "inherits": "base", "displayName": "Debug",         "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" } },
+    { "name": "release", "inherits": "base", "displayName": "Release",       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
+    { "name": "relwithdebinfo", "inherits": "base", "displayName": "RelWithDebInfo", "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" } },
+    { "name": "asan",    "inherits": "base", "displayName": "ASan",          "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "JAWA_SANITIZER": "address" } },
+    { "name": "ubsan",   "inherits": "base", "displayName": "UBSan",         "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "JAWA_SANITIZER": "undefined" } },
+    { "name": "tsan",    "inherits": "base", "displayName": "TSan",          "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "JAWA_SANITIZER": "thread" } },
+    { "name": "coverage","inherits": "base", "displayName": "Coverage",      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "JAWA_COVERAGE": "ON" } },
+    { "name": "fuzz",    "inherits": "base", "displayName": "Fuzzing",       "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "JAWA_BUILD_FUZZ": "ON", "JAWA_BUILD_TESTS": "OFF" } },
+    { "name": "nonanbox","inherits": "base", "displayName": "Value 16-byte (tanpa NaN-boxing)", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "JAWA_NAN_BOXING": "OFF" } }
+  ],
+  "buildPresets": [
+    { "name": "debug",   "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
+    { "name": "asan",    "configurePreset": "asan" },
+    { "name": "ubsan",   "configurePreset": "ubsan" },
+    { "name": "tsan",    "configurePreset": "tsan" },
+    { "name": "coverage","configurePreset": "coverage" },
+    { "name": "fuzz",    "configurePreset": "fuzz" },
+    { "name": "nonanbox","configurePreset": "nonanbox" }
+  ],
+  "testPresets": [
+    { "name": "base",   "hidden": true, "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error", "stopOnFailure": false } },
+    { "name": "debug",   "inherits": "base", "configurePreset": "debug" },
+    { "name": "release", "inherits": "base", "configurePreset": "release" },
+    { "name": "asan",    "inherits": "base", "configurePreset": "asan" },
+    { "name": "ubsan",   "inherits": "base", "configurePreset": "ubsan" },
+    { "name": "tsan",    "inherits": "base", "configurePreset": "tsan" },
+    { "name": "coverage","inherits": "base", "configurePreset": "coverage" }
+  ]
+}

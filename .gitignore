@@ -1,0 +1,52 @@
+# --- Build ---
+build/
+build-*/
+cmake-build-*/
+out/
+install/
+_deps/
+CMakeUserPresets.json
+
+# --- Artefak kompilasi ---
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.obj
+*.lib
+*.pdb
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+compile_commands.json
+.cache/
+
+# --- Uji & alat ---
+Testing/
+*.log
+*.traces
+core
+core.*
+crash.log
+
+# --- Editor & OS ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+*.orig
+*.rej
+
+# --- Rahasia (jaring pengaman; jangan pernah commit) ---
+.env
+.env.*
+*.pem
+*.key
+secrets.json
+credentials.json

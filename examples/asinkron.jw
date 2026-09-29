@@ -1,0 +1,10 @@
+mengko gawe ambil(x) {
+  enteni Wektu.tundha(10);
+  bali x * 2;
+}
+mengko gawe utama() {
+  tetep a = enteni ambil(21);
+  tulis(a);
+}
+utama();
+tulis("dhisik");
