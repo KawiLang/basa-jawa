@@ -180,3 +180,100 @@ pustaka standar minimum.
 - Generator suspend yang sesungguhnya (saat ini mode-eager).
 - Hidden class & inline cache yang sesungguhnya.
 - Linker modul ES, `Tanggal`, regex runtime, berkas, proses.
+
+## [0.4.0] — Fase 6: async/await, Janji, dan loop acara
+
+Rilis ketiga. 0.3.0 menyelesaikan runtime; 0.4.0 menutup Fase 6 sehingga
+**semua 11 contoh acuan Bagian 11** menghasilkan keluaran yang persis.
+
+### Ditambahkan
+
+**Async tanpa fiber (D-023)**
+- `src/vm/vm_async.cpp` (baru): Janji, penjadwalan, suspensi, dan resume.
+- `struct Lanjutan` (continuation): menyalin frame + nilai stack, bukan stack
+  C++ terpisah. Pemulihan menyalin balik lalu menjalankan loop bytecode lagi.
+- `AWAIT` di loop VM:
+  - Janji sudah `Slamet` -> memakai `hasil` langsung (tanpa suspend).
+  - Janji `Gagal` -> melempar `hasil` sebagai galat (bisa ditangkap `coba`).
+  - Janji `Menunggu` -> menunda seluruh rantai `async`; pemanggil melanjutkan
+    dari instruksi setelah `CALL`.
+  - Nilai selain Janji -> identitas (`enteni 5` -> `5`).
+- Upvalue yang menunjuk ke stack yang disalin ditutup lebih dulu
+  (`Upvalue::close`), supaya tidak ada pointer menggantung.
+- `VM::panggil_async` untuk fungsi `mengko`: Janji didorong lebih dulu, frame
+  dijalankan dengan `Frame::kBuangHasil` supaya Janji tetap menjadi hasil
+  pemanggilan.
+- Galat di dalam `mengko` menjadi **penolakan Janji** (`unwind_galat` championed
+  jalur ini), bukan galat program. Penolakan tak tertangani akhirnya menjadi
+  galat program, seperti unhandled rejection.
+- `Frame::janji_async` & `Frame::akar_async`; `VM::dasar_async_` menandai akar
+  rantai async yang sedang berjalan.
+- Top-level `enteni` ditandai lewat `Chunk::await_tingkat_modul` (diisi
+  kompiler), sehingga frame modul hanya menjadi akar rantai bila memang perlu.
+
+**Loop acara (deterministik)**
+- Antrean mikrotugas: penyelesaian Janji dan handler `.then`/`.tangkep`.
+- Antrean timer: `Wektu.tundha(ms)`, diurutkan `tunda_ms` lalu urutan pemanggilan.
+- `VM::jalankan_loop_acara` dijalankan sekali setelah kode sinkron selesai;
+  mikrotugas selalu mendahului timer (meniru ECMAScript).
+- Akar GC untuk antrean mikrotugas, timer, dan rantai yang disuspensi
+  (termasuk closure & upvalue frame yang ditunda).
+
+**Pustaka standar**
+- `Wektu.tundha(ms)` dan `Wektu.teka()`.
+- Method Janji: `then`, `tangkep`, `jenis` (`nunggu`/`slamet`/`gagal`), `hasil`.
+  `then`/`tangkep` pada Janji yang sudah selesai tetap menjadwalkan handler
+  sebagai mikrotugas (bukan memanggil langsung).
+
+**Perbaikan parser**
+- `mengko gawe f() { ... }` di tingkat statement kini menjadi DEKLARASI
+  (sebelumnya `EkspresiStmt` berisi closure, sehingga `f` tidak pernah menjadi
+  slot lokal dan `GET_GLOBAL "f"` mengembalikan `mboh`).
+- Kata kunci boleh menjadi nama properti setelah `.` dan `?.` (D-024).
+  Contoh: `.tangkep` (`.catch`), `.nampa`/`.nyetel`, `.bali`, `.jenis`, `.saka`.
+
+**Dokumentasi**
+- `docs/async.md` (baru): arsitektur continuation, loop acara, model Janji,
+  galat async, dan penyimpangan dari JavaScript.
+- `docs/bytecode.md`: `AWAIT` dipindahkan dari "belum diimplementasikan".
+- `STATUS.md`, `DECISIONS.md` (D-023, D-024), `README.md` diperbarui.
+
+### Diperbaiki (bug nyata yang ditemukan saat Fase 6)
+
+| Bug | Gejala | Akar masalah |
+|---|---|---|
+| `mengko gawe f()` tak bisa dipanggil | `Ora bisa nelep nilai: dudu fungsi` | di-parse sebagai ekspresi, `f` bukan slot lokal |
+| Rantai async tidak pernah dilanjutkan | `dhisik` saja, `42` hilang | `selesaikan_janji` mengosongkan `lanjutan_vm` sebelum mikrotugas memakainya |
+| Loop acara tanpa henti | proses menggantung | `jalankan_mikrotugas` selalu `true` walau antrean kosong; timer tidak pernah dinyalakan |
+| Handler `.tangkep` tak terpanggil | galat langsung|Program mati sebelum handler dijadwalkan; Janji yang sudah ditolak tidak menjadwalkan handler |
+| Handler menerima Janji, bukan nilai | `nolak: Janji { <pending> }` | `t.nilai` diisi `turunan` pada jalur penolakan |
+| `dhisik` tercetak setelah `42` | urutan acuan terbalik | frame modul selalu jadi akar async; perlu penanda `await_tingkat_modul` |
+| `.tangkep` gagal di-parse | `Ngarep-arep jeneng properti sawise titik.` | kata kunci ditolak sebagai nama properti |
+
+### Status verifikasi
+
+| Preset | Hasil |
+|---|---|
+| `release` | build 0 warning; `ctest` 6/6 hijau |
+| `asan` (ASan+LSan) | 6/6 hijau; 11/11 contoh bersih dengan `--gc-stress` |
+| `ubsan` | 6/6 hijau; 0 runtime error |
+| `tsan` | 6/6 hijau; 0 data race |
+| `nonanbox` (mode nilai 16-byte) | 6/6 hijau |
+| `--gc-stress` | 11/11 contoh emas tetap identik |
+
+**Pengujian**
+- `tests/unit/test_runtime.cpp`: 42 test / 92 cek (dari 30/80). Test baru:
+  urutan microtask, Janji tanpa `enteni`, rantai berlapis, `.then`,
+  `.then` berantai, `.tangkep` atas penolakan, `enteni` atas Janji ditolak,
+  penolakan tertangkap `coba`, urutan timer, top-level `enteni`, `enteni` di
+  fungsi biasa, getter/setter kelas.
+- `tests/golden/asinkron.out` (baru) — contoh acuan ke-11 kini punya golden file.
+- `scripts/cek_golden.py`: `SKIP` dikosongkan; 11/11 wajib cocok.
+
+### Penyimpangan yang disengaja
+
+- Pemanggil fungsi `mengko` menunggu sampai fungsi itu selesai, jadi
+  `tulis(f())` mencetak Janji yang masih `nunggu` (lihat `docs/async.md`).
+- `Wektu.tundha` hanya mengurutkan timer; tidak menunggu ms sungguhan.
+
+---

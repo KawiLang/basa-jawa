@@ -62,10 +62,10 @@ Status gagal(VM& vm, const char* kode, const char* pesan) {
 
 // ===========================================================================
 
-Status VM::jalankan_loop() {
+Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
     // Reentrancy (native -> JS) menjalankan loop bersarang. Loop ini berhenti
-    // begitu kedalaman frame turun kembali ke `kedalaman_awal`.
-    const std::size_t kedalaman_awal = frames_.size();
+    // begitu kedalaman frame turun kembali ke `kedalaman_awal`. Resume rantai
+    // `async` memakai `0`: berjalan sampai `frames_` benar-benar kosong.
     for (;;) {
         if (frames_.size() < kedalaman_awal) return Status::Selesai;
         if (frames_.empty()) return Status::Selesai;
@@ -671,6 +671,13 @@ Status VM::jalankan_loop() {
                 const Value v = ambil();
                 const std::size_t base = f.slot_base;
                 const std::size_t target = f.target_balas;
+                if (f.janji_async.is_obyek()) {
+                    if (auto* j = static_cast<rt::JanjiObj*>(f.janji_async.mutable_pointer());
+                        j != nullptr) {
+                        selesaikan_janji(j, v, false);
+                    }
+                    if (f.akar_async) dasar_async_ = kTanpaAsync;
+                }
                 tutup_upvalue_frame(base);
                 stack_.resize(base);
                 frames_.pop_back();
@@ -686,8 +693,16 @@ Status VM::jalankan_loop() {
                 break;
             }
             case Op::RETURN_UNDEF: {
+                const Value v = ambil();
                 const std::size_t base = f.slot_base;
                 const std::size_t target = f.target_balas;
+                if (f.janji_async.is_obyek()) {
+                    if (auto* j = static_cast<rt::JanjiObj*>(f.janji_async.mutable_pointer());
+                        j != nullptr) {
+                        selesaikan_janji(j, v, false);
+                    }
+                    if (f.akar_async) dasar_async_ = kTanpaAsync;
+                }
                 tutup_upvalue_frame(base);
                 stack_.resize(base);
                 frames_.pop_back();
@@ -826,7 +841,33 @@ Status VM::jalankan_loop() {
                 dorong(v);
                 break;
             }
-            case Op::AWAIT: break;
+            // `entani nilai`. Kalau nilainya Janji yang sudah selesai, hasilnya
+            // langsung dipakai; kalau masih menunggu, seluruh rantai `async`
+            // disuspensi (lihat `vm_async.cpp`) dan kode pemanggil lanjut.
+            case Op::AWAIT: {
+                const Value v = ambil();
+                auto* j = v.is_obyek() ? static_cast<rt::JanjiObj*>(v.mutable_pointer()) : nullptr;
+                if (j != nullptr && j->h.kind == rt::OK::Janji) {
+                    if (j->status == rt::JanjiStatus::Slamet) {
+                        dorong(j->hasil);
+                        break;
+                    }
+                    if (j->status == rt::JanjiStatus::Gagal) {
+                        if (unwind_galat(j->hasil)) break;
+                        return Status::Galat;
+                    }
+                    if (suspensi_async(j)) break;  // pemanggil melanjutkan
+                    const Value k = buat_kleru(
+                        "KleruJinis",
+                        "Nilai Janji isih nunggu, nanging `entani` wis nalika ing luar rantai async. "
+                        "Pakai `entani` mungake ing fungsi utawa method sing marked `mengko`.");
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
+                }
+                // `entani` atas nilai biasa bersifat identitas.
+                dorong(v);
+                break;
+            }
             case Op::DEBUGGER: break;
             case Op::NOP_LINE: case Op::UNDEF_LINE: break;
             case Op::FUNCTION: dorong(Value::mboh()); break;

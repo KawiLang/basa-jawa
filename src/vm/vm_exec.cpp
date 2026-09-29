@@ -83,7 +83,13 @@ Status VM::jalankan_sumber(std::string_view sumber, std::string_view nama_berkas
     reset_stack();
     dorong(Value::mboh());          // this modul
     dorong(Value::obyek(clo));       // callee
-    const Status s = jalankan();
+    Status s = jalankan();
+    if (s == Status::Selesai) {
+        // Kode sinkron selesai. Jalankan loop acara: mikrotugas lalu timer, agar
+        // rantai `async` yang tertunda oleh `entani` bisa dilanjutkan.
+        (void)jalankan_loop_acara();
+        if (galat_.ada) s = Status::Galat;
+    }
     if (s == Status::Galat && galat_.ada) {
         const std::string pesan = rt::nilai_ke_teks(*this, galat_.nilai);
         std::fprintf(stderr, "%s\n", pesan.c_str());
@@ -115,7 +121,16 @@ Status VM::jalankan() {
     const std::size_t total = std::max<std::size_t>(f.chunk->jumlah_slot, 2u);
     while (stack_.size() < f.slot_base + total) stack_.push_back(Value::mboh());
     frames_.push_back(std::move(f));
-    return jalankan_loop();
+    // Frame modul menjadi akar rantai `async` HANYA bila modul memang memakai
+    // `enteni` di tingkat modul. Tanpa ini, setiap panggilan `mengko` di
+    // tingkat modul ikut menunda modul, dan `dhisik` tercetak setelah `42`.
+    if (clo->fungsi->kode->await_tingkat_modul) {
+        frames_.back().akar_async = true;
+        dasar_async_ = 0;
+    } else {
+        dasar_async_ = kTanpaAsync;
+    }
+    return jalankan_loop(frames_.size());
 }
 
 }  // namespace jawa::vm

@@ -569,7 +569,7 @@ NodePtr Parser::parse_konstruktor() {
                 a->privat = true;
                 a->nama = saat().teks;
                 ++idx_;
-            } else if (cek(Tok::Ident)) {
+            } else if (boleh_adi_properti(saat().jenis)) {
                 a->nama = saat().teks;
                 ++idx_;
             } else {
@@ -606,11 +606,8 @@ NodePtr Parser::lanjut_member(NodePtr e, const std::size_t m) {
                 a->privat = true;
                 a->nama = saat().teks;
                 ++idx_;
-            } else if (cek(Tok::Ident)) {
+            } else if (boleh_adi_properti(saat().jenis)) {
                 a->nama = saat().teks;
-                ++idx_;
-            } else if (cek(Tok::KwConstructor)) {
-                a->nama = "constructor";
                 ++idx_;
             } else {
                 diagnosa_di("S001", "Ngarep-arep jeneng properti sawise titik.");
@@ -646,7 +643,7 @@ NodePtr Parser::lanjut_member(NodePtr e, const std::size_t m) {
                 a->privat = true;
                 a->nama = saat().teks;
                 ++idx_;
-            } else if (cek(Tok::Ident)) {
+            } else if (boleh_adi_properti(saat().jenis)) {
                 a->nama = saat().teks;
                 ++idx_;
             } else {

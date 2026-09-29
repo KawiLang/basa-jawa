@@ -38,6 +38,8 @@ struct Global {
     std::unordered_map<std::string, Value> tabel;
     /// Method bawaan pada prototype: kunci "jenis:nama" -> fungsi native.
     std::unordered_map<std::string, Value> metode;
+    /// Method objek Janji: nama -> fungsi native (lihat `method_janji`).
+    std::unordered_map<std::string, rt::NativeFn> janji_metode;
 };
 
 Global& global() {
@@ -475,6 +477,70 @@ Value native_aksara_angka_arab(VM& vm, Value /*this*/, std::vector<Value>& args)
     return Value::number(static_cast<double>(negatif ? -n : n));
 }
 
+
+// ===========================================================================
+// Janji (Promise) & Wektu (timer)
+// ===========================================================================
+
+/// Ambil Janji dari nilai; `nullptr` bila bukan Janji.
+rt::JanjiObj* janji_dari(Value v) {
+    if (!v.is_obyek()) return nullptr;
+    auto* j = static_cast<rt::JanjiObj*>(v.mutable_pointer());
+    return (j != nullptr && j->h.kind == OK::Janji) ? j : nullptr;
+}
+
+/// Daftarkan handler pada Janji. Bila Janji sudah selesai, handler langsung
+/// dijadwalkan sebagai mikrotugas (meniru `then` pada promise yang sudah
+/// settled: handler tetap terpanggil, tapi asynchronously).
+Value daftarkan_then(VM& vm, rt::JanjiObj* j, Value on_slamet, Value on_tolak) {
+    if (!on_slamet.is_obyek() && !on_tolak.is_obyek()) return Value::mboh();
+    rt::JanjiObj* turunan = vm.buat_janji();
+    const Value tv = Value::obyek(turunan);
+    if (j->status == rt::JanjiStatus::Menunggu) {
+        j->then_daftar.push_back(rt::JanjiObj::Then{on_slamet, on_tolak, tv});
+        return tv;
+    }
+    const bool ditolak = j->status == rt::JanjiStatus::Gagal;
+    const Value f = ditolak ? on_tolak : on_slamet;
+    if (f.is_obyek()) vm.jadwal_mikrotugas(j, ditolak ? j->hasil : j->hasil, ditolak, f, tv);
+    return tv;
+}
+
+/// `.then(f)`: kembalikan Janji baru yang selesai setelah `f` dijalankan.
+Value native_janji_then(VM& vm, Value this_val, std::vector<Value>& args) {
+    auto* j = janji_dari(this_val);
+    if (j == nullptr) return this_val;
+    const Value f = args.empty() ? Value::mboh() : args[0];
+    return daftarkan_then(vm, j, f, f);
+}
+
+/// `.tangkep(f)`: handler penolakan (jalur `Gagal`).
+Value native_janji_tangkep(VM& vm, Value this_val, std::vector<Value>& args) {
+    auto* j = janji_dari(this_val);
+    if (j == nullptr) return this_val;
+    const Value f = args.empty() ? Value::mboh() : args[0];
+    return daftarkan_then(vm, j, Value::mboh(), f);
+}
+
+/// `Wektu.tundha(ms)`: Janji yang selesai pada putaran timer berikutnya.
+Value native_wektu_tundha(VM& vm, Value /*this*/, std::vector<Value>& args) {
+    const std::uint64_t ms = args.empty() ? 0
+                                           : static_cast<std::uint64_t>(args[0].as_number() < 0
+                                                                            ? 0
+                                                                            : args[0].as_number());
+    rt::JanjiObj* j = vm.buat_janji();
+    // `setTimeout` menyelesaikan Janji tanpa nilai (setara `mboh`).
+    vm.jadwal_timer(ms, j, Value::mboh());
+    return Value::obyek(j);
+}
+
+/// `Wektu.teka()`: antrean macrotask kosong (sinkron, selalu selesai).
+Value native_wektu_teka(VM& vm, Value /*this*/, std::vector<Value>& args) {
+    rt::JanjiObj* j = vm.buat_janji();
+    vm.selesaikan_janji(j, args.empty() ? native_teks_objek(vm, "teka") : args[0], false);
+    return Value::obyek(j);
+}
+
 // ===========================================================================
 // Native: JSON
 // ===========================================================================
@@ -493,6 +559,8 @@ Value json_teks(VM& vm, Value /*this*/, std::vector<Value>& args) {
 namespace {
 std::unordered_map<std::string, Value>& metode_bawaan() { return global().metode; }
 }  // namespace
+
+std::unordered_map<std::string, rt::NativeFn>& method_janji() { return global().janji_metode; }
 
 Value ambil_global(VM& /*vm*/, std::string_view nama) {
     auto it = global().tabel.find(std::string(nama));
@@ -611,6 +679,16 @@ void pasang_semua(VM& vm) {
     pasang_objek_metode(vm, aksara, "angka_jawa", 1, native_aksara_angka_jawa);
     pasang_objek_metode(vm, aksara, "angka_arab", 1, native_aksara_angka_arab);
     daftarkan_nilai(vm, "StdAksara", Value::obyek(aksara));
+
+    // --- Wektu (timer) ---
+    ObyekObj* wektu = buat_namespace(vm, "Wektu");
+    pasang_objek_metode(vm, wektu, "tundha", 1, native_wektu_tundha);
+    pasang_objek_metode(vm, wektu, "teka", 0, native_wektu_teka);
+    daftarkan_nilai(vm, "Wektu", Value::obyek(wektu));
+
+    // --- method Janji ---
+    method_janji()[std::string("then")] = native_janji_then;
+    method_janji()[std::string("tangkep")] = native_janji_tangkep;
 
     // --- prototype Dhaptar & Teks (method bawaan) ---
     const std::uint8_t ARR = static_cast<std::uint8_t>(OK::Array);

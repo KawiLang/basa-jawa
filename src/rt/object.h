@@ -30,6 +30,8 @@ class Heap;
 namespace jawa::vm {
 class VM;
 struct Upvalue;
+/// Lanjutan (continuation) rantai `async` yang disuspensi; lihat `VM::suspensi_async`.
+struct Lanjutan;
 }  // namespace jawa::vm
 
 namespace jawa::rt {
@@ -444,6 +446,10 @@ public:
     std::vector<Value> tangkap_daftar;   ///< .tangkep
     std::vector<Value> intriguasan_daftar;  ///< .pungkasan
     bool ditangani = false;
+    /// Rantai `async` yang menunggu Janji ini selesai (lihat `VM::suspensi_async`).
+    /// Tipe `jawa::vm::Lanjutan*` (non-owning; dimiliki VM) supaya lapisan `rt`
+    /// tidak perlu tahu bentuk continuation.
+    std::vector<jawa::vm::Lanjutan*> lanjutan_vm;
 };
 
 // ---------------------------------------------------------------------------

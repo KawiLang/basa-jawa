@@ -83,6 +83,11 @@ struct Chunk {
     bool panah = false;
     bool mengko = false;
     bool generator = false;
+    /// Modul ini memakai `entani` di tingkat modul (top-level await), jadi
+    /// frame modul HARUS boleh menjadi akar rantai async. Tanpa tanda ini,
+    /// panggilan `mengko` di tingkat modul akan ikut menunda modul (lalu
+    /// `dhisik` tercetak setelah `42`), padahal `dhisik` harus lebih dulu.
+    bool await_tingkat_modul = false;
     bool tail_call = false;
     bool unreachable = false;
 

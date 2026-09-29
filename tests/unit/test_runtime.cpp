@@ -302,6 +302,86 @@ TEST_CASE("vm: template literal") {
     CHECK_EQ(jalankan("tulis(`a${1 + 1}b c`);"), std::string("a2b c\n"));
 }
 
+// ===========================================================================
+// Async: Janji, suspensi, resume
+// ===========================================================================
+
+TEST_CASE("async: urutan microtask setelah kode sinkron") {
+    // `enteni` menunda rantai; kode sinkron selesai lebih dulu.
+    CHECK_EQ(jalankan("mengko gawe f() { enteni Wektu.tundha(1); bali 42; } "
+                      "tulis('A'); const v = enteni f(); tulis(v);"),
+             std::string("A\n42\n"));
+}
+
+TEST_CASE("async: pemanggilan async tanpa entani memberi Janji") {
+    // `f()` mengembalikan Janji; `tulis` berjalan lebih dulu.
+    CHECK_EQ(jalankan("mengko gawe f() { enteni Wektu.tundha(1); bali 1; } f(); tulis('dhisik');"),
+             std::string("dhisik\n"));
+}
+
+TEST_CASE("async: chains (rantai berlapis) selesai") {
+    CHECK_EQ(jalankan("mengko gawe a() { enteni Wektu.tundha(1); bali 2; } "
+                      "mengko gawe b() { const x = enteni a(); bali x * 5; } "
+                      "const y = enteni b(); tulis(y);"),
+             std::string("10\n"));
+}
+
+TEST_CASE("async: .then dijalankan sebagai microtask") {
+    CHECK_EQ(jalankan("Wektu.tundha(1).then(x => tulis('nanti')); tulis('dulu');"),
+             std::string("dulu\nnanti\n"));
+}
+
+TEST_CASE("async: entani di fungsi biasa ikut menunda rantai") {
+    // Frame modul adalah akar rantai async, jadi `entani` di fungsi biasa pun
+    // menunda; pemanggil dilanjutkan setelah Janji selesai.
+    CHECK_EQ(jalankan("gawe f() { enteni Wektu.tundha(1); bali 5; } "
+                      "tulis('A'); const v = enteni f(); tulis(v);"),
+             std::string("A\n5\n"));
+}
+
+TEST_CASE("async: entani di tingkat modul (top-level await) boleh") {
+    // `Wektu.tundha` menyelesaikan Janji tanpa nilai (setara `mboh`).
+    CHECK_EQ(jalankan("tulis('A'); const v = enteni Wektu.tundha(1); tulis(jenis(v));"),
+             std::string("A\nmboh\n"));
+}
+
+TEST_CASE("async: entani atas nilai biasa = identitas") {
+    CHECK_EQ(jalankan("const v = enteni 5; tulis(v);"), std::string("5\n"));
+}
+
+TEST_CASE("async: .tangkep menangkap penolakan fungsi mengko") {
+    // Galat di dalam `mengko` menjadi PENOLAKAN Janji, bukan galat program, dan
+    // `.tangkep` dipanggil sebagai mikrotugas SETELAH kode sinkron selesai.
+    CHECK_EQ(jalankan("mengko gawe f() { enteni Wektu.tundha(1); uncal 'bose'; } "
+                      "f().tangkep(e => tulis('nolak: ', e)); tulis('dhisik');"),
+             std::string("dhisik\nnolak:  bose\n"));
+}
+
+TEST_CASE("async: .then berantai") {
+    CHECK_EQ(jalankan("Wektu.tundha(1).then(x => x).then(x => tulis(jenis(x))); tulis('dhisik');"),
+             std::string("dhisik\nmboh\n"));
+}
+
+TEST_CASE("async: enteni atas Janji ditolak melempar galat yang bisa ditangkap") {
+    CHECK_EQ(jalankan("coba { mengko gawe f() { enteni Wektu.tundha(1); uncal 'bose'; } "
+                      "const v = enteni f(); } tangkep (e) { tulis('ditangkep: ', e); }"),
+             std::string("ditangkep:  bose\n"));
+}
+
+TEST_CASE("async: timer dinyalakan menurut urutan tunda") {
+    // `tunda_ms` menentukan urutan, bukan urutan pemanggilan.
+    CHECK_EQ(jalankan("Wektu.tundha(30).then(x => tulis('A')); "
+                      "Wektu.tundha(10).then(x => tulis('B')); tulis('dhisik');"),
+             std::string("dhisik\nB\nA\n"));
+}
+
+TEST_CASE("kelas: getter & setter (nampa / nyetel)") {
+    CHECK_EQ(jalankan("golongan P { #x; wiwit(x) { iki.#x = x; } "
+                      "nampa v() { bali iki.#x; } nyetel v(n) { iki.#x = n; } } "
+                      "const p = anyar P(1); p.v = 9; tulis(p.v);"),
+             std::string("9\n"));
+}
+
 TEST_CASE("vm: batas frame rekursif menghasilkan galat") {
     jawa::vm::VMOptions opt;
     opt.maks_tumpukan = 200;

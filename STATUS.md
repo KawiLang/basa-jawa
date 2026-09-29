@@ -3,9 +3,10 @@
 Dokumen ini adalah **catatan jujur** tentang apa yang sudah berjalan dan apa
 yang belum. Tanggal: 29 September 2026.
 
-Ringkas: front-end **dan** runtime sudah berjalan. 10 dari 11 contoh acuan
-Bagian 11 menghasilkan keluaran yang benar. `async`/`await` dan event loop
-belum ada.
+Ringkas: front-end **dan** runtime sudah berjalan. **11 dari 11** contoh acuan
+Bagian 11 menghasilkan keluaran yang persis, termasuk `asinkron.jw`
+(`async`/`await`). Yang belum: hidden class, linker modul, generator suspend,
+dan pustaka standar lengkap.
 
 ## Angka
 
@@ -15,10 +16,10 @@ belum ada.
 | Opcode bytecode | 119 |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 106 |
-| Uji unit | 3 berkas, 80 cek, 30 test |
-| Uji emas | 10 contoh keluaran persis + 11 front-end |
-| Build | Release, ASan, UBSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di keempatnya |
-| Dokumentasi | 5 berkas `docs/` + 4 berkas akar, 1.952 baris |
+| Uji unit | 3 berkas, 92 cek, 42 test |
+| Uji emas | 11 contoh keluaran persis + 11 front-end |
+| Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di kelimanya |
+| Dokumentasi | 6 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -30,8 +31,8 @@ belum ada.
 | 3 | Kompiler bytecode + VM + GC + pustaka standar minimum | **selesai (versi minimum)** |
 | 4 | Bentuk objek: shape, hidden class, inline cache | **belum** (lihat "Yang belum") |
 | 5 | Modul ES, zona mati-temporal, `super` penuh | sebagian |
-| 6 | Event loop, Promise | belum |
-| 7 | Fiber, generator suspend, `metokake` non-eager | belum |
+| 6 | Event loop, Promise | **selesai** (loop acara deterministik; tanpa jam nyata) |
+| 7 | Fiber, generator suspend, `metokake` non-eager | belum (async tidak butuh fiber — D-023) |
 | 8 | Pustaka standar lengkap, `Tanggal`, regex, berkas | sebagian |
 | 9 | FFI, JIT, threading | belum |
 | 10 | Incremental/generational GC | belum |
@@ -55,31 +56,23 @@ Bahasa yang berjalan penuh, termasuk:
 - `bener`/`salah`/`kosong`/`mboh` sebagai tipe tersendiri.
 - Anotasi tipe bertahap pada parameter & nilai balik → `KleruTipe`.
 - `gawe*` generator + `metokake` + spread `[...]`.
+- `mengko gawe` (async) + `enteni` (await) dengan loop acara deterministik:
+  Janji, `.then`/`.tangkep`, `Wektu.tundha`, top-level `enteni`, dan galat
+  yang menjadi penolakan Janji. Tanpa fiber (lihat `docs/async.md`).
 - Template literal, termasuk tag & bersarang.
 - GC mark-and-sweep presisi dengan akar lengkap; `--gc-stress` bersih.
 - CLI: `run`, `cek`, `token`, `ast`, `bytecode`, `versi`, `bantuan`, `-e`.
 
 ## Yang BELUM (jujur)
 
-### 1. `async`/`await` + event loop — contoh `asinkron.jw` gagal
-
-```
-$ build/release/jawa run examples/asinkron.jw
-KleruJinis [R002] Ora bisa nelep nilai: dudu fungsi.   (Wektu.tundha belum ada)
-```
-
-Yang perlu: `JanjiObj` (sudah ada di model objek), antrean microtask, `AWAIT`
-nyata (suspensi frame), dan `Wektu`/`Timer`. Butuh fiber (Fase 7) agar
-`suspensi` tidak memakai rekursi C++.
-
-### 2. Generator mode-eager
+### 1. Generator mode-eager
 
 `gawe* g() { ... }` dijalankan **sampai selesai**; semua hasil `metokake`
 dikumpulkan menjadi Dhaptar. Benar untuk generator berhingga, salah untuk
 generator tak berhingga. Ada pengaman 2²⁰ hasil agar program tidak menggantung
 tanpa pemberitahuan. Lazy generator butuh fiber.
 
-### 3. Bentuk objek belum: tidak ada hidden class/inline cache
+### 2. Bentuk objek belum: tidak ada hidden class/inline cache
 
 `Shape` & `ShapeTable` ada dan punya transisi, tapi `VM::buat_obyek()` memakai
 mode dictionary langsung. Properti dibaca dengan `ObyekObj::dict` +
@@ -89,24 +82,31 @@ mode dictionary langsung. Properti dibaca dengan `ObyekObj::dict` +
 Field privat juga bukan privat sungguhan: disimpan sebagai slot biasa bernama
 `#x`; privasi dijaga kompilator.
 
-### 4. Modul ES baru di-parse, belum di-link
+### 3. Modul ES baru di-parse, belum di-link
 
 `impor`/`ekspor` bisa di-parse (AST benar) tetapi `IMPORT`/`EXPORT` di VM
 belum menyelesaikan modul. Program multi-berkas tidak jalan.
 
-### 5. Pustaka standar minimum
+### 4. Pustaka standar minimum
 
 Ada: `tulis`, `Teks`, `Angka`, `Boole`, `jenis`, `Matematika`, `Dhaptar`
-(9 method), `Teks` (8 method), `StdAksara`, `JSON.gawe_teks` (stub).
-Belum: `Tanggal`, regex runtime, `Peta`/`Himpunan` komprehensif, berkas, proses.
-Lihat `docs/stdlib.md`.
+(9 method), `Teks` (8 method), `StdAksara`, `JSON.gawe_teks` (stub),
+`Wektu` (`tundha`, `teka`), dan method Janji (`then`, `tangkep`, `jenis`, `hasil`).
+Belum: `Tanggal`, regex runtime, `Peta`/`Himpunan` komprehensif, berkas, proses,
+`Janji.all`/`race`/`anySelesai`, dan I/O async.
+Lihat `docs/stdlib.md` dan `docs/async.md`.
 
-### 6. Bagian lain yang belum
+### 5. Bagian lain yang belum
 
 - `pilih` (`switch`) hanya menguji kesamaan nilai; `kasus` dengan pola
   destruktur dan `baku` perlu diperluas.
 - Hanya `tangkep` pertama yang dipakai sebagai handler; seleksi berdasarkan
   tipe kleru belum ada (kompilator memberi peringatan S504).
+- `Wektu.tundha` hanya mengurutkan timer, tidak menunggu ms sungguhan
+  (loop acara deterministik, lihat `docs/async.md`).
+- Pemanggil fungsi `mengko` menunggu sampai fungsi itu selesai; `tulis(f())`
+  mencetak Janji yang masih `nunggu`, bukan hasil akhirnya (penyimpangan dari
+  JavaScript, disengaja — lihat `docs/async.md`).
 - `AksesProperti` pada `Instance` mencari field secara linear.
 - Error runtime tidak membawa jejak stack sumber (hanya nama fungsi).
 - Batas instruksi 16-bit: fungsi dengan > 65535 instruksi tidak didukung.

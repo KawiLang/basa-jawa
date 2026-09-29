@@ -19,9 +19,10 @@ GOLDEN = os.path.join(AKAR, 'tests', 'golden')
 CONTOH = os.path.join(AKAR, 'examples')
 
 # Contoh yang kinerjanya masih belum selesai (lihat STATUS.md "Yang BELUM").
-SKIP = {
-    'asinkron': 'async/await & event loop belum diimplementasikan (Fase 7)',
-}
+# Tidak ada contoh yang dilewati: 11/11 contoh acuan harus menghasilkan keluaran
+# persis. Kalau sebuah contoh memang belum didukung, tambahkan di sini BESERTA
+# alasannya (lihat STATUS.md) -- jangan dihapus diam-diam.
+SKIP: dict[str, str] = {}
 
 
 def main() -> int:

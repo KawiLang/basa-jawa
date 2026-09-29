@@ -47,6 +47,12 @@ private:
     const lex::Token& peek(int n) const noexcept;
     lex::Tok jenis(int n = 0) const noexcept;
     [[nodiscard]] lex::Tok jenis_sekarang() const noexcept { return token_.token[idx_].jenis; }
+    /// Boleh menjadi nama properti setelah `.`? selain `pengenal`, kata kunci
+    /// juga boleh: dalam Basa Jawa banyak nama method yang sama dengan kata
+    /// kunci (`nampa`, `tangkep`, `bali`, `jenis`, `saka`, ...).
+    static bool boleh_adi_properti(lex::Tok t) noexcept {
+        return t == lex::Tok::Ident || lex::is_reserved_keyword(t) || lex::is_contextual_keyword(t);
+    }
     [[nodiscard]] bool cek(lex::Tok t) const noexcept { return jenis_sekarang() == t; }
     [[nodiscard]] bool cek(int n, lex::Tok t) const noexcept { return jenis(n) == t; }
     bool makan(lex::Tok t) noexcept;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 #include "compile/compiler.h"
 #include "rt/number.h"
@@ -60,6 +61,33 @@ VM::VM(const VMOptions& opt) : opt_(opt), heap_(opt.gc_stress, opt.maks_memori_m
         rv.rooted(proto_dhaptar_);
         if (modul_aktif != nullptr) {
             for (const auto& kv : modul_aktif->global) rv.rooted(kv.second);
+        }
+        // Antrean async: Janji yang menunggu, nilai hasil, handler, dan Janji
+        // turunan. Tanpa ini, Janji pada `Wektu.tundha` bisa tersapu sebelum
+        // mikrotugas dijalankan.
+        for (const Mikrotugas& t : antrean_mikrotugas_) {
+            if (t.janji != nullptr) rv.rooted(Value::obyek(t.janji));
+            rv.rooted(t.nilai);
+            rv.rooted(t.fungsi);
+            rv.rooted(t.turunan);
+        }
+        for (const Timer& t : pekerja_) {
+            if (t.janji != nullptr) rv.rooted(Value::obyek(t.janji));
+            rv.rooted(t.nilai);
+        }
+        // Rantai `async` yang disuspensi: nilai di stack-nya sudah disalin ke
+        // `Lanjutan`, tapi closure di frame-nya harus tetap hidup.
+        for (const auto& lan : lanjutian_) {
+            for (const Frame& f : lan->frame) {
+                rv.rooted(f.this_val);
+                rv.rooted(f.janji_async);
+                if (f.closure == nullptr) continue;
+                for (void* pv : f.closure->upvalue) {
+                    auto* cell = static_cast<Upvalue*>(pv);
+                    if (cell != nullptr) rv.rooted(cell->get());
+                }
+            }
+            for (const Value& v : lan->stack) rv.rooted(v);
         }
     });
     prototipe_dasar();
@@ -235,7 +263,7 @@ Value VM::panggil(Value callee, Value this_val, const std::vector<Value>& args) 
         // Reentrancy native -> JS: kita masuk ke loop yang sama, tapi dengan
         // penjaga kedalaman sehingga berhenti tepat saat frame ini selesai.
         mulai_frame(static_cast<ClosureObj*>(o), this_val, salinan);
-        (void)jalankan_loop();
+        (void)jalankan_loop(frames_.size());
     } else {
         panggil_objek(callee, this_val, salinan);
     }
@@ -253,6 +281,7 @@ void VM::panggil_objek(Value callee, Value this_val, std::vector<Value>& args) {
         if (p != nullptr) o = const_cast<Obj*>(static_cast<const Obj*>(p));
     }
     if (o == nullptr) {
+
         std::fprintf(stderr, "KleruJinis [R002] Ora bisa nelep nilai: dudu fungsi.\n");
         galat_.ada = true;
         dorong(Value::mboh());
@@ -269,6 +298,13 @@ void VM::panggil_objek(Value callee, Value this_val, std::vector<Value>& args) {
             auto* c = static_cast<ClosureObj*>(o);
             if (c->fungsi->kode->generator) {
                 jalankan_generator_eager(c, this_val, args);
+                return;
+            }
+            if (c->fungsi->kode->mengko) {
+                // Fungsi `mengko` menghasilkan Janji; body-nya baru dijalankan
+                // pada iterasi loop berikutnya. `entani` di dalamnya akan
+                // menyuspend rantai (lihat vm_async.cpp).
+                panggil_async(c, this_val, args);
                 return;
             }
             // Panggilan JS -> JS TIDAK memakai rekursi C++: frame baru didorong
@@ -324,7 +360,7 @@ void VM::jalankan_generator_eager(ClosureObj* fn, Value this_val, std::vector<Va
     // `kBuangHasil`: nilai balik generator tidak relevan (hasilnya sudah
     // dikumpulkan), jadi jangan sisakan nilai di stack.
     mulai_frame(fn, this_val, args, Frame::kBuangHasil);
-    (void)jalankan_loop();
+    (void)jalankan_loop(frames_.size());
     --reentrancy_;
     tumbles_yield_.pop_back();
     if (galat_.ada) {
@@ -388,7 +424,8 @@ void VM::mulai_frame(ClosureObj* fn, Value this_val, std::vector<Value>& args,
 
 bool VM::unwind_galat(Value v) {
     while (!frames_.empty()) {
-        Frame& cf = frames_.back();
+        const std::size_t indeks = frames_.size() - 1;
+        Frame& cf = frames_[indeks];
         if (!cf.handlers.empty()) {
             const auto h = cf.handlers.back();
             cf.handlers.pop_back();
@@ -399,6 +436,22 @@ bool VM::unwind_galat(Value v) {
             return true;
         }
         const std::size_t base = cf.slot_base;
+        // Frame fungsi `mengko` yang galatnya belum tertangani: galat menjadi
+        // PENOLAKAN Janji fungsi itu (bukan galat program), sehingga `.tangkep`
+        // atau `entani` di pemanggil bisa menanganinya. Frame pemanggil di
+        // bawahnya tetap utuh dan melanjutkan dari instruksi setelah `CALL`.
+        if (cf.janji_async.is_obyek()) {
+            auto* j = static_cast<rt::JanjiObj*>(cf.janji_async.mutable_pointer());
+            tutup_upvalue_frame(base);
+            stack_.resize(base);
+            frames_.pop_back();
+            if (indeks == dasar_async_) dasar_async_ = kTanpaAsync;
+            if (j != nullptr) {
+                selesaikan_janji(j, v, true);
+                return true;
+            }
+            continue;
+        }
         tutup_upvalue_frame(base);
         stack_.resize(base);
         frames_.pop_back();

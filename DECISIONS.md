@@ -337,6 +337,63 @@ menjadi hasil panggilan, dan program salah tanpa error kompilasi.
 
 ---
 
+## D-023. `async`/`await` memakai continuation, bukan fiber
+
+**Konteks.** Fase 6 mensyaratkan event loop, Janji (Promise), dan `await` yang
+benar-benar menunda. Pendekatan umum (dan yang disebut pada catatan awal) adalah
+**fiber**: satu stack C++ terpisah per rantai async, lalu `FIBER_CREATE`/
+`FIBER_RESUME` untuk menukar konteks. Itu berat dan tidak portabel.
+
+**Keputusan.** Rantai `async` disuspensi dengan **menyalin frame** (`Frame` +
+nilai stack) ke `struct Lanjutan`, lalu memangkas `frames_`/`stack_`. Pemulihan
+menyalin balik dan menjalankan loop bytecode lagi. Tidak ada stack C++ tambahan,
+tidak ada fiber, tidak ada rekursi.
+
+**Alasan.**
+
+- `Frame` sudah menyimpan seluruh state eksekusi: `ip`, `slot_base`,
+  `this_val`, `handlers` (blok `coba`), upvalue, dan Janji yang harus dituntaskan.
+  Tidak ada state C++ di antara opcode yang perlu bertahan selama penangguan.
+- Menghormati D-003 dan D-015: tidak ada jalur eksekusi kedua yang bisa
+  menyimpang dari loop utama.
+- Deterministik. `--gc-stress` dan golden file bisa memverifikasinya.
+- Upvalue yang menunjuk ke stack yang disalin harus **ditutup** lebih dulu
+  (`Upvalue::close`); kalau tidak, selnya akan menggantung setelah stack dipakai
+  ulang kode lain.
+
+**Konsekuensi (disengaja).** Pemanggil fungsi `mengko` menunggu sampai fungsi itu
+selesai — termasuk setelah ditunda lalu dilanjutkan. Jadi `tulis(f())` mencetak
+Janji yang masih `nunggu`; `tulis(enteni f())` yang menghasilkan nilai akhir.
+Ini penyimpangan dari JavaScript, dicatat di `docs/async.md` dan `STATUS.md`.
+
+**Konsekuensi kedua.** `Wektu.tundha(ms)` tidak benar-benar menunggu: Janji
+dituntaskan pada putaran timer pertama, dengan nilai `mboh`. Yang dijamin
+adalah urutan relatif antar timer. Ini membuat golden test async stabil.
+
+**Catatan.** `Chunk::await_tingkat_modul` menandai modul yang memakai `enteni`
+di tingkat modul. Tanpa penanda itu, setiap panggilan `mengko` di tingkat modul
+ikut menunda modul dan urutan keluaran berubah (contoh acuan `asinkron.jw`
+mencetak `42` sebelum `dhisik`).
+
+---
+
+## D-024. Kata kunci boleh menjadi nama properti setelah `.`
+
+**Konteks.** Banyak nama method bawaan Basa Jawa bentrok dengan kata kunci:
+`tangkep` (`.catch`), `nampa`/`.get`, `nyetel`/`.set`, `bali`/`.return`, `jenis`,
+`saka`, `tulis`, `jangka`, `kanggo`.
+
+**Keputusan.** Setelah `.` (dan `?.`), parser menerima `pengenal` **serta** kata
+kunci apa pun sebagai nama properti (`Parser::boleh_adi_properti`).
+
+**Alasan.** Menolaknya membuat pustaka standar mustahil ditulis dengan API yang
+wajar. Token kata kunci sudah membawa teksnya di `Token::teks`, jadi tidak ada
+kerugian informasi. Tidak ada ambiguitas: `a.b` di posisi ekspresi adalah akses
+properti; setelah `.` yang diharapkan adalah nama, bukan operator.
+
+
+---
+
 ## TODO-VERIFIKASI
 
 | # | Item | Rencana verifikasi |

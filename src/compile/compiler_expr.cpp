@@ -198,7 +198,14 @@ void Compiler::ekspresi(const ast::Node* n) {
             if (u->op == ast::UnOp::Ora) { ekspresi(u->operand); emit(Op::NOT); return; }
             if (u->op == ast::UnOp::BitNot) { ekspresi(u->operand); emit(Op::BIT_NOT); return; }
             if (u->op == ast::UnOp::Busak) { ekspresi(u->operand); emit(Op::DELETE); return; }
-            if (u->op == ast::UnOp::Entani) { ekspresi(u->operand); emit(Op::AWAIT); return; }
+            if (u->op == ast::UnOp::Entani) {
+                ekspresi(u->operand);
+                if (!ada_fungsi_&&fungsi_stack_.back().chunk != nullptr) {
+                    fungsi_stack_.back().chunk->await_tingkat_modul = true;
+                }
+                emit(Op::AWAIT);
+                return;
+            }
             if (u->op == ast::UnOp::Metokake) { ekspresi(u->operand); emit(Op::YIELD); return; }
             if (u->op == ast::UnOp::Pos) { ekspresi(u->operand); return; }
             ekspresi(u->operand);

@@ -135,6 +135,29 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
                 cur = objek(inst->prototipe);
                 continue;
             }
+            case OK::Janji: {
+                // Method Janji: `then` / `tangkep` (lihat `stdlib::method_janji`).
+                const std::string_view nama_j = sv(kunci);
+                const auto& tabel_j = stdlib::method_janji();
+                const auto cari_j = tabel_j.find(std::string(nama_j));
+                if (cari_j != tabel_j.end()) {
+                    auto* n = heap_.alokasi<rt::NativeFnObj>();
+                    n->h.kind = OK::Native;
+                    n->fn = cari_j->second;
+                    n->nama = singsan(nama_j);
+                    n->jumlah_param = 1;
+                    return Value::obyek(n);
+                }
+                auto* j = static_cast<rt::JanjiObj*>(cur);
+                if (nama_j == "jenis") {
+                    const char* n = j->status == rt::JanjiStatus::Slamet  ? "slamet"
+                                  : j->status == rt::JanjiStatus::Gagal ? "gagal"
+                                                                      : "nunggu";
+                    return Value::obyek(rt::buat_teks(heap_, n));
+                }
+                if (nama_j == "hasil") return j->hasil;
+                return Value::mboh();
+            }
             case OK::Kleru: {
                 auto* k = static_cast<const rt::KleruObj*>(cur);
                 const std::string_view nama = sv(kunci);

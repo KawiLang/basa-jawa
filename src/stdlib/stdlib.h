@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "rt/object.h"
 #include "rt/value.h"
 
 namespace jawa::vm {
@@ -31,5 +32,9 @@ rt::Value panggil_native(VM& vm, rt::NativeFnObj* native, rt::Value this_val, st
 
 /// Cari method bawaan untuk nama tertentu pada prototype (mis. "peta" pada Dhaptar).
 rt::Value cari_metode_builtin(std::string_view nama, std::uint8_t jenis_objek);
+
+/// Method bawaan objek Janji: nama -> fungsi native. Diisi `pasang_semua`;
+/// dibaca `VM::ambil_properti` saat medal `then`/`tangkep` pada Janji.
+std::unordered_map<std::string, rt::NativeFn>& method_janji();
 
 }  // namespace jawa::vm::stdlib

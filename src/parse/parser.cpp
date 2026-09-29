@@ -196,6 +196,25 @@ NodePtr Parser::parse_statement() {
         case Tok::KwExport: return parse_ekspor();
         case Tok::KwImport: return parse_impor();
         case Tok::KwFunction: return parse_deklarasi_fungsi();
+        case Tok::KwAsync: {
+            // `mengko gawe f() { ... }` adalah DEKLARASI (bukan ekspresi), agar
+            // `f` menjadi slot lokal modul dan bisa dipanggil langsung.
+            const std::size_t simpan = idx_;
+            ++idx_;
+            lewati_asi();
+            if (cek(Tok::Star) || cek(Tok::Ident)) {
+                idx_ = simpan;
+                break;  // bentuk arrow: `mengko x => ...`, tangani sebagai ekspresi
+            }
+            NodePtr f = nullptr;
+            if (cek(Tok::KwFunction)) {
+                f = parse_deklarasi_fungsi();
+                if (f != nullptr) static_cast<ast::FungsiDeklarasi*>(f)->mengko = true;
+            }
+            if (f != nullptr) return f;
+            idx_ = simpan;
+            break;
+        }
         case Tok::KwReturn: {
             ++idx_;
             auto* s = buat<ast::BaliStmt>(rentang_dari(m));

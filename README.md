@@ -15,10 +15,10 @@ Halo, Budi!
 
 ## Status
 
-Front-end **dan** runtime (compiler bytecode + VM + GC +
-pustaka standar dasar) sudah berjalan. Lihat [`STATUS.md`](STATUS.md) untuk
-daftar **jelas** apa yang sudah selesai dan apa yang belum — termasuk satu contoh
-acuan Bagian 11 yang belum menghasilkan keluaran benar.
+Front-end **dan** runtime (kompiler bytecode + VM + GC + async +
+pustaka standar dasar) sudah berjalan. **11 dari 11** contoh acuan Bagian 11
+menghasilkan keluaran yang persis. Lihat [`STATUS.md`](STATUS.md) untuk
+daftar **jelas** apa yang sudah selesai dan apa yang belum.
 
 | Komponen | Status |
 |---|---|
@@ -27,9 +27,9 @@ acuan Bagian 11 yang belum menghasilkan keluaran benar.
 | Kompiler → bytecode | selesai |
 | VM (fungsi, closure, kelas, pola, try/catch, generator) | selesai |
 | GC mark-and-sweep presisi | selesai |
-| Pustaka standar | sebagian (`tulis`, `Teks`, `Matematika`, `Dhaptar`, `Teks`, `StdAksara`, `JSON` minimum) |
+| Pustaka standar | sebagian (`tulis`, `Teks`, `Matematika`, `Dhaptar`, `Teks`, `StdAksara`, `Wektu`, `JSON` minimum) |
 | Modul ES (`impor`/`ekspor`) | parsir ada, linker belum |
-| async/await + event loop | belum |
+| async/await + loop acara | selesai (deterministik, tanpa fiber — `docs/async.md`) |
 | Regex runtime, `Tanggal`, berkas, proses | belum |
 
 ## Membangun
@@ -152,6 +152,7 @@ tests/          unit + golden
 | [`docs/object-model.md`](docs/object-model.md) | NaN-boxing, objek, shape, class |
 | [`docs/gc.md`](docs/gc.md) | algoritma GC, akar, karantina, `--gc-stress` |
 | [`docs/stdlib.md`](docs/stdlib.md) | pustaka standar yang tersedia |
+| [`docs/async.md`](docs/async.md) | Janji, `enteni`, loop acara (tanpa fiber) |
 | [`DECISIONS.md`](DECISIONS.md) | keputusan desain & penyimpangan dari spesifikasi |
 | [`CHANGELOG.md`](CHANGELOG.md) | riwayat perubahan |
 | [`STATUS.md`](STATUS.md) | status jujur: selesai / belum / cara verifikasi |

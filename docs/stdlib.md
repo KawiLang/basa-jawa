@@ -115,7 +115,50 @@ Bukan pustaka, tapi perlu dicatat karena sering disalahpahami:
 | `a saka` | `instanceof` | Hanya untuk tipe class. |
 | `a ing b` | `in` | Kunci dhaptar/peta atau `jenis(b) == a`. |
 | `a === b` | Setara ketat | Tipe harus sama. |
-| `==` | Setara longgar | `Angka` vs `Angka` longgar; tipe berbeda selalu tidak sama.; tipe berbeda selalu tidak sama. |
+| `==` | Setara longgar | `Angka` vs `Angka` longgar; tipe berbeda selalu tidak sama. |
+| `mengko` / `enteni` | Async / await | Janji + loop acara deterministik; lihat [`async.md`](async.md). |
+
+## Wektu (timer)
+
+| Fungsi | Bentuk | Keterangan |
+|---|---|---|
+| `Wektu.tundha(ms)` | `Wektu.tundha(10)` | Janji yang **tuntas pada putaran timer**, bernilai `mboh`. `ms` hanya menentukan urutan relatif antar timer; tidak menunggu ms sungguhan. |
+| `Wektu.teka()` | `Wektu.teka()` | Janji yang sudah selesai seketika (berguna untuk menyamakan bentuk kode sinkron & async). |
+
+## Janji (Promise)
+
+Dialihkan dari fungsi `mengko` atau `Wektu.*`.
+
+| Bentuk | Keterangan |
+|---|---|
+| `enteni nilai` | Nilai biasa: identitas (`enteni 5` -> `5`). |
+| `enteni janji` | Janji selesai: memakai `hasil`. Janji ditolak: melemparkan galat. Janji menunggu: menunda rantai `async`. |
+| `janji.then(f)` | Handler fulfilled; mengembalikan Janji turunan. Tetap asynchronous walau Janji sudah selesai. |
+| `janji.tangkep(f)` | Handler rejected (`catch`). |
+| `janji.jenis` | `"nunggu"`, `"slamet"`, atau `"gagal"`. |
+| `janji.hasil` | Nilai hasil, atau alasan penolakan. |
+
+```jawa
+mengko gawe ambil(x) {
+  enteni Wektu.tundha(10);
+  bali x * 2;
+}
+
+mengko gawe utama() {
+  tetep a = enteni ambil(21);
+  tulis(a);
+}
+
+utama();
+tulis("dhisik");
+// dhisik
+// 42
+```
+
+**Penyimpangan yang disengaja:** pemanggil `mengko` menunggu sampai fungsi itu
+selesai, jadi `tulis(f())` mencetak Janji yang masih `nunggu`, bukan hasilnya.
+Pakai `tulis(enteni f())` untuk nilai akhir. Penjelasan lengkap di
+[`async.md`](async.md).
 
 ## Yang belum ada
 
@@ -123,6 +166,8 @@ Sebutkan eksplisit agar tidak disalahpahami sebagai "hilang":
 
 - Modul bawaan `Matematika`, `Object`, `Dhaptar`, `Teks` versi lengkap.
 - `Date` / `Tanggal`, `RegExp` runtime, `Map`/`Peta` komprehensif, `Set`/`Himpunan`.
-- Akses berkas, proses, jaringan.
+- Akses berkas, proses, jaringan. Semua I/O masih blocking dan sinkron.
+- Agregator Janji: `Janji.all`, `Janji.race`, `Janji.anySelesai`, `Janji.bungkus`.
+- Jam nyata: `Wektu.tundha` hanya mengurutkan, tidak menunggu.
 - `Intl`, `Buffer`.
 - Inspector, `Proxy`, `Reflect`.
