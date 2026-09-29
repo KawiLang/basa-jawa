@@ -430,9 +430,20 @@ void Compiler::susun_pola(const ast::Pola* p, std::size_t s_subj, std::vector<st
             emit(Op::POP);
             emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subj));
             emit(Op::GET_PROP, static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, "dawa")))));
-            emit(Op::KONSTAN, static_cast<std::uint16_t>(tambah_konstanta(
-                     Value::number(static_cast<double>(p->elemen.size() + (p->sisanya != nullptr ? 1u : 0u))))));
-            emit(Op::SEQ);
+            // Tanpa `...sisa` panjang harus PERSIS sama. Dengan `...sisa`,
+            // cukup "minimal" -- sisa elemennya yang disusun ke dhaptar baru.
+            if (p->sisanya != nullptr) {
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subj));
+                emit(Op::GET_PROP, static_cast<std::uint16_t>(tambah_nama(
+                         Value::obyek(rt::buat_teks(heap_, "dawa")))));
+                emit(Op::KONSTAN, static_cast<std::uint16_t>(tambah_konstanta(
+                         Value::number(static_cast<double>(p->elemen.size())))));
+                emit(Op::GE);
+            } else {
+                emit(Op::KONSTAN, static_cast<std::uint16_t>(tambah_konstanta(
+                         Value::number(static_cast<double>(p->elemen.size())))));
+                emit(Op::SEQ);
+            }
             lompat_gagal.push_back(emit(Op::JUMP_IF_FALSE, 0));
             emit(Op::POP);
             for (std::size_t i = 0; i < p->elemen.size(); ++i) {
@@ -444,8 +455,40 @@ void Compiler::susun_pola(const ast::Pola* p, std::size_t s_subj, std::vector<st
                 emit(Op::POP);
             }
             if (p->sisanya != nullptr) {
+                // `...sisa` mengikat SISA dhaptar sebagai dhaptar baru, bukan
+                // seluruh subjek. Jumlahnya hanya diketahui saat runtime, jadi
+                // elemen dikumpulkan ke stack lalu `MAKE_ARRAY_SPREAD` yang
+                // menyusunnya (batas ditandai `MARK_SPREAD`).
+                const auto* pola_sisa = static_cast<const ast::Pola*>(p->sisanya);
+                const std::size_t s_i = fn().n_slot_terpakai++;
+                fn().n_slot_maks = std::max(fn().n_slot_maks, fn().n_slot_terpakai);
+                emit(Op::KONSTAN, static_cast<std::uint16_t>(tambah_konstanta(
+                         Value::number(static_cast<double>(p->elemen.size())))));
+                emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s_i));
+                emit(Op::MARK_SPREAD);
+                const std::size_t l_loop = fn().chunk->ukuran_kode();
+                // `len > i` ?
                 emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subj));
-                emit_tulis_nama_statement(static_cast<const ast::Pola*>(p->sisanya)->nama);
+                emit(Op::GET_PROP, static_cast<std::uint16_t>(tambah_nama(
+                         Value::obyek(rt::buat_teks(heap_, "dawa")))));
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_i));
+                emit(Op::GT);
+                const std::size_t l_keluar = emit(Op::JUMP_IF_FALSE, 0);
+                emit(Op::POP);
+                // dorong subjek[i]
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subj));
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_i));
+                emit(Op::GET_INDEX);
+                // i = i + 1
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_i));
+                emit(Op::KONSTAN, static_cast<std::uint16_t>(tambah_konstanta(Value::number(1))));
+                emit(Op::ADD);
+                emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s_i));
+                emit(Op::JUMP, static_cast<std::uint16_t>(l_loop));
+                patch(l_keluar, fn().chunk->ukuran_kode());
+                emit(Op::POP);
+                emit(Op::MAKE_ARRAY_SPREAD);
+                emit_tulis_nama_statement(pola_sisa->nama);
             }
             emit(Op::BENER);
             return;
@@ -582,6 +625,14 @@ void Compiler::eks_cocog(const ast::CocogExpr* n) {
 
 void Compiler::emit_baca_nama(std::string_view nama) {
     const std::size_t s = cari_slot(nama);
+    // Zona mati-temporal: kalau slot ini pengikat leksikal yang deklarasinya
+    // BELUM terkompilasi, pembacaan sekarang adalah pelanggaran TDZ. Setelah
+    // deklarasi terkompilasi entrinya dibuang, jadi pembacaan berikutnya gratis.
+    if (s != static_cast<std::size_t>(-1)) {
+        if (const auto it = fn().tdz_menunggu.find(s); it != fn().tdz_menunggu.end()) {
+            emit(Op::TDZ_CHECK, static_cast<std::uint16_t>(it->second));
+        }
+    }
     if (s != static_cast<std::size_t>(-1)) {
         emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
         return;
@@ -727,6 +778,10 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
     FungsiKonteks& ctx = fn();
 
     // --- Body ------------------------------------------------------------
+    // Pra-walk TDZ untuk badan fungsi ini juga (bukan hanya modul), supaya
+    // `gawe f() { tulis(y); tetep y = 1; }` menghasilkan galat TDZ.
+    if (!n->ekspresi_badan) pradaftar_tdz(n->awak);
+
     // Cek tipe awal parameter: dijalankan setiap kali fungsi dipanggil.
     for (std::size_t i = 0; i < tipe_param.size(); ++i) {
         if (tipe_param[i].empty()) continue;

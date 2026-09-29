@@ -302,6 +302,9 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 dorong(Value::obyek(a));
                 break;
             }
+            // Tandai tinggi stack sebagai awal elemen spread. Berpasangan dengan
+            // `MAKE_ARRAY_SPREAD` (yang membaca `spread_base_`).
+            case Op::MARK_SPREAD: spread_base_.push_back(stack_.size()); break;
             case Op::MAKE_ARRAY: {
                 // Elemen sudah tersusun di stack (urutan kiri-ke-kanan).
                 const std::size_t n = ins.a;
@@ -1078,7 +1081,22 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 break;
             }
             case Op::MATCH_TEST: case Op::MATCH_BIND: dorong(Value::boolean(false)); break;
-            case Op::SET_CELL: case Op::GET_CELL: case Op::CLOSE_UPVAL: case Op::TDZ_CHECK: {
+            // Zona mati-temporal: lempar kalau slot leksikal ini belum
+            // diinisialisasi. `f.ip` sudah melewati instruksi SEBELUM `TDZ_CHECK`,
+            // jadi bandingkannya langsung dengan ip deklarasi yang dicatat di
+            // `Chunk::tdz_daftar` (lihat `Compiler::slot_baru_tdz`).
+            case Op::TDZ_CHECK: {
+                if (ins.a < c->tdz_daftar.size() && f.ip <= c->tdz_daftar[ins.a]) {
+                    const Value k = buat_kleru(
+                        "KleruCakupan",
+                        "Jeneng iki durung bisa diakses: deklarasi dudu wis dievaluasi "
+                        "(zona mati-temporal).");
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
+                }
+                break;
+            }
+            case Op::SET_CELL: case Op::GET_CELL: case Op::CLOSE_UPVAL: {
                 dorong(Value::mboh());
                 break;
             }

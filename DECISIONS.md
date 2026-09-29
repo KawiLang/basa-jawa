@@ -582,6 +582,80 @@ alamat salinan nilai lokal (dirancang untuk `HandleScope` yang mendaftarkan
 slot-nya ke heap). Pemakaian `Handle` sendirian di opcode akan terlihat benar
 tetapi tidak efectuar apa pun.
 
+---
+
+## D-031. `pilih`: kasus pola memakai mesin `cocog`, dan titik gagal kasus = awal kasus berikutnya
+
+**Konteks.** `pilih` (switch) sudah ada sejak Fase 3, tetapi kodenya salah:
+`Op::EQ` diperlakukan sebagai lompatan bersyarat padahal `Op::EQ` adalah
+perbandingan biasa yang mendorong boolean. Akibatnya hanya kasus **pertama**
+yang pernah dicek; `pilih (9) { kasus 1: ...; baku: ... }` mencetak isi kasus
+pertama. Pola array "kebetulan" cocok karena `nilai_sama` membandingkan isi.
+
+**Keputusan.**
+
+1. Kasus yang diawali `[` atau `{` di-parse sebagai `ast::Pola` (field baru
+   `KasusKlap::pola`) dan dikompilasi dengan `Compiler::susun_pola` -- mesin yang
+   sama dengan `cocog`, sehingga binding, wildcard, pola bersarang, dan `baku`
+   berperilaku sama di kedua tempat. Kasus lain tetap ekspresi yang dibandingkan
+   dengan `==`.
+2. Subjek `pilih` disimpan di slot (bukan ditahan di stack) supaya tiap kasus bisa
+   membacanya ulang tanpa menggandakan ekspresi subjek.
+3. Karena `JUMP_IF_FALSE` hanya memabat, **kedua jalur** membuang boolean-nya:
+   jalur cocok dengan `POP`, jalur gagal dengan `POP` di titik gagal. Titik gagal
+   kasus ini dipatch ke **ukuran kode saat itu** (yaitu awal kasus berikutnya),
+   bukan ke akhir `pilih` seperti pada implementasi pertama.
+
+**Deviasi yang disengaja.** Keyword `kasus Titik` untuk pencocokan tipe kelas
+tidak didukung di `pilih` -- hanya di `cocog`. Menambahkan `instanceof`-like
+syntax ke `pilih` butuh  tatapan grammar baru; dicatat sebagai pekerjaan yang
+belum selesai, bukan disembunyikan.
+
+---
+
+## D-032. `...sisa` mengikat sisa dhaptar, butuh opcode `MARK_SPREAD`
+
+**Konteks.** `Pola::sisanya` sudah ada di AST dan sudah di-parse, tapi
+`susun_pola` menulis **seluruh subjek** ke nama sisanya, bukan sisa elemennya.
+Bug lama yang juga memengaruhi `cocog`.
+
+**Kendala.** `MAKE_ARRAY_SPREAD` mengambil batas bawah dari
+`spread_base_.front()`, yang normalnya diisi `SPREAD_PUSH` (yaitu sambil
+mem-pop sumbernya). Untuk pola rest tidak ada sumber yang boleh dipop -- yang
+kita hanya ingin adalah "mulai hitung dari sini".
+
+**Keputusan.** Opcode baru `MARK_SPREAD` (`- - -`) yang mendorong
+`stack_.size()` ke `spread_base_` tanpa menyentuh stack. Compiler memancarnya
+sebelum loop pengumpul elemen. Loop memakai `len > i` (`Op::GE` terhadap
+`elemen.size()`) sehingga panjang subjek hanya perlu **minimal**, bukan persis.
+
+---
+
+## D-033. TDZ tanpa state per-frame: bandingkan `Frame::ip` dengan ip deklarasi
+
+**Konteks.** Semua pengikat leksikal (`ana`/`wonten`/`tetep`) harus punya zona
+mati-temporal. Opsi paling alami adalah bitmask per-frame, tapi itu harus ikut
+disalin saat continuation async/generator dibuat -- satu lagi tempat yang bisa
+lupa diperbarui.
+
+**Keputusan.** `Chunk::tdz_daftar` menyimpan nomor ip yang menginisialisasi tiap
+pengikat, dan `TDZ_CHECK a` melempar kalau `f.ip <= tdz_daftar[a]`. `Frame::ip`
+sudah disimpan untuk continuation, jadi **tidak ada field tambahan sama sekali**
+dan async/generator ikut benar tanpa perubahan.
+
+**Syarat yang tidak bisa dilewati.** Slot harus dialokasikan sebelum statement apa
+pun dikompilasi (`Compiler::pradaftar_tdz`), kalau tidak pembacaan yang lebih awal
+tidak menghasilkan cek apa pun. Setelah statement deklarasi selesai, entri
+`tdz_menunggu` dibuang sehingga pembacaan berikutnya nol opcode.
+
+**Interaksi yang ketahuan.** `ekspor { x }` harus ikut menunda kalau slot `x` masih
+di zona mati-temporal (D-026 mengandaikan slot belum ada); kalau tidak, ekspor
+menangkap nilai yang belum diinisialisasi.
+
+**Batasan yang disepakati.** Slot bersifat fungsi-wide (tidak ada skop blok di
+kompilator ini), jadi pengikatan per-iterasi `for (let i ...)` tidak dimodelkan.
+Dinyatakan eksplisit di `docs/control-flow.md`.
+
 
 ---
 

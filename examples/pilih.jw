@@ -1,0 +1,107 @@
+// Contoh acuan: `pilih` (switch) dengan kasus nilai, pola, dan `baku`.
+//
+// `pilih` memakai operator `==` biasa untuk kasus nilai, dan pencocokan pola
+// penuh (seperti `cocog`) kalau kasusnya diawali `[` atau `{`.
+//
+// Dua catatan bahasa yang sering membuat orang salah:
+//
+//   * `+` tidak mengoersi (D-007): `teks + angka` adalah galat. Gunakan
+//     template literal untuk penggabungan teks.
+//   * `nampa x()` membuat accessor, jadi `o.x()` memanggil HASIL accessor
+//     (seperti di JavaScript) -- bukan method-nya. Untuk method berargumen pakai
+//     `gawe`.
+
+golongan Titik {
+  #x;
+  #y;
+
+  wiwit(x, y) {
+    iki.#x = x;
+    iki.#y = y;
+  }
+
+  nampa x() {
+    bali iki.#x;
+  }
+
+  nampa y() {
+    bali iki.#y;
+  }
+}
+
+gawe label(x) {
+  pilih (x) {
+    kasus 0:
+      bali "nol";
+    kasus 1:
+      bali "satu";
+    kasus 2:
+      bali "duo";
+    baku:
+      bali "liya";
+  }
+}
+
+// 1. Kasus nilai diuji berurutan; `baku` jadi cadangan.
+tulis("nilai   = ", label(0), " / ", label(2), " / ", label(99));
+
+// 2. Pola dhaptar dengan binding.
+pilih ([1, 2, 3]) {
+  kasus [a, b, sisanya]:
+    tulis("dhaptar = ", a, " ", b, " sisa ", sisanya);
+  baku:
+    tulis("dhaptar = ora cocok");
+}
+
+// 3. Wildcard: hanya unsur kedua yang diperiksa.
+pilih ([1, 2, 3]) {
+  kasus [_, 2, _]:
+    tulis("temu   = unsur kedua 2");
+  baku:
+    tulis("temu   = ora ana unsur kedua 2");
+}
+
+// 4. Pola obyek dengan binding.
+pilih ({nama: "sari", umur: 20}) {
+  kasus {nama, umur}:
+    tulis("obyek  = ", nama, " umur ", umur);
+  baku:
+    tulis("obyek  = ora cocok");
+}
+
+// 5. Pola bersarang.
+pilih ([1, [2, 3]]) {
+  kasus [1, [2, z]]:
+    tulis("nested = ", z);
+}
+
+// 6. `pilih` di dalam kelas, lewat method (bukan accessor).
+golongan Lingkung {
+  #tengah;
+
+  wiwit(x, y) {
+    iki.#tengah = anyar Titik(x, y);
+  }
+
+  cara(x) {
+    pilih (x) {
+      kasus 0:
+        bali "tegas";
+      baku:
+        bali `nilai ${x} liya`;
+    }
+  }
+
+  ringkas() {
+    bali iki.cara(iki.#tengah.x);
+  }
+}
+tulis("kelas  = ", anyar Lingkung(2, 5).ringkas());
+tulis("kelas2 = ", anyar Lingkung(0, 0).ringkas());
+
+// 7. Tanpa kasus yang cocok, program terus saja.
+pilih ("lain") {
+  kasus 1:
+    tulis("ngawur  = 1");
+}
+tulis("selesai = ya");

@@ -83,6 +83,15 @@ struct Chunk {
     bool panah = false;
     bool mengko = false;
     bool generator = false;
+    /// Zona mati-temporal (TDZ). Untuk tiap pengikat leksikal (`ana`/`tetep`),
+    /// ip instruksi yang MENGINITIALISASI slotnya. `TDZ_CHECK a` melempar
+    /// galat kalau `f.ip` belum melewati `tdz_daftar[a]` -- artinya slot dibaca
+    /// sebelum deklarasinya dievaluasi.
+    ///
+    /// Tidak ada state per-frame: posisinya diturunkan dari `Frame::ip` yang
+    /// sudah tersimpan, jadi continuation (async/generator) ikut benar tanpa
+    /// field tambahan.
+    std::vector<std::uint16_t> tdz_daftar;
     /// Modul ini memakai `entani` di tingkat modul (top-level await), jadi
     /// frame modul HARUS boleh menjadi akar rantai async. Tanpa tanda ini,
     /// panggilan `mengko` di tingkat modul akan ikut menunda modul (lalu

@@ -3,23 +3,24 @@
 Dokumen ini adalah **catatan jujur** tentang apa yang sudah berjalan dan apa
 yang belum. Tanggal: 29 September 2026.
 
-Ringkas: front-end **dan** runtime sudah berjalan. **11 dari 11** contoh acuan
+Ringkas: front-end **dan** runtime sudah berjalan. **12 dari 12** contoh acuan
 Bagian 11 menghasilkan keluaran yang persis, termasuk `asinkron.jw`
-(`async`/`await`). Yang belum: hidden class, linker modul, generator suspend,
-dan pustaka standar lengkap.
+(`async`/`await`), `modul/*.jw` (ES module), dan `generator.jw`. Yang belum:
+hidden class, *live binding* modul, pustaka standar lengkap, dan tooling
+(REPL, `fmt`, `bench`).
 
 ## Angka
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 17.395 |
-| Opcode bytecode | 118 (`GET_EXPORT` baru) |
+| Baris kode C++ (`src/` + `tests/`) | 17.808 |
+| Opcode bytecode | 119 (`MARK_SPREAD` baru; `GET_EXPORT`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 106 |
-| Uji unit | 3 berkas, 117 cek, 62 test |
-| Uji emas | 14 contoh keluaran persis (11 acuan + 3 modul) + 11 front-end |
+| Uji unit | 3 berkas, 140 cek, 74 test |
+| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di kelimanya |
-| Dokumentasi | 8 berkas `docs/` + 4 berkas akar |
+| Dokumentasi | 9 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -30,7 +31,7 @@ dan pustaka standar lengkap.
 | 2 | Parser + AST | selesai |
 | 3 | Kompiler bytecode + VM + GC + pustaka standar minimum | **selesai (versi minimum)** |
 | 4 | Bentuk objek: shape, hidden class, inline cache | **belum** (lihat "Yang belum") |
-| 5 | Modul ES, zona mati-temporal, `super` penuh | modul ES selesai; TDZ & `pilih` pola belum |
+| 5 | Modul ES, zona mati-temporal, `super` penuh | modul ES + TDZ + `pilih` pola selesai; `super` penuh belum |
 | 6 | Event loop, Promise | **selesai** (loop acara deterministik; tanpa jam nyata) |
 | 7 | Fiber, generator suspend, `metokake` non-eager | **generator selesai tanpa fiber** (D-028; `FIBER_*` tidak pernah dipakai) |
 | 8 | Pustaka standar lengkap, `Tanggal`, regex, berkas | sebagian |
@@ -67,6 +68,11 @@ Bahasa yang berjalan penuh, termasuk:
 - Modul ES: `impor` (nama / alias / namespace / `baku` / tanpa pengikat) dan
   `ekspor` (deklarasi / `baku` / daftar nama / re-export), termasuk impor
   siklik antar-modul.
+- `pilih` dengan kasus nilai (`==`), kasus **pola** (`[a, ...sisa]`,
+  `{nama}`, wildcard `_`, pola bersarang), dan `baku` sebagai cadangan.
+- Zona mati-temporal: `ana`/`wonten`/`tetep` tidak bisa dibaca sebelum
+  deklarasinya dievaluasi, di modul maupun di badan fungsi, dan galatnya bisa
+  ditangkap `coba`. Lihat `docs/control-flow.md`.
 
 ## Yang BELUM (jujur)
 
@@ -104,10 +110,13 @@ Lihat `docs/stdlib.md` dan `docs/async.md`.
 
 ### 4. Bagian lain yang belum
 
-- `pilih` (`switch`) hanya menguji kesamaan nilai; `kasus` dengan pola
-  destruktur dan `baku` perlu diperluas.
+- `pilih`: kasus **pola** hanya untuk `[...]` dan `{...}` (mesin yang sama
+  dengan `cocog`). `kasus <Kelas>:` untuk pencocokan tipe belum ada, dan
+  `pilih` sebagai ekspresi pun belum. Lihat `docs/control-flow.md`.
 - Hanya `tangkep` pertama yang dipakai sebagai handler; seleksi berdasarkan
   tipe kleru belum ada (kompilator memberi peringatan S504).
+- `for (let i ...)` mengikat per-fungsi, bukan per-iterasi, jadi `i` di akhir
+  loop adalah nilai iterasi terakhir (slot kompilator bersifat fungsi-wide).
 - `Wektu.tundha` hanya mengurutkan timer, tidak menunggu ms sungguhan
   (loop acara deterministik, lihat `docs/async.md`).
 - Pemanggil fungsi `mengko` menunggu sampai fungsi itu selesai; `tulis(f())`

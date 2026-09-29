@@ -91,6 +91,127 @@ std::size_t Compiler::slot_baru(const std::string_view nama) {
     return s;
 }
 
+std::size_t Compiler::slot_baru_tdz(const std::string_view nama) {
+    FungsiKonteks& f = fn();
+    // Pakai slot yang sudah dipra-daftarkan kalau ada, supaya pra-walk dan
+    // statement deklarasi menunjuk slot yang sama.
+    std::size_t s;
+    const auto it = f.tdz_slot.find(nama);
+    if (it != f.tdz_slot.end()) {
+        s = it->second;
+    } else {
+        s = slot_baru(nama);
+    }
+    if (f.tdz_menunggu.count(s) != 0) return s;  // sudah dipra-daftarkan
+    const std::size_t pos = f.chunk->tdz_daftar.size();
+    f.chunk->tdz_daftar.push_back(0);  // diisi setelah statement deklarasi selesai
+    f.tdz_menunggu[s] = pos;
+    return s;
+}
+
+namespace {
+
+/// Semua statement anak dari sebuah node (untuk pra-walk TDZ). Vektor kosong
+/// untuk node yang tidak memuat statement.
+std::vector<const ast::Node*> anak_stmt(const ast::Node* n) {
+    using ast::NK;
+    std::vector<const ast::Node*> out;
+    if (n == nullptr) return out;
+    switch (n->kind) {
+        case NK::EkspresiStmt:
+        case NK::KosongStmt:
+        case NK::BaliStmt:
+        case NK::MandhegStmt:
+        case NK::TerusnaStmt:
+        case NK::UncalStmt:
+        case NK::FungsiDeklarasi:
+        case NK::ImporDeklarasi:
+        case NK::DebuggerStmt:
+            break;
+        case NK::Blok: {
+            const auto* b = static_cast<const ast::BlokStmt*>(n);
+            for (const ast::Node* x : b->body) out.push_back(x);
+            break;
+        }
+        case NK::YenStmt: {
+            const auto* y = static_cast<const ast::YenStmt*>(n);
+            out.push_back(y->lalu);
+            if (y->ada_liyane) out.push_back(y->liyane);
+            break;
+        }
+        case NK::NalikaStmt: out.push_back(static_cast<const ast::NalikaStmt*>(n)->awak); break;
+        case NK::LakoniStmt: out.push_back(static_cast<const ast::LakoniStmt*>(n)->awak); break;
+        case NK::KanggoStmt: {
+            const auto* k = static_cast<const ast::KanggoStmt*>(n);
+            out.push_back(k->inisialisasi);
+            out.push_back(k->awak);
+            break;
+        }
+        case NK::KanggoOfStmt:
+            out.push_back(static_cast<const ast::KanggoOfStmt*>(n)->target);
+            out.push_back(static_cast<const ast::KanggoOfStmt*>(n)->awak);
+            break;
+        case NK::PilihStmt: {
+            const auto* p2 = static_cast<const ast::PilihStmt*>(n);
+            for (const ast::Node* c : p2->kasus) {
+                out.push_back(static_cast<const ast::KasusKlap*>(c));
+            }
+            break;
+        }
+        case NK::CobaStmt: out.push_back(static_cast<const ast::CobaStmt*>(n)->blok); break;
+        case NK::KanggoInStmt: {
+            const auto* k = static_cast<const ast::KanggoInStmt*>(n);
+            out.push_back(k->target);
+            out.push_back(k->awak);
+            break;
+        }
+        case NK::GolonganDeklarasi: {
+            // Badan class = field/method/accessor (bukan statement), tapi blok
+            // statisnya adalah statement biasa.
+            const auto* g = static_cast<const ast::GolonganDeklarasi*>(n);
+            for (const ast::Node* x : g->statis_blok) out.push_back(x);
+            break;
+        }
+        case NK::EksporDeklarasi:
+            out.push_back(static_cast<const ast::EksporDeklarasi*>(n)->deklarasi);
+            break;
+        case NK::DeklarasiVar:
+            for (const ast::Node* lain : static_cast<const ast::DeklarasiVarStmt*>(n)->deklarator_lain) {
+                out.push_back(lain);
+            }
+            break;
+        case NK::LabelStmt: out.push_back(static_cast<const ast::LabelStmt*>(n)->awak); break;
+        default: break;
+    }
+    return out;
+}
+
+}  // namespace
+
+void Compiler::pradaftar_tdz(const ast::Node* n, int kedalaman) {
+    if (n == nullptr) return;
+    // Fungsi anak punya badan sendiri; jangan rekursi ke dalamnya.
+    if (n->kind == NK::FungsiDeklarasi) return;
+    if (kedalaman > 64) return;  // pengaman untuk AST tak wajar
+    FungsiKonteks& f = fn();
+    if (n->kind == NK::DeklarasiVar) {
+        const auto* d = static_cast<const ast::DeklarasiVarStmt*>(n);
+        std::vector<const ast::Node*> deklarator{d};
+        for (const ast::Node* lain : d->deklarator_lain) deklarator.push_back(lain);
+        for (const ast::Node* dek : deklarator) {
+            const auto* dv = static_cast<const ast::DeklarasiVarStmt*>(dek);
+            if (dv->jeneng.empty()) continue;
+            if (f.tdz_slot.count(dv->jeneng) != 0) continue;
+            const std::size_t s = slot_baru(dv->jeneng);
+            f.tdz_slot[dv->jeneng] = s;
+            const std::size_t pos = f.chunk->tdz_daftar.size();
+            f.chunk->tdz_daftar.push_back(0);
+            f.tdz_menunggu[s] = pos;
+        }
+    }
+    for (const ast::Node* anak : anak_stmt(n)) pradaftar_tdz(anak, kedalaman + 1);
+}
+
 std::size_t Compiler::cari_slot(const std::string_view nama) const {
     auto it = fn().lokal.find(std::string(nama));
     return it == fn().lokal.end() ? static_cast<std::size_t>(-1) : it->second;
@@ -167,6 +288,9 @@ HasilKompilasi Compiler::compile(const ast::Program* prog) {
         dinaikkan.push_back(s);
         sudah_dinaikkan.insert(std::string(nama));
     }
+
+    // Pra-walk TDZ: semua pengikat leksikal di modul ini dapat slot lebih dulu.
+    for (const ast::Node* s : semua_statement) pradaftar_tdz(s);
 
     for (const ast::Node* s : semua_statement) {
         const bool sudah = std::find(dinaikkan.begin(), dinaikkan.end(), s) != dinaikkan.end();

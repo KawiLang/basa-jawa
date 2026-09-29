@@ -78,6 +78,13 @@ private:
         std::unordered_map<std::string, std::size_t> upvalue; ///< nama -> indeks upvalue
         std::size_t n_slot_terpakai = 0;
         std::size_t n_slot_maks = 0;
+        /// Slot lokal -> indeks di `Chunk::tdz_daftar`, HANYA untuk pengikat
+        /// yang deklarasinya belum terkompilasi. Setelah deklarasi selesai
+        /// entrinya dihapus, jadi pembacaan sesudahnya tidak butuh `TDZ_CHECK`.
+        std::unordered_map<std::size_t, std::size_t> tdz_menunggu;
+        /// Nama pengikat leksikal -> slot yang dipra-daftarkan. Diisi
+        /// `pradaftar_tdz` sebelum statement apa pun dikompilasi.
+        std::unordered_map<std::string_view, std::size_t> tdz_slot;
         bool dalam_fungsi = false;
         /// Satu loop yang sedang dikompilasi. Dipakai untuk patch `mandheg`
         /// (break) & `terusna` (continue) tanpa placeholder lompat ke 0.
@@ -99,6 +106,15 @@ private:
     void patch(std::size_t idx, std::size_t tujuan);
     void patch_sebalik(std::size_t idx, std::size_t tujuan);
     std::size_t slot_baru(const std::string_view nama);
+    /// Seperti `slot_baru`, tapi slotnya ditandai punya zona mati-temporal
+    /// (`ana`/`tetep`). Mengembalikan pos di `Chunk::tdz_daftar` yang harus
+    /// diisi dengan ip deklarasi setelah statement-nya dikompilasi.
+    std::size_t slot_baru_tdz(std::string_view nama);
+    /// Praxis: alokasikan slot untuk SEMUA pengikat leksikal di badan fungsi
+    /// SEBELUM statement apa pun dikompilasi. Tanpa ini `TDZ_CHECK` tidak bisa
+    /// terbit untuk pembacaan yang muncul sebelum deklarasinya -- waktu
+    /// pembacaan itu dikompilasi, slot-nya belum ada sama sekali.
+    void pradaftar_tdz(const ast::Node* n, int kedalaman = 0);
     std::size_t cari_slot(const std::string_view nama) const;
     std::size_t cari_upvalue(const std::string_view nama);
     void diagnosa(const char* kode, std::string pesan, SourceRange r, std::string saran = {});

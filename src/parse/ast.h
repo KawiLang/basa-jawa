@@ -486,7 +486,12 @@ struct PilihStmt : Node {
 
 struct KasusKlap : Node {
     static constexpr NK kKind = NK::KasusKlap;
-    NodePtr test = nullptr;      ///< null = `baku:`
+    /// Nilai yang dibandingkan dengan `==`. `null` kalau kasusnya `baku:` atau
+    /// memakai pola.
+    NodePtr test = nullptr;
+    /// Pola (`kasus [1, 2]:` / `kasus {jenis: "kucing"}:`). `null` kalau kasusnya
+    /// membandingkan nilai biasa. Tidak pernah keduanya terisi.
+    NodePtr pola = nullptr;
     std::vector<NodePtr> body;
     bool fallthrough_eksplisit = false;
 };

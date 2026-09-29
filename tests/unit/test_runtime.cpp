@@ -517,6 +517,114 @@ TEST_CASE("kondisi: `liyane` juga tidak membocorkan nilai") {
              std::string("x= 0\n"));
 }
 
+// ===========================================================================
+// `pilih` (switch) — nilai, pola, dan `baku`
+// ===========================================================================
+
+TEST_CASE("pilih: kasus nilai diuji berurutan") {
+    // `Op::EQ` adalah perbandingan biasa; dulu `stmt_pilih` memperlakukannya
+    // sebagai lompatan, sehingga hanya `kasus` PERTAMA yang pernah dicek.
+    CHECK_EQ(jalankan("pilih (2) { kasus 1: tulis('satu'); kasus 2: tulis('dua'); kasus 3: tulis('tiga'); }\n"),
+             std::string("dua\n"));
+    CHECK_EQ(jalankan("pilih (1) { kasus 1: tulis('satu'); kasus 2: tulis('dua'); }\n"),
+             std::string("satu\n"));
+    CHECK_EQ(jalankan("pilih (9) { kasus 1: tulis('satu'); kasus 2: tulis('dua'); }\n"
+                      "tulis('selesai');\n"),
+             std::string("selesai\n"));
+}
+
+TEST_CASE("pilih: `baku` jadi cadangan") {
+    CHECK_EQ(jalankan("pilih (9) { kasus 1: tulis('satu'); baku: tulis('lain'); }\n"),
+             std::string("lain\n"));
+    // `baku` tidak jatuh kalau ada kasus yang cocok.
+    CHECK_EQ(jalankan("pilih (1) { kasus 1: tulis('satu'); baku: tulis('lain'); }\n"),
+             std::string("satu\n"));
+}
+
+TEST_CASE("pilih: pola dhaptar dengan binding") {
+    CHECK_EQ(jalankan("pilih ([1, 2]) { kasus [a, b]: tulis('a=', a, 'b=', b); }\n"),
+             std::string("a= 1 b= 2\n"));
+    CHECK_EQ(jalankan("pilih ([1, [2, 3]]) { kasus [1, [2, x]]: tulis('nested ', x); }\n"),
+             std::string("nested  3\n"));
+    CHECK_EQ(jalankan("pilih ([9, 9]) { kasus [1, 2]: tulis('salah'); baku: tulis('baku'); }\n"),
+             std::string("baku\n"));
+}
+
+TEST_CASE("pilih: pola obyek & wildcard") {
+    CHECK_EQ(jalankan("pilih ({jenis: 'kucing'}) {"
+                      " kasus {jenis: 'kucing'}: tulis('kucing');"
+                      " baku: tulis('lain'); }\n"),
+             std::string("kucing\n"));
+    CHECK_EQ(jalankan("pilih ([1, 2, 3]) { kasus [_, 2, _]: tulis('ada 2'); baku: tulis('lain'); }\n"),
+             std::string("ada 2\n"));
+}
+
+TEST_CASE("pilih: pola rest mengikat sisa, bukan seluruh subjek") {
+    CHECK_EQ(jalankan("pilih ([1, 2, 3]) { kasus [a, ...sisa]: tulis(a, sisa); }\n"),
+             std::string("1 [2, 3]\n"));
+    // Panjang subjek boleh lebih panjang dari yang ditulis di pola.
+    CHECK_EQ(jalankan("pilih ([1, 2, 3, 4]) { kasus [a, b, ...sisa]: tulis(a, b, sisa); }\n"),
+             std::string("1 2 [3, 4]\n"));
+    // ...dan sisa boleh kosong kalau panjangnya pas.
+    CHECK_EQ(jalankan("pilih ([1, 2]) { kasus [a, b, ...sisa]: tulis(a, b, sisa); }\n"),
+             std::string("1 2 []\n"));
+    // ...tapi subjek tidak boleh lebih pendek dari bagian tetap.
+    // Tidak ada yang dicetak kalau tidak ada kasus yang cocok.
+    CHECK_EQ(jalankan("pilih ([1]) { kasus [a, b, ...sisa]: tulis('tidak cocok'); }\n"),
+             std::string(""));
+}
+
+TEST_CASE("pilih: dipakai di dalam fungsi") {
+    CHECK_EQ(jalankan("gawe f(x) { pilih (x) { kasus 0: bali 'nol'; kasus 1: bali 'satu';"
+                      " baku: bali 'lain'; } }\n"
+                      "tulis(f(0), f(1), f(7));\n"),
+             std::string("nol satu lain\n"));
+}
+
+TEST_CASE("pilih: pola dipakai tanpa binding — nilai yang terikat tidak bocor ke luar") {
+    CHECK_EQ(jalankan("pilih ([1, 2, 3]) { kasus [a, ...sisa]: ; }\n"
+                      "tulis('selesai');\n"),
+             std::string("selesai\n"));
+}
+
+// ===========================================================================
+// Zona mati-temporal (TDZ)
+// ===========================================================================
+
+TEST_CASE("tdz: baca sebelum deklarasi = galat") {
+    jawa::vm::VMOptions opt;
+    jawa::vm::VM mesin(opt);
+    CHECK(mesin.jalankan_sumber("tulis(x); tetep x = 5;", "<test>") == jawa::vm::Status::Galat);
+}
+
+TEST_CASE("tdz: baca setelah deklarasi tidak apa-apa") {
+    CHECK_EQ(jalankan("tetep x = 5; tulis(x);\n"), std::string("5\n"));
+}
+
+TEST_CASE("tdz: berlaku di dalam fungsi") {
+    jawa::vm::VMOptions opt;
+    jawa::vm::VM mesin(opt);
+    CHECK(mesin.jalankan_sumber("gawe f() { tulis(y); tetep y = 1; } f();", "<test>") ==
+          jawa::vm::Status::Galat);
+}
+
+TEST_CASE("tdz: galat bisa ditangkap `coba`") {
+    CHECK_EQ(jalankan("coba { tulis(z); } tangkep (e) { tulis('ditangkep'); } tetep z = 1;\n"),
+             std::string("ditangkep\n"));
+    CHECK_EQ(jalankan("coba { pilih (1) { kasus 1: tulis(w); } }"
+                      " tangkep (e) { tulis('ditangkep'); } tetep w = 9;\n"),
+             std::string("ditangkep\n"));
+}
+
+TEST_CASE("tdz: pengikut loop tetap jalan") {
+    CHECK_EQ(jalankan("ana n = 0;\n"
+                      "nalika (n < 3) { ana i = n; n = n + 1; }\n"
+                      "tulis('n=', n);\n"),
+             std::string("n= 3\n"));
+    CHECK_EQ(jalankan("kanggo (ana i = 0; i < 3; i = i + 1) { tulis(i); }\n"),
+             std::string("0\n1\n2\n"));
+}
+
 TEST_CASE("modul: impor nama, alias, dan namespace") {
     const PetaBerkas peta{
         {"/satu/util.jw", "ekspor tetep K = 42;\nekspor gawe tambah(a, b) { bali a + b; }\n"},

@@ -336,6 +336,12 @@ void Heap::tandai_roots() {
     for (const RootExtra& r : akar_) tandai_objek_objek(r.cadangan);
     // Akar ber-scope (lihat `Heap::akar_scope_push`).
     for (const Value& v : akar_scope_) tandai_objek_objek(v);
+    // Akar sementara kompilator (D-018). Tanpa baris ini, konstanta &
+    // nama-properti yang baru dibuat `Compiler::tambah_konstanta` /
+    // `tambah_nama` TIDAK punya akar selama masih dikompilasi -- `chunk_akar_`
+    // baru berlaku setelah `compile()` selesai, jadi `--gc-stress` (yang
+    // mengoleksi tiap alokasi) akan membebaskannya di tengah kompilasi.
+    for (const Value& v : akar_sementara_) tandai_objek_objek(v);
 }
 
 // ---------------------------------------------------------------------------

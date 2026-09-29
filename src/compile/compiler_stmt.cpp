@@ -45,11 +45,20 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
         case NK::FungsiDeklarasi: deklarasi_fungsi(static_cast<const ast::FungsiDeklarasi*>(n), false); return;
         case NK::DeklarasiVar: {
             const auto* d = static_cast<const ast::DeklarasiVarStmt*>(n);
+            // Pengikat leksikal punya zona mati-temporal: membaca nama sebelum
+            // deklarasinya dievaluasi adalah galat (bukan `undefined`).
+            // Slot ditandai dulu, lalu ip deklarasi dicatat setelah statement ini
+            // selesai dikompilasi.
+            std::vector<std::size_t> tdz_baru;
             if (d->destruktur) {
                 ekspresi(d->nilai);
                 eks_destructur(n, d->nilai, true);
+                if (!d->jeneng.empty()) {
+                    tdz_baru.push_back(slot_baru_tdz(d->jeneng));
+                }
             } else {
-                const std::size_t s = slot_baru(d->jeneng);
+                const std::size_t s = slot_baru_tdz(d->jeneng);
+                tdz_baru.push_back(s);
                 if (d->nilai != nullptr) {
                     ekspresi(d->nilai);
                 } else {
@@ -58,6 +67,14 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
                 emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
             }
             for (const ast::Node* lain : d->deklarator_lain) statement(lain);
+            // Tutup TDZ: dari titik ini nama boleh dibaca.
+            for (std::size_t sl : tdz_baru) {
+                if (const auto it = fn().tdz_menunggu.find(sl); it != fn().tdz_menunggu.end()) {
+                    fn().chunk->tdz_daftar[it->second] =
+                        static_cast<std::uint16_t>(fn().chunk->ukuran_kode());
+                    fn().tdz_menunggu.erase(it);
+                }
+            }
             return;
         }
         case NK::BaliStmt: {
@@ -247,8 +264,14 @@ void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
     if (n->target != nullptr && n->target->kind == NK::DeklarasiVar) {
         const auto* d = static_cast<const ast::DeklarasiVarStmt*>(n->target);
         if (!d->destruktur && !d->jeneng.empty()) {
-            const std::size_t s = slot_baru(d->jeneng);
+            const std::size_t s = slot_baru_tdz(d->jeneng);
             emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
+            // Tutup TDZ target loop: `i` terikat sejak header dievaluasi.
+            if (const auto it = fn().tdz_menunggu.find(s); it != fn().tdz_menunggu.end()) {
+                fn().chunk->tdz_daftar[it->second] =
+                    static_cast<std::uint16_t>(fn().chunk->ukuran_kode());
+                fn().tdz_menunggu.erase(it);
+            }
         } else {
             diagnosa_di("S503", "Target kanggo-saka kudu jeneng tunggal (destruktur durung ora didukung).",
                         "Conto: `kanggo (saka [1,2,3]) { ... }` utawa `kanggo (n saka ...) { ... }`.");
@@ -277,6 +300,26 @@ void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
 }
 
 void Compiler::stmt_pilih(const ast::PilihStmt* n) {
+    // `pilih (subjek) { kasus <test|pola>: ...; baku: ... }`
+    //
+    //   ekspresi(subjek) ; SET_LOCAL s_subjek
+    // L_kasus_i:
+    //   [<test> ; EQ]  atau  [<pola>]        ; sisakan satu boolean
+    //   JUMP_IF_FALSE L_gagal_i
+    //   POP                            ; jalur cocok: buang boolean
+    //   <body_i> ; JUMP L_akhir
+    // L_gagal_i:  POP                    ; jalur gagal: buang boolean juga
+    // ...
+    // L_akhir:
+    //
+    // Dua hal penting di sini:
+    // 1. `Op::EQ` adalah perbandingan BIASA (mendorong boolean), bukan lompatan
+    //    bersyarat -- harus diikuti `JUMP_IF_FALSE` eksplisit.
+    // 2. Lompatan bersyarat hanya MEMBATAS nilai (peek), jadi kedua jalur harus
+    //    membuang boolean-nya. `cocog` melakukan hal yang sama;bedanya di sini
+    //    `pilih` adalah statement, jadi tidak ada nilai hasil yang harus disimpan.
+    //
+    // Subjek disimpan di slot supaya tiap kasus bisa membacanya ulang.
     ekspresi(n->subjek);
     const std::size_t s_subjek = fn().n_slot_terpakai++;
     fn().n_slot_maks = std::max(fn().n_slot_maks, fn().n_slot_terpakai);
@@ -285,17 +328,32 @@ void Compiler::stmt_pilih(const ast::PilihStmt* n) {
     std::vector<std::size_t> lompat_akhir;
     for (const ast::Node* cn : n->kasus) {
         const auto* k = static_cast<const ast::KasusKlap*>(cn);
-        std::size_t lompat_kasus = 0;
-        bool ada_lompat = false;
-        if (k->test != nullptr) {
+        if (k == nullptr) continue;
+        const bool ada_uji = k->pola != nullptr || k->test != nullptr;
+        std::vector<std::size_t> gagal_pola;
+        if (k->pola != nullptr) {
+            // Kasus pola: compile seperti `cocog` -- pola membaca subjek dari
+            // slot dan mengikat nama polanya ke slot lokal.
+            susun_pola(static_cast<const ast::Pola*>(k->pola), s_subjek, gagal_pola);
+        } else if (k->test != nullptr) {
             emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subjek));
             ekspresi(k->test);
-            lompat_kasus = emit(Op::EQ, 0);
-            ada_lompat = true;
+            emit(Op::EQ);
         }
-        for (const ast::Node* s : k->body) statement(s);
+        // `baku:` tidak menguji apa pun: body-nya langsung jalan.
+        std::size_t gagal_kasus = 0;
+        if (ada_uji) {
+            gagal_kasus = emit(Op::JUMP_IF_FALSE, 0);
+            emit(Op::POP);
+        }
+        for (const ast::Node* st : k->body) statement(st);
         lompat_akhir.push_back(emit(Op::JUMP, 0));
-        if (ada_lompat) patch(lompat_kasus, fn().chunk->ukuran_kode());
+        if (ada_uji) {
+            // Titik gagal kasus ini = awal kasus berikutnya.
+            for (std::size_t g : gagal_pola) patch(g, fn().chunk->ukuran_kode());
+            patch(gagal_kasus, fn().chunk->ukuran_kode());
+            emit(Op::POP);  // buang boolean yang tidak terpakai
+        }
     }
     for (std::size_t l : lompat_akhir) patch(l, fn().chunk->ukuran_kode());
 }
@@ -449,9 +507,13 @@ void Compiler::stmt_ekspor(const ast::EksporDeklarasi* n, bool sudah_hoist) {
         }
         for (const ast::EksporSpesifikasi& sp : n->daftar) {
             const auto it = cari_slot(sp.lokal);
-            if (it == std::string::npos) {
-                // Slot belum ada: nama mungkin dideklarasikan SESUDAH baris ini
-                // (`ekspor { x }; const x = 5;`). Tunda ke akhir modul.
+            // Tunda ke akhir modul kalau slot-nya belum ada ATAU masih di zona
+            // mati-temporal. Kasus kedua muncul karena `pradaftar_tdz`
+            // mengalokasikan slot lebih dulu: `ekspor { x }; tetep x = 5;` akan
+            // mengekspor nilai yang belum diinisialisasi kalau tidak ditunda.
+            const bool masih_tdz =
+                it != std::string::npos && fn().tdz_menunggu.count(it) != 0;
+            if (it == std::string::npos || masih_tdz) {
                 ekspor_tunda_.push_back(EksporTunda{sp.lokal, sp.ekspor});
                 continue;
             }

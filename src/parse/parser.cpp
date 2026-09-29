@@ -483,7 +483,14 @@ NodePtr Parser::parse_pilih() {
         auto* k = buat<ast::KasusKlap>(rentang_dari(km));
         if (kasus) {
             lewati_asi();
-            k->test = parse_ekspresi();
+            // `kasus [ ... ]:` / `kasus { ... }:` adalah POLA (seperti pada
+            // `cocog`), bukan literal. Ekspresi yang diawali kurung kurawal
+            // selalu pola supaya `kasus {a: 1}:` tidak tertukar dengan blok.
+            if (cek(Tok::LBracket) || cek(Tok::LBrace)) {
+                k->pola = parse_pola();
+            } else {
+                k->test = parse_ekspresi();
+            }
         }
         aspek_ke_close(Tok::Colon, "S008", "\":\" sawise nilai kasus");
         lewati_asi();

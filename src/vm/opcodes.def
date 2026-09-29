@@ -101,6 +101,9 @@ JAWA_OP(SET_PROTO,  0, "o p - o", "objek")
 JAWA_OP(MAKE_OBJECT,0, "- > o", "objek")
 JAWA_OP(MAKE_ARRAY, 1, "n v... - a", "objek")
 JAWA_OP(MAKE_ARRAY_SPREAD, 0, "v... - a", "objek")
+// Tandai tinggi stack sekarang sebagai awal elemen spread. Dipakai saat
+// jumlah elemen spread baru diketahui saat runtime (pola `[a, ...sisa]`).
+JAWA_OP(MARK_SPREAD,     0, "- - -", "objek")
 JAWA_OP(SPREAD_PUSH,0, "i - i...", "objek")
 JAWA_OP(SPREAD,     0, "dst src - >", "objek")
 JAWA_OP(ARRAY_PUSH, 1, "a v - >", "objek")

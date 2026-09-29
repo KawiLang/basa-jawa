@@ -380,6 +380,50 @@ benar-benar jalan. `impor`/`ekspor` sebelumnya di-parse dengan benar tetapi
 
 ---
 
+## [0.7.0] — `pilih` yang benar, zona mati-temporal, dan perbaikan GC
+
+### Diperbaiki
+- **`pilih` (switch) hanya menguji kasus pertama.** `Op::EQ` adalah perbandingan
+  biasa yang mendorong boolean, tapi `Compiler::stmt_pilih` memperlakukannya
+  sebagai lompatan bersyarat dan menambatkan target lompatan di akhir `pilih`.
+  Akibatnya `pilih (2) { kasus 1: ...; kasus 2: ... }` mencetak isi kasus
+  `1`, dan `baku:` tidak pernah berjalan. Codegen ditulis ulang; lihat
+  `docs/control-flow.md` dan D-031.
+- **Pola `...sisa` mengikat seluruh subjek**, bukan sisa elemennya -- bug lama
+  yang juga memengaruhi `cocog`. Dipperbaiki dengan opcode baru `MARK_SPREAD`
+  (D-032). Panjang subjek dengan `...sisa` sekarang cukup *minimal*.
+- **`Heap::akar_semale` tidak pernah ditandai sebagai root.** Akar sementara
+  kompilator (D-018) diisi `Compiler::tambah_konstanta` / `tambah_nama`, tapi
+  `Heap::tandai_roots` hanya menandai `akar_scope_`. Semua konstanta dan
+  nama-properti yang dibuat kompilator bisa tersapu **di tengah kompilasi** --
+  `chunk_akar_` baru berlaku setelah `compile()` selesai. Gejalanya di
+  `--gc-stress`: nilai `undefined` yang jauh dari sebabnya. Terbukti dengan
+  AddressSanitizer `heap-use-after-free`.
+- **`pradaftar_tdz` bentrok dengan target `kanggo (ana i = ...)`** (diperbaiki
+  tahap yang sama: target memakai slot yang sudah dipra-daftarkan).
+
+### Ditambahkan
+- **Zona mati-temporal (TDZ)** untuk pengikat leksikal `ana` / `wonten` / `tetep`.
+  `tulis(x); tetep x = 5;` sekarang melempar `KleruCakupan`, bukan mencetak
+  `undefined`. Berlaku di modul, di badan fungsi, dan di dalam blok; bisa
+  ditangkap `coba`/`tangkep`. Tanpa state per-frame: `Chunk::tdz_daftar`
+  menyimpan ip deklarasi dan `TDZ_CHECK` membandingkannya dengan `Frame::ip`
+  (D-033). Nol opcode untuk pembacaan setelah deklarasi.
+- **Kasus pola pada `pilih`:** `kasus [a, b]:` dan `kasus {nama}:` memakai mesin
+  `cocog` yang sama -- binding, wildcard `_`, pola bersarang, `...sisa`.
+- Opcode baru: `MARK_SPREAD` (`- - -`), menandai tinggi stack sebagai awal
+  elemen spread.
+- `docs/control-flow.md` -- `pilih` (nilai, pola, `baku`) dan TDZ.
+- `examples/pilih.jw` + `tests/golden/pilih.out` -- contoh acuan.
+- 12 test case baru (`tests/unit/test_runtime.cpp`): 7 untuk `pilih`, 5 untuk TDZ.
+  Total 74 test / 140 cek.
+
+### Diketahui masih belum
+- `kasus <Kelas>:` untuk pencocokan tipe di `pilih` belum ada (hanya di `cocog`).
+- `for (let i...)` tidak mengikat per-iterasi (slot bersifat fungsi-wide).
+- Modul belum punya *live binding*; `g.return()` / `g.next(x)` belum ada;
+  `Janji.all`/`race` belum ada.
+
 ## [0.6.0] — Fase 7 (sebagian): generator lazy, tanpa fiber
 
 Rilis kelima. 0.5.0 menutup linker modul ES; 0.6.0 menghapus penyimpangan
