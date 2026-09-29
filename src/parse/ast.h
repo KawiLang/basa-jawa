@@ -492,6 +492,10 @@ struct KasusKlap : Node {
     /// Pola (`kasus [1, 2]:` / `kasus {jenis: "kucing"}:`). `null` kalau kasusnya
     /// membandingkan nilai biasa. Tidak pernah keduanya terisi.
     NodePtr pola = nullptr;
+    /// Nama class untuk `kasus <Kelas>:` — pencocokan tipe: subjek adalah
+    /// instans class ini atau salah satu induknya (opcode `INSTAN_DARI`).
+    /// Kosong kalau kasusnya bukan pencocokan tipe.
+    Nam nama_kelas;
     std::vector<NodePtr> body;
     bool fallthrough_eksplisit = false;
 };

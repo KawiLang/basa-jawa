@@ -79,6 +79,10 @@ JAWA_OP(NOT,        0, "a - r", "perbandingan")
 JAWA_OP(CEK_TIPE,  1, "v k - v", "tipe")
 JAWA_OP(TYPEOF,     0, "a - t", "perbandingan")
 JAWA_OP(INSTANCEOF, 0, "a b - r", "perbandingan")
+// `INSTAN_DARI n`: nilai di puncak adalah instans; `nama_properti[a]` = nama
+// class. Dorong true kalau class instans itu ATAU salah satu induknya bernama
+// sama. Dipakai `kasus <Kelas>:` pada `pilih` dan pola `cocog`.
+JAWA_OP(INSTAN_DARI, 1, "o - b", "perbandingan")
 JAWA_OP(IN,         0, "a b - r", "perbandingan")
 JAWA_OP(TYPEOF_KIND,1, "- -> t", "perbandingan")
 

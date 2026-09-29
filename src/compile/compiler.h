@@ -101,6 +101,14 @@ private:
             std::vector<std::size_t> patch_terusna;
         };
         std::vector<Loop> loop;
+        /// Badan `pungkasan` dari `coba` yang sedang dikompilasi, atau `nullptr`.
+        /// Setiap `bali` di dalam blok terlindungi menyalin badan ini lebih
+        /// dulu (lihat `Compiler::stmt_coba`). `dalam_pungkasan` mencegah
+        /// salinan tak berujung kalau badan `pungkasan` sendiri berisi `bali`
+        /// -- `bali` di dalam `pungkasan` memang menggantikan nilai kembalian
+        /// sebelumnya, jadi tidak perlu menjalankan `pungkasan` lagi.
+        const ast::Node* coba_pungkasan = nullptr;
+        bool dalam_pungkasan = false;
     };
 
     // --- helper ---

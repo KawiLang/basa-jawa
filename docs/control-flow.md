@@ -29,6 +29,12 @@ pilih (subjek) {
 
 - Kasus **nilai** dibandingkan dengan `==` (yang di Basa Jawa tidak mengoersi,
   D-007: `1 == "1"` salah).
+- Kasus **tipe** aktif kalau kasusnya `kasus <Kelas>:` — pengenal yang
+  diawali huruf kapital dan langsung diikuti `:`. Cocok kalau subjek adalah
+  instans class itu **atau salah satu induknya**, jadi `kasus Kucing:` juga
+  menjerat `KucingPriba`. Opcode `INSTAN_DARI` menelusuri rantai `induk`.
+  Pengenal huruf kecil (`kasus warna:`) tetap perbandingan nilai biasa — syarat
+  kapital itu yang membedakan keduanya, bukan posisinya.
 - Kasus **pola** aktif kalau kasusnya diawali `[` atau `{`. Pola dicocokkan
   dengan mesin yang **sama** dengan `cocog`, termasuk pola rest, wildcard,
   pola bersarang, dan pengikatan nama.
@@ -146,17 +152,30 @@ pertama yang cocok).
 
 ### `pungkasan` selalu jalan
 
-Badan `pungkasan` dijalankan di ketiga jalur:
+Badan `pungkasan` dijalankan di keempat jalur:
 
 1. Blok selesai normal.
 2. Setelah klausula `tangkep` yang cocok selesai.
 3. Tidak ada klausula yang cocok — `pungkasan` jalan, lalu galat diteruskan
    dengan `THROW` ke handler di luar.
+4. `bali` di dalam blok — badan `pungkasan` disalin **tepat sebelum** `RETURN`,
+   lalu nilai `bali` dipop dari slot temporer dan dikembalikan (ECMAScript).
 
-Jalur (3) dikompilasi sebagai `L_tolak`: badan `pungkasan` diiemit ulang,
+Jalur (4) diimplementasikan dengan menyalin badan `pungkasan` ke dalam setiap
+`bali`, bukan dengan lompatan ke satu salinan bersama. Alasannya: setiap `bali`
+punya slot temporer sendiri, jadi epilogusnya (`GET_LOCAL <slot> ; RETURN`)
+berbeda-beda. Jumlah `bali` dalam satu `coba` kecil, jadi penalinannya
+mempermurah.
+
+`bali` di dalam badan `pungkasan` sendiri **tidak** menyalin `pungkasan` lagi —
+`pungkasan` yang sedang berjalan sudah cukup, dan menyalinnya akan tak
+berujung. `bali` di dalam `pungkasan` juga memang menggantikan nilai
+kembalian sebelumnya, jadi hasilnya langsung dikembalikan.
+
+Jalur (3) dikompilasi sebagai `L_tolak`: badan `pungkasan` diemit ulang,
 diakhiri `THROW` (nilai galat masih di puncak stack karena unwinder
-meninggalkannya di sana). Karena itu badan `pungkasan` bisa muncul dua kali
-dalam bytecode — itu disengaja, bukan duplikasi tak sengaja.
+meninggalkannya di sana). Karena itu badan `pungkasan` bisa muncul beberapa
+kali dalam bytecode — itu disengaja, bukan duplikasi tak sengaja.
 
 ### Cara kerjanya
 

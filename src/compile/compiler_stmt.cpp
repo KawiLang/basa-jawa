@@ -106,6 +106,24 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
             const auto* b = static_cast<const ast::BaliStmt*>(n);
             if (b->nilai != nullptr) ekspresi(b->nilai);
             else emit(Op::MBOH);
+            // `bali` di dalam `coba` yang punya `pungkasan` harus menjalankan
+            // badan `pungkasan` lebih dulu (ECMAScript). Nilai `bali`
+            // disimpan di slot sementara, badan `pungkasan` disalin di sini,
+            // lalu nilai itu dipop dan dikembalikan.
+            //
+            // Kalau `bali` ada di dalam badan `pungkasan` itu sendiri, ia
+            //langsung mengembalikan nilainya: `pungkasan` yang sedang berjalan
+            // sudah cukup, dan menyalinnya lagi akan tak berujung.
+            if (fn().coba_pungkasan != nullptr && !fn().dalam_pungkasan) {
+                emit(Op::DUP);
+                const std::size_t s = fn().n_slot_terpakai++;
+                fn().n_slot_maks = std::max(fn().n_slot_maks, fn().n_slot_terpakai);
+                emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s));
+                fn().dalam_pungkasan = true;
+                stmt_awak(fn().coba_pungkasan);
+                fn().dalam_pungkasan = false;
+                emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+            }
             emit(Op::RETURN);
             return;
         }
@@ -431,12 +449,17 @@ void Compiler::stmt_pilih(const ast::PilihStmt* n) {
     for (const ast::Node* cn : n->kasus) {
         const auto* k = static_cast<const ast::KasusKlap*>(cn);
         if (k == nullptr) continue;
-        const bool ada_uji = k->pola != nullptr || k->test != nullptr;
+        const bool ada_uji = k->pola != nullptr || k->test != nullptr || !k->nama_kelas.empty();
         std::vector<std::size_t> gagal_pola;
         if (k->pola != nullptr) {
             // Kasus pola: compile seperti `cocog` -- pola membaca subjek dari
             // slot dan mengikat nama polanya ke slot lokal.
             susun_pola(static_cast<const ast::Pola*>(k->pola), s_subjek, gagal_pola);
+        } else if (!k->nama_kelas.empty()) {
+            // `kasus <Kelas>:` -- subjek adalah instans class itu (atau induknya).
+            emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subjek));
+            emit(Op::INSTAN_DARI, static_cast<std::uint16_t>(
+                                       tambah_nama(Value::obyek(rt::buat_teks(heap_, k->nama_kelas)))));
         } else if (k->test != nullptr) {
             emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_subjek));
             ekspresi(k->test);
@@ -490,6 +513,14 @@ void Compiler::stmt_coba(const ast::CobaStmt* n) {
     // mencetak hanya `body`.
     const std::size_t patch_tolak = emit(Op::TRY_BEGIN, 0, 0);
     std::vector<std::size_t> patch_klausul;
+    const ast::PungkasanKlausul* pf = nullptr;
+    if (n->pungkasan != nullptr) pf = static_cast<const ast::PungkasanKlausul*>(n->pungkasan);
+    // Simpan badan `pungkasan` yang sedang aktif supaya `NK::BaliStmt` tahu
+    // harus menyalinnya lebih dulu. `coba` bersarang menimpanya dan
+    // memulihkannya, jadi setiap `bali` hanya menyalin `pungkasan` yang
+    // paling dalam yang sedang berjalan.
+    const ast::Node* pkt_lama = fn().coba_pungkasan;
+    fn().coba_pungkasan = pf != nullptr ? pf->body : nullptr;
     for (const ast::Node* kn : n->tangkep) {
         if (kn == nullptr) continue;
         const auto* k = static_cast<const ast::TangkepKlausul*>(kn);
@@ -537,8 +568,7 @@ void Compiler::stmt_coba(const ast::CobaStmt* n) {
         lompat_intrigusan_klausul.push_back(emit(Op::JUMP, 0));
     }
 
-    const ast::PungkasanKlausul* pf = nullptr;
-    if (n->pungkasan != nullptr) pf = static_cast<const ast::PungkasanKlausul*>(n->pungkasan);
+    fn().coba_pungkasan = pkt_lama;
 
     if (pf != nullptr) {
         // Jalur tolak: badan `pungkasan`, lalu lempar ulang. Unwinder

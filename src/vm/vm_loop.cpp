@@ -1338,6 +1338,28 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 dorong(Value::boolean(o != nullptr && o->h.kind == OK::Array));
                 break;
             }
+            // `kasus <Kelas>:` pada `pilih` & pola `cocog`: instans dari class
+            // itu atau dari salah satu induknya. Rantai induk ditelusuri sampai
+            // habis supaya `kasus Kucing:` juga cocok untuk `KucingPriba`.
+            case Op::INSTAN_DARI: {
+                const std::string_view cari = sv(c->nama_properti[ins.a]);
+                Obj* o = objek(puncak());
+                bool ya = false;
+                if (o != nullptr && o->h.kind == OK::Instance) {
+                    ClassObj* k = static_cast<InstanceObj*>(o)->kelas;
+                    for (int d = 0; d < 64 && k != nullptr; ++d) {
+                        if (k->nama == cari) {
+                            ya = true;
+                            break;
+                        }
+                        Obj* ip = objek(k->induk);
+                        k = (ip != nullptr && ip->h.kind == OK::Golongan) ? static_cast<ClassObj*>(ip)
+                                                                         : nullptr;
+                    }
+                }
+                dorong(Value::boolean(ya));
+                break;
+            }
             case Op::MATCH_TEST: case Op::MATCH_BIND: dorong(Value::boolean(false)); break;
             // Zona mati-temporal: lempar kalau slot leksikal ini belum
             // diinisialisasi. `f.ip` sudah melewati instruksi SEBELUM `TDZ_CHECK`,

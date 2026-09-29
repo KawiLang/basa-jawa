@@ -511,11 +511,19 @@ NodePtr Parser::parse_pilih() {
         auto* k = buat<ast::KasusKlap>(rentang_dari(km));
         if (kasus) {
             lewati_asi();
-            // `kasus [ ... ]:` / `kasus { ... }:` adalah POLA (seperti pada
+            // `kasus [ ... ]:` / `kasus { ... }:` adalah POLA (sejak pada
             // `cocog`), bukan literal. Ekspresi yang diawali kurung kurawal
             // selalu pola supaya `kasus {a: 1}:` tidak tertukar dengan blok.
+            //
+            // `kasus <Kelas>:` adalah pencocokan TIPE. Dibedakan dari perbandingan
+            // nilai biasa dengan dua syarat: pengenal langsung diikuti `:` (bukan
+            // `.`/`?`/`(`), dan huruf pertamanya kapital. Tanpa syarat kapital,
+            // `kasus warna:` (variabel) ikut tertukar sebagai class.
             if (cek(Tok::LBracket) || cek(Tok::LBrace)) {
                 k->pola = parse_pola();
+            } else if (cek(Tok::Ident) && cek(1, Tok::Colon) && saat().teks[0] >= 'A' && saat().teks[0] <= 'Z') {
+                k->nama_kelas = saat().teks;
+                ++idx_;
             } else {
                 k->test = parse_ekspresi();
             }

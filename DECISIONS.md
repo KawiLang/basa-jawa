@@ -855,6 +855,42 @@ membentuk `KleruObj` lalu memanggil `unwind_galat`, dan dipanggil dengan
 (instruksi rusak, langkah maksimum) sengaja tetap memakai `gagal()` dan tidak
 bisa ditangkap: itu kondisi mesin, bukan kesalahan program.
 
+---
+
+## D-039. `kasus <Kelas>:` dibedakan dari kasus nilai dengan HURUF KAPITAL
+
+**Konteks.** `pilih` hanya punya kasus nilai (`==`) dan kasus pola (`[...]`,
+`{...}`). Pencocokan tipe instans tidak ada; di `cocog` pun tidak ada -- yang
+ada `n: Tipe` sayangnya BELUM dievaluasi (selalu dianggap cocok; bug terpisah,
+belum dikerjakan).
+
+**Kendala sintaks.** `kasus X:` sudah dipakai untuk perbandingan nilai: `X`
+bisa berupa variabel. `kasus warna:` harus tetap berarti "subjek == warna".
+Tidak ada token khusus yang memisahkannya dari `kasus Kucing:`.
+
+**Keputusan.** Sebuah kasus dibaca sebagai pencocokan TIPE kalau pengenalnya
+(1) langsung diikuti token `:` -- bukan `.`/`?`/`(` -- dan (2) huruf pertamanya
+kapital. Syarat (1) membuang terner dan akses properti; syarat (2) membuang
+variabel. Konsekuensi yang harus ditulis di dokumentasi: **penamaan class
+mengikuti konvensi kapital**, jadi `kasus warna:` (variabel) dan
+`kasus Warna:` (class) berbeda bentuk. Ini bukan solusi gratis -- kalau suatu
+hari variabel kapital lazim, aturannya harus ditinjau ulang.
+
+**Mekanisme.** Opcode baru `INSTAN_DARI n` mendorong true kalau nilai puncak
+adalah instans class bernama `nama_properti[n]` atau salah satu induknya.
+Rantai `ClassObj::induk` ditelusuri sampai habis (dibatasi 64 tingkat sebagai
+pengaman). Menelusuri induk berarti `kasus Kucing:` juga menjerat
+`KucingPriba` -- persis `instanceof` ECMAScript.
+
+**Bug yang ikut ketahuan: `bali` melewatkan `pungkasan`.** `RETURN` keluar
+langsung dari frame, sehingga `bali` di dalam blok `coba` melewati badan
+`pungkasan` sama sekali. Perbaikannya: `Compiler::FungsiKonteks` menyimpan
+badan `pungkasan` yang sedang aktif, dan `NK::BaliStmt` menyalinnya tepat
+sebelum `RETURN` (nilai `bali` disimpan di slot temporer lebih dulu). Salinan
+per-`bali`, bukan satu salinan bersama, karena setiap `bali` punya slot
+temporer sendiri. Bendera `dalam_pungkasan` mencegah `bali` di dalam
+`pungkasan` menyalin dirinya sendiri tanpa henti.
+
 
 ## TODO-VERIFIKASI
 

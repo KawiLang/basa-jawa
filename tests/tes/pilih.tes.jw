@@ -1,0 +1,117 @@
+// `pilih` dengan kasus tipe (`kasus <Kelas>:`) dan `pungkasan` yang jalan
+// sebelum `bali` (D-039).
+
+// --- `kasus <Kelas>:` -------------------------------------------------------
+golongan Kucing {}
+golongan KucingPriba turunan Kucing {}
+golongan KucingNgurum turunan KucingPriba {}
+golongan Anjing {}
+
+gawe label_kucing(o) {
+    pilih (o) {
+        kasus KucingPriba: bali "kucing-priba";
+        kasus Kucing: bali "kucing";
+        baku: bali "bukan-kucing";
+    }
+}
+
+pratelas(label_kucing(anyar Kucing()), "kucing");
+pratelas(label_kucing(anyar KucingPriba()), "kucing-priba");
+// Rantai tiga tingkat: `KucingNgurum` harus cocok lewat `KucingPriba`.
+pratelas(label_kucing(anyar KucingNgurum()), "kucing-priba");
+pratelas(label_kucing(anyar Anjing()), "bukan-kucing");
+pratelas(label_kucing(42), "bukan-kucing");
+pratelas(label_kucing("teks"), "bukan-kucing");
+pratelas(label_kucing(mboh), "bukan-kucing");
+
+// Kasus tipe yang lebih spesifik ditulis lebih dulu akan menang.
+ana urutan_tipe = [];
+pilih (anyar KucingPriba()) {
+    kasus Kucing: urutan_tipe.tambah("kucing");
+    kasus KucingPriba: urutan_tipe.tambah("kucing-priba");
+    baku: urutan_tipe.tambah("baku");
+}
+pratelas(urutan_tipe, ["kucing"]);
+
+// Kasus tipe bercampur dengan kasus nilai & pola.
+ana campuran = [];
+pilih (1) {
+    kasus Kucing: campuran.tambah("kucing");
+    kasus 1: campuran.tambah("satu");
+    baku: campuran.tambah("baku");
+}
+pratelas(campuran, ["satu"]);
+
+// Pengenal huruf kecil tetap perbandingan nilai biasa, bukan pencocokan tipe.
+tetep warna = 2;
+pilih (warna) {
+    kasus warna: campuran.tambah("variabel");
+    kasus 2: campuran.tambah("dua");
+}
+pratelas(campuran, ["satu", "variabel"]);
+
+// --- `pungkasan` jalan sebelum `bali` --------------------------------------
+// Bug lama: `bali` di dalam `coba` keluar langsung, melewati badan `pungkasan`.
+ana urut_kembali = [];
+gawe Ambil(x) {
+    coba {
+        urut_kembali.tambah("body");
+        bali x;
+    } tangkep (e) {
+        urut_kembali.tambah("tangkep");
+    } pungkasan {
+        urut_kembali.tambah("FIN");
+    }
+}
+pratelas(Ambil("nilai"), "nilai");
+pratelas(urut_kembali, ["body", "FIN"]);
+
+// Nilai `bali` harus tetap utuh meski `pungkasan` mengubah variabel lain.
+ana penghitung = 0;
+gawe Ambil2(x) {
+    coba {
+        bali x * 2;
+    } tangkep (e) {
+        bali 0;
+    } pungkasan {
+        penghitung = penghitung + 1;
+    }
+}
+pratelas(Ambil2(21), 42);
+pratelas(penghitung, 1);
+
+// `bali` di dalam badan `pungkasan` sendiri langsung mengembalikan nilainya.
+ana urut_pung = [];
+gawe Ambil3(x) {
+    coba {
+        urut_pung.tambah("body");
+        bali "pertama";
+    } tangkep (e) {
+        urut_pung.tambah("tangkep");
+    } pungkasan {
+        urut_pung.tambah("FIN");
+        bali "dari-pungkasan";
+    }
+}
+pratelas(Ambil3("x"), "dari-pungkasan");
+pratelas(urut_pung, ["body", "FIN"]);
+
+// `coba` bersarang: `bali` menyalakan `pungkasan` yang paling dalam saja.
+ana urut_nested = [];
+gawe Ambil4(x) {
+    coba {
+        coba {
+            bali x;
+        } tangkep (e1) {
+            urut_nested.tambah("dalam");
+        } pungkasan {
+            urut_nested.tambah("FIN-dalam");
+        }
+    } tangkep (e2) {
+        urut_nested.tambah("luar");
+    } pungkasan {
+        urut_nested.tambah("FIN-luar");
+    }
+}
+pratelas(Ambil4(7), 7);
+pratelas(urut_nested, ["FIN-dalam"]);
