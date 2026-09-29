@@ -1,0 +1,126 @@
+// `Peta`, `Himpunan`, dan `Janji.all`/`race`.
+//
+// Semula `PetaObj` & `HimpunanObj` sudah ada sebagai kelas runtime (open
+// addressing di `src/rt/object.cpp`) tapi TIDAK bisa dibuat dari kode Basa Jawa:
+// tidak ada constructor global, dan `VM::ambil_properti` tidak punya cabang
+// untuk keduanya -- `jenis(peta)` pun tidak pernah mengembalikan "peta".
+
+// --- Peta -------------------------------------------------------------------
+ana p = anyar Peta();
+pratelas(p.dhawa, 0);
+pratelas(p.kosong(), bener);
+pratelas(jenis(p), "peta");
+
+p.set("a", 1);
+p.set("b", 2);
+pratelas(p.dhawa, 2);
+pratelas(p.kosong(), salah);
+pratelas(p.get("a"), 1);
+pratelas(p["b"], 2);
+pratelas(p.ada("a"), bener);
+pratelas(p.ada("z"), salah);
+pratelas(p.get("tidak-ada"), mboh);
+pratelas(p.get("tidak-ada", "bawaan"), "bawaan");
+
+// `set` mengembalikan peta itu sendiri, jadi bisa dirantai.
+p.set("c", 3).set("d", 4);
+pratelas(p.dhawa, 4);
+
+p.hapus("c");
+pratelas(p.dhawa, 3);
+pratelas(p.ada("c"), salah);
+pratelas(p.hapus("c"), salah);
+
+pratelas(p.kunci(), ["a", "b", "d"]);
+pratelas(p.nilai(), [1, 2, 4]);
+pratelas(p.entri().panjang, 3);
+pratelas(p.entri()[0], ["a", 1]);
+pratelas(p.akeh("kunci"), ["a", "b", "d"]);
+pratelas(p.akeh("nilai"), [1, 2, 4]);
+
+p.bersih();
+pratelas(p.dhawa, 0);
+pratelas(p.kosong(), bener);
+
+// Kunci non-teks: angka & `bener` juga boleh.
+ana angka_key = anyar Peta();
+angka_key.set(1, "satu");
+angka_key.set(bener, "ya");
+pratelas(angka_key.get(1), "satu");
+pratelas(angka_key.get(bener), "ya");
+pratelas(angka_key.dhawa, 2);
+
+// Kunci tekstual & numerik TIDAK tertukar (tidak ada konversi string).
+ana campur = anyar Peta();
+campur.set(1, "angka");
+campur.set("1", "teks");
+pratelas(campur.get(1), "angka");
+pratelas(campur.get("1"), "teks");
+pratelas(campur.dhawa, 2);
+
+// Penyalinan: `Peta(peta)` membuat salinan, bukan alias.
+ana asli = anyar Peta();
+asli.set("x", 1);
+ana salinan = anyar Peta(asli);
+salinan.set("x", 99);
+salinan.set("y", 2);
+pratelas(asli.get("x"), 1);
+pratelas(asli.dhawa, 1);
+pratelas(salinan.dhawa, 2);
+
+// --- Himpunan ---------------------------------------------------------------
+ana h = anyar Himpunan();
+pratelas(h.dhapa, 0);
+pratelas(h.kosong(), bener);
+pratelas(jenis(h), "himpunan");
+
+h.tambah(1).tambah(2).tambah(1);
+pratelas(h.dhapa, 2);
+pratelas(h.ada(1), bener);
+pratelas(h.ada(9), salah);
+pratelas(h.ke_dhaptar(), [1, 2]);
+
+h.hapus(1);
+pratelas(h.dhapa, 1);
+pratelas(h.ada(1), salah);
+pratelas(h.hapus(1), salah);
+
+h.bersih();
+pratelas(h.dhapa, 0);
+pratelas(h.kosong(), bener);
+
+// Dari dhaptar: duplikat diabaikan, urutan sisip dipertahankan.
+ana h2 = anyar Himpunan([3, 1, 3, 2, 1]);
+pratelas(h2.dhapa, 3);
+pratelas(h2.ke_dhaptar(), [3, 1, 2]);
+
+// Elemen apa pun boleh, bukan cuma angka.
+ana h3 = anyar Himpunan(["a", 1, bener]);
+pratelas(h3.dhapa, 3);
+pratelas(h3.ada("a"), bener);
+pratelas(h3.ada(1), bener);
+
+// --- Janji.all --------------------------------------------------------------
+// Janji yang sudah selesai: hasilnya dhaptar dengan nilai pada indeksnya.
+ana j1 = Janji.all([Janji.selesai(1), Janji.selesai(2)]);
+pratelas(j1.jenis, "slamet");  // dua Janji sudah selesai -> langsung slamet
+j1.then((v) => pratelas(v, [1, 2]));
+
+// Dhaptar kosong langsung selesai dengan dhaptar kosong.
+Janji.all([]).then((v) => pratelas(v, []));
+
+// Nilai biasa diperlakukan sebagai Janji yang sudah selesai.
+Janji.all([Janji.selesai(1), 2]).then((v) => pratelas(v, [1, 2]));
+
+// `Janji.selesai` tanpa nilai.
+Janji.all([Janji.selesai()]).then((v) => pratelas(v.panjang, 1));
+
+// --- Janji.race -------------------------------------------------------------
+Janji.race([Janji.selesai("pertama"), Janji.selesai("kedua")])
+    .then((v) => pratelas(v, "pertama"));
+
+// Janji yang sudah ditolak: gabungan langsung ditolak.
+Janji.race([Janji.tolak("rusak")]).tangkep((e) => pratelas(e, "rusak"));
+
+// --- Garis akhir -------------------------------------------------------------
+pratelas(1 + 1, 2);

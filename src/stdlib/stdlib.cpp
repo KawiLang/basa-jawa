@@ -46,7 +46,7 @@ State& global(VM& vm) { return vm.tabel_stdlib(); }
 Value native_teks_objek(VM& vm, std::string_view s) { return Value::obyek(rt::buat_teks(vm.heap(), s)); }
 
 /// Daftarkan fungsi native sebagai global.
-void daftarkan(VM& vm, std::string_view nama, std::size_t n_param, bool variadic, rt::NativeFn fn) {
+void daftarkan_impl(VM& vm, std::string_view nama, std::size_t n_param, bool variadic, rt::NativeFn fn) {
     auto* n = vm.heap().alokasi<NativeFnObj>();
     n->h.kind = OK::Native;
     n->fn = fn;
@@ -57,7 +57,7 @@ void daftarkan(VM& vm, std::string_view nama, std::size_t n_param, bool variadic
 }
 
 /// Daftarkan nilai konstan sebagai global.
-void daftarkan_nilai(VM& vm, std::string_view nama, Value v) { global(vm).tabel[std::string(nama)] = v; }
+void daftarkan_nilai_impl(VM& vm, std::string_view nama, Value v) { global(vm).tabel[std::string(nama)] = v; }
 
 /// Tempel properti pada fungsi native (method statis konstruktor).
 void sifat(VM& vm, NativeFnObj* f, std::string_view nama, Value v) {
@@ -78,7 +78,7 @@ Value native_baru(VM& vm, std::string_view nama, std::size_t n_param, rt::Native
 }
 
 /// Bantu: objek dengan properti native (namespace `Math`, `JSON`, ...).
-ObyekObj* buat_namespace(VM& vm, std::string_view nama) {
+ObyekObj* buat_namespace_impl(VM& vm, std::string_view nama) {
     ObyekObj* o = vm.buat_obyek();
     o->define(vm.heap(), native_teks_objek(vm, "nama"), native_teks_objek(vm, nama), rt::AttrDefault);
     return o;
@@ -935,8 +935,8 @@ Value native_tanggal_sama(VM&, Value this_val, std::vector<Value>& args) {
 // ===========================================================================
 
 namespace {
-void pasang_prototype_metode(VM& vm, std::uint8_t jenis_objek, std::string_view nama, std::size_t n_param,
-                             rt::NativeFn fn) {
+void pasang_prototype_metode_impl(VM& vm, std::uint8_t jenis_objek, std::string_view nama, std::size_t n_param,
+                                  rt::NativeFn fn) {
     auto* n = vm.heap().alokasi<NativeFnObj>();
     n->h.kind = OK::Native;
     n->fn = fn;
@@ -945,7 +945,7 @@ void pasang_prototype_metode(VM& vm, std::uint8_t jenis_objek, std::string_view 
     metode_bawaan(vm)[std::to_string(static_cast<int>(jenis_objek)) + ":" + std::string(nama)] = Value::obyek(n);
 }
 
-void pasang_objek_metode(VM& vm, ObyekObj* o, std::string_view nama, std::size_t n_param, rt::NativeFn fn) {
+void pasang_objek_metode_impl(VM& vm, ObyekObj* o, std::string_view nama, std::size_t n_param, rt::NativeFn fn) {
     auto* n = vm.heap().alokasi<NativeFnObj>();
     n->h.kind = OK::Native;
     n->fn = fn;
@@ -954,6 +954,20 @@ void pasang_objek_metode(VM& vm, ObyekObj* o, std::string_view nama, std::size_t
     o->define(vm.heap(), native_teks_objek(vm, std::string(nama)), Value::obyek(n), rt::AttrDefault);
 }
 }  // namespace
+
+// Wrapper publik (dipakai `stdlib_peta.cpp`).
+void daftarkan(VM& vm, std::string_view nama, std::size_t n_param, bool variadic, rt::NativeFn fn) {
+    daftarkan_impl(vm, nama, n_param, variadic, fn);
+}
+void daftarkan_nilai(VM& vm, std::string_view nama, Value v) { daftarkan_nilai_impl(vm, nama, v); }
+ObyekObj* buat_namespace(VM& vm, std::string_view nama) { return buat_namespace_impl(vm, nama); }
+void pasang_prototype_metode(VM& vm, std::uint8_t jenis_objek, std::string_view nama, std::size_t n_param,
+                             rt::NativeFn fn) {
+    pasang_prototype_metode_impl(vm, jenis_objek, nama, n_param, fn);
+}
+void pasang_objek_metode(VM& vm, ObyekObj* o, std::string_view nama, std::size_t n_param, rt::NativeFn fn) {
+    pasang_objek_metode_impl(vm, o, nama, n_param, fn);
+}
 
 void pasang_semua(VM& vm) {
     // Tabel global & method bawaan adalah root GC: tanpa ini, koleksi pertama
@@ -1037,6 +1051,9 @@ void pasang_semua(VM& vm) {
     // --- method Janji ---
     method_janji(vm)[std::string("then")] = native_janji_then;
     method_janji(vm)[std::string("tangkep")] = native_janji_tangkep;
+
+    // --- Peta, Himpunan, Janji.all/race/selesai/tolak (lihat stdlib_peta.cpp) ---
+    pasang_peta(vm);
 
     // --- prototype Dhaptar & Teks (method bawaan) ---
     const std::uint8_t ARR = static_cast<std::uint8_t>(OK::Array);

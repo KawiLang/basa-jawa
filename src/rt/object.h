@@ -309,6 +309,24 @@ public:
     void ke_dictionary(Heap& heap);
     void kompak();
     [[nodiscard]] bool dictionary() const noexcept { return slot == nullptr; }
+    /// Enumerasi seluruh properti (bukan accessor) untuk disalin, mis. ke
+    /// `Peta`. Bentuk dictionary maupun inline menghasilkan urutan yang sama
+    /// (urutan definisi).
+    template <class F>
+    void each_properti(F&& f) const {
+        if (slot != nullptr) {
+            if (shape != nullptr) {
+                for (std::size_t i = 0; i < shape->jumlah(); ++i) {
+                    const Properti& p = shape->at(i);
+                    if (p.index < 0 || static_cast<std::size_t>(p.index) >= jumlah_slot) continue;
+                    if ((p.attr & AttrAccessor) != 0) continue;
+                    f(p.kunci, slot[p.index]);
+                }
+            }
+            return;
+        }
+        for (const auto& kv : dict) f(kv.first, kv.second);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -456,6 +474,18 @@ public:
         Value on_slamet;
         Value on_tolak;
         Value asli;  ///< promise asal (untuk thenable)
+        /// `Janji.all`/`Janji.race`: kalau `kumpulan_tujuan` terisi, entri ini
+        /// BUKAN handler `.then`, melainkan penggumpalan: saat Janji ini selesai,
+        /// nilainya ditulis ke `kumpulan[nama_indeks]` lalu `sisa_kumpul`
+        /// dikurangi. `kumpulan`/`kumpulan_tujuan` dimiliki VM dan di-root
+        /// sebagai akar GC.
+        rt::JanjiObj* kumpulan_tujuan = nullptr;
+        ArrayObj* kumpulan = nullptr;
+        std::size_t nama_indeks = 0;
+        /// Jumlah Janji yang belum selesai (hanya untuk `all`; `race` memakai 1).
+        std::size_t sisa_kumpul = 0;
+        /// `true` untuk `Janji.all` (tunggu semua), `false` untuk `Janji.race`.
+        bool kumpul_semua = true;
     };
     std::vector<Then> then_daftar;
     std::vector<Value> tangkap_daftar;   ///< .tangkep

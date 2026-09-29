@@ -855,7 +855,23 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                         }
                     }
                 } else {
-                    dorong(Value::mboh());
+                    // BUKAN class: `anyaar` pada fungsi native diperlakukan
+                    // sebagai pemanggilan biasa. Tanpa ini `anyaar Tanggal(0)`,
+                    // `anyaar Peta()`, `anyaar Himpunan([1,2])` menghasilkan
+                    // `mboh` -- `NEW` hanya `Golongan`.
+                    if (o != nullptr && (o->h.kind == OK::Closure || o->h.kind == OK::Fungsi ||
+                                          o->h.kind == OK::Native || o->h.kind == OK::BoundFn)) {
+                        std::vector<Value> salinan(args);
+                        panggil_objek(ctor, Value::mboh(), salinan);
+                        if (galat_.ada) {
+                            const Value v = galat_.nilai;
+                            galat_.ada = false;
+                            if (unwind_galat(v)) break;
+                            return Status::Galat;
+                        }
+                    } else {
+                        dorong(Value::mboh());
+                    }
                 }
                 break;
             }

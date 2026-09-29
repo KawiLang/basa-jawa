@@ -1,6 +1,6 @@
 # Pustaka standar Basa Jawa
 
-Bagian ini mendokumentasikan apa yang **benar-benar ada** di `src/stdlib/stdlib.cpp`.
+Bagian ini mendokumentasikan apa yang **benar-benar ada** di `src/stdlib/` (`stdlib.cpp` + `stdlib_peta.cpp`).
 Yang tidak terdaftar di sini **belum ada** — lihat `STATUS.md`.
 
 Semua nama API memakai kata kunci Bahasa Jawa; argumen & nilai balik mengikuti
@@ -62,6 +62,60 @@ semantik Bagian 3 (tanpa koersi implisit, D-007).
 |---|---|---|
 | `StdAksara.angka_jawa(n)` | → teks | Angka ke aksara Jawa. Digit U+A9D0..U+A9D9 (`JAVANESE DIGIT ZERO`..`NINE`). `21` → `꧒꧑`; angka negatif didahului U+A9CA (`JAVANESE PADA ADEG`, tanda baca). |
 | `StdAksara.angka_arab(t)` | → angka | Kebalikan dari `angka_jawa`; `NaN` bila ada karakter bukan digit aksara. |
+
+## `Peta` & `Himpunan`
+
+Keduanya diimplementasikan sebagai open addressing di `src/rt/object.cpp`
+(`PetaObj`, `HimpunanObj`). `Himpunan` sebenarnya peta dengan kunci == nilai.
+
+Constructor: `Peta()`, `Peta(peta_lain)`, `Peta({a: 1})` — dan
+`Himpunan()`, `Himpunan([1, 2, 2])`, `Himpunan(peta)`. Kunci boleh nilai apa
+saja; kunci tekstual dan numerik **tidak** tertukar (`peta[1]` bukan `peta["1"]`).
+
+| Method `Peta` | Hasil |
+|---|---|
+| `p.dhawa` | jumlah pasangan aktif (properti, bukan method) |
+| `p.get(k[, bawaan])` | nilai, atau `bawaan` kalau tidak ada |
+| `p.set(k, v)` | **mengembalikan `p`** supaya bisa dirantai |
+| `p.hapus(k)` | `bener` kalau ada yang dihapus |
+| `p.ada(k)` | `bener`/`salah` |
+| `p.kosong()` | `bener` kalau tidak ada pasangan |
+| `p.bersih()` | kosongkan semua |
+| `p.kunci()` / `p.nilai()` | dhaptar, urutan sisip |
+| `p.entri()` | dhaptar pasangan `[kunci, nilai]` |
+| `p.akeh("kunci"\|"nilai")` | dhaptar kunci atau nilai |
+
+| Method `Himpunan` | Hasil |
+|---|---|
+| `h.dhapa` | jumlah anggota aktif (properti) |
+| `h.tambah(x)` | **mengembalikan `h`** supaya bisa dirantai |
+| `h.hapus(x)` / `h.ada(x)` | hapus / cek |
+| `h.kosong()` / `h.bersih()` | kosong? / kosongkan |
+| `h.ke_dhaptar()` | dhaptar anggota, urutan sisip |
+
+Pembacaan langsung juga jalan: `peta["a"]` sama dengan `peta.get("a")`, dan
+`peta["a"] = 1` sama dengan `peta.set("a", 1)`.
+
+## `Janji` (method statis)
+
+| Fungsi | Hasil |
+|---|---|
+| `Janji.all([...])` | Janji yang selesai setelah **semua** selesai; hasilnya dhaptar dengan nilai pada indeksnya. Satu yang ditolak langsung menolak gabungan. |
+| `Janji.race([...])` | Janji yang selesai pada Janji **pertama** yang selesai. |
+| `Janji.selesai(v)` | Janji yang sudah selesai dengan nilai `v` — berguna untuk menulis fungsi `mengko` tanpa `enteni`. |
+| `Janji.tolak(e)` | Janji yang sudah ditolak. |
+
+Nilai biasa (bukan Janji) di dalam iterable diperlakukan sebagai Janji yang
+sudah selesai, sama seperti ECMAScript. Iterable kosong: `all` langsung selesai
+dengan dhaptar kosong, `race` selesai dengan `mboh`.
+
+Method instans: `j.then(f)`, `j.tangkep(f)`, `j.jenis` (`nunggu`/`slamet`/
+`gagal`), `j.hasil`.
+
+**Batas yang diketahui.** `Wektu.tundha` hanya mengurutkan timer, tidak
+menunggu ms sungguhan (loop acara deterministik — lihat `docs/async.md`), jadi
+`Janji.all` pada Janji dari timer selesai pada urutan timer pertama, bukan
+setelah waktu sebenarnya berlalu.
 
 ## Dhaptar (method bawaan)
 
@@ -201,14 +255,14 @@ Method instans: `ke_teks`, `ke_tanggal`, `ke_waktu`, `tahun`, `bulan`, `hari`,
 Sebutkan eksplisit agar tidak disalahpahami sebagai "hilang":
 
 - Modul bawaan `Matematika`, `Object`, `Dhaptar`, `Teks` versi lengkap.
-- `Map`/`Peta` komprehensif, `Set`/`Himpunan`.
 - Zona waktu lokal & daylight saving; kalender selain Gregorian (Rejrah/Saka,
   Hijriah); format tanggal bebas selain ISO-8601.
 - Regex: lookahead/lookbehind, backreference, kuantifier possessif, `\p{...}`,
   mode `n`, dan pencocokan berbasis titik kode (`u` belum berarti apa-apa --
   mesinnya byte-oriented).
 - Akses berkas, proses, jaringan. Semua I/O masih blocking dan sinkron.
-- Agregator Janji: `Janji.all`, `Janji.race`, `Janji.anySelesai`, `Janji.bungkus`.
+- Janji: `Janji.anySelesai` & `Janji.bungkus` (yang `all`/`race`/`selesai`/
+  `tolak` sudah ada).
 - Jam nyata: `Wektu.tundha` hanya mengurutkan, tidak menunggu.
 - `Intl`, `Buffer`.
 - Inspector, `Proxy`, `Reflect`.

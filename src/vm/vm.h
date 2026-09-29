@@ -309,6 +309,11 @@ public:
 
     // ---------------------------------------------------------- objek helper
     ArrayObj* buat_dhaptar(std::size_t kapasitas = 4);
+    /// Peta & himpunan kosong. `HimpunanObj::isi` adalah `PetaObj` yang sudah
+    /// jadi anggota (bukan objek GC tersendiri), jadi `h->isi.h.kind` disetel
+    /// di sini supaya `mark` tidak salah memperlakukannya.
+    rt::PetaObj* buat_peta();
+    rt::HimpunanObj* buat_himpunan();
     ObyekObj* buat_obyek();
     TeksObj* buat_teks(std::string_view s);
     ObyekObj* prototipe_dasar();

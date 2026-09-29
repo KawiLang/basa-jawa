@@ -155,6 +155,31 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
             }
             // Objek regex & tanggal: method built-in-nya dipasang lewat tabel
             // yang sama dengan Dhaptar/Teks, jadi hanya perlu dicari.
+            case OK::Peta: {
+                // Kunci langsung: `peta["a"]`. Selain itu method bawaan
+                // (`dhawa`, `get`, `set`, `hapus`, ...) dilayani
+                // `cari_metode_builtin` supaya `Object.keys` tetap bersih.
+                auto* p = static_cast<rt::PetaObj*>(cur);
+                if (const std::string_view n = sv(kunci); n == "dhawa" || n == "panjang" ||
+                                                n == "dawa" || n == "length") {
+                    return Value::number(static_cast<double>(p->jumlah_aktif));
+                }
+                if (rt::PetaObj::Entri* e = p->cari(kunci)) return e->nilai;
+                const std::string_view nama = sv(kunci);
+                const Value f = stdlib::cari_metode_builtin(*this, nama, static_cast<std::uint8_t>(OK::Peta));
+                if (f.is_obyek()) return f;
+                cur = objek(p->prototipe);
+                continue;
+            }
+            case OK::Himpunan: {
+                auto* h = static_cast<rt::HimpunanObj*>(cur);
+                const std::string_view nama = sv(kunci);
+                if (nama == "dhapa") return Value::number(static_cast<double>(h->isi.jumlah_aktif));
+                const Value f = stdlib::cari_metode_builtin(*this, nama, static_cast<std::uint8_t>(OK::Himpunan));
+                if (f.is_obyek()) return f;
+                cur = objek(h->prototipe);
+                continue;
+            }
             case OK::Regex:
             case OK::Tanggal: {
                 if (kunci.is_obyek()) {
@@ -351,6 +376,8 @@ void VM::set_index_value(Value obj, Value kunci, Value nilai) {
             return;
         }
         ob->set(heap_, kunci, nilai);
+    } else if (o->h.kind == OK::Peta) {
+        static_cast<rt::PetaObj*>(o)->pasang(kunci, nilai);
     } else if (o->h.kind == OK::Instance) {
         // Setter pada prototipe class (Accessor didefinisikan di prototipe).
         if (auto* inst = static_cast<InstanceObj*>(o); inst->kelas != nullptr) {

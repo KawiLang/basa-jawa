@@ -78,7 +78,39 @@ void VM::selesaikan_janji(rt::JanjiObj* j, Value nilai, bool ditolak) {
         antrean_mikrotugas_.push_back(std::move(t));
     }
     // Handler `.then`/`.tangkep` juga dijadwalkan sebagai mikrotugas.
-    for (const rt::JanjiObj::Then& th : j->then_daftar) {
+    //
+    // Di-iterate dengan indeks, bukan range-for: entri penggumpalan
+    // (`Janji.all`/`Janji.race`) menulis balik `sisa_kumpul`, dan
+    // `selesaikan_janji(th.kumpulan_tujuan, ...)` bisa menambah entri baru pada
+    // Janji lain -- bukan pada `j`, tapi-clear di akhir tetap harus melihat
+    // semua entri yang sudah diproses.
+    for (std::size_t i = 0; i < j->then_daftar.size(); ++i) {
+        const rt::JanjiObj::Then th = j->then_daftar[i];
+        if (th.kumpulan_tujuan != nullptr) {
+            // Entri penggumpalan (`Janji.all`/`Janji.race`), bukan handler.
+            if (th.kumpul_semua) {
+                if (ditolak) {
+                    // Satu penolakan sudah cukup: Janji gabungan langsung ditolak.
+                    selesaikan_janji(th.kumpulan_tujuan, nilai, true);
+                    continue;
+                }
+                if (th.kumpulan != nullptr && th.nama_indeks < th.kumpulan->panjang) {
+                    th.kumpulan->elemen[th.nama_indeks] = nilai;
+                }
+                if (j->then_daftar[i].sisa_kumpul > 0) --j->then_daftar[i].sisa_kumpul;
+                if (j->then_daftar[i].sisa_kumpul == 0) {
+                    selesaikan_janji(th.kumpulan_tujuan,
+                                     th.kumpulan == nullptr ? Value::mboh() : Value::obyek(th.kumpulan),
+                                     false);
+                }
+                continue;
+            }
+            // `race`: Janji pertama yang selesai menentukan penentu. Janji
+            // gabungan yang sudah selesai mengabaikan sisanya
+            // (`selesaikan_janji` sudah idempoten).
+            selesaikan_janji(th.kumpulan_tujuan, nilai, ditolak);
+            continue;
+        }
         const Value f = ditolak ? th.on_tolak : th.on_slamet;
         if (!f.is_obyek()) continue;
         Mikrotugas t;

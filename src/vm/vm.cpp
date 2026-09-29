@@ -153,6 +153,19 @@ void VM::registrasikan_root_visitor(std::function<void(gc::RootVisitor&)> fn) {
 // Objek helper
 // ===========================================================================
 
+rt::PetaObj* VM::buat_peta() {
+    auto* p = heap_.alokasi<rt::PetaObj>();
+    p->h.kind = OK::Peta;
+    return p;
+}
+
+rt::HimpunanObj* VM::buat_himpunan() {
+    auto* h = heap_.alokasi<rt::HimpunanObj>();
+    h->h.kind = OK::Himpunan;
+    h->isi.h.kind = OK::Peta;  // himpunaninterna adalah peta; `isi` sudah di GC
+    return h;
+}
+
 ArrayObj* VM::buat_dhaptar(std::size_t kapasitas) {
     auto* a = heap_.alokasi<ArrayObj>();
     a->h.kind = OK::Array;

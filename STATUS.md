@@ -14,12 +14,12 @@ lokal, pustaka standar lengkap, dan tooling (REPL, `fmt`, `bench`).
 | Metrik | Nilai |
 |---|---|
 | Baris kode C++ (`src/` + `tests/`) | 21.260 |
-| Opcode bytecode | 131 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN`, `TRY_KLAUSUL`, `INSTAN_DARI`, `COCOK_TIPE` baru) |
+| Opcode bytecode | 132 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN`, `TRY_KLAUSUL`, `INSTAN_DARI`, `COCOK_TIPE` baru) |
 | Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 3 berkas, 152 cek, 81 test |
-| Uji bahasa (`jawa tes`) | 8 berkas, 341 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, ...) |
+| Uji bahasa (`jawa tes`) | 9 berkas, 397 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, ...) |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di ketiganya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
@@ -114,6 +114,14 @@ di semua pengimpor (termasuk lewat rantai re-export). Yang belum:
 
 - Belum ada modul bawaan (`std:...`); tidak ada bundling, tidak ada peta
   alias nama berkas.
+- **`Peta`/`Himpunan`/`Janji.all` SELESAI (tahap 6).** `PetaObj` &
+  `HimpunanObj` sudah ada sebagai kelas runtime sejak lama tapi tidak pernah
+  bisa dibuat dari kode Basa Jawa — tidak ada constructor global dan
+  `VM::ambil_properti` tidak punya cabangnya. Sekarang bisa, plus
+  `Janji.all`/`race`/`selesai`/`tolak`. Lihat `docs/stdlib.md`.
+- **`anyaar` pada fungsi native SELESAI (tahap 6).** `NEW` hanya menangani
+  `Golongan`, jadi `anyaar Tanggal(0)` menghasilkan `mboh`. Sekarang
+  `anyaar` pada native/closure diperlakukan sebagai pemanggilan biasa.
 
 ### 3. Pustaka standar: regex & `Tanggal` sudah, sisanya belum
 
@@ -133,8 +141,11 @@ Yang **hanya ada sebagian**, dan sebaiknya dibaca sebagai batasan nyata:
   ada daylight saving, tidak ada kalender selain Gregorian (Rejrah/Saka dan
   Hijriah tidak ada).
 
-Belum: `Peta`/`Himpunan` komprehensif, berkas, proses, `Janji.all`/`race`/
-`anySelesai`, I/O async, dan format tanggal bebas selain ISO-8601.
+Sudah ditambahkan pada tahap 6: `Peta` (11 method), `Himpunan` (7 method), dan
+`Janji.all`/`race`/`selesai`/`tolak`.
+
+Belum: berkas, proses, I/O async, `Janji.anySelesai`/`bungkus`, dan format
+tanggal bebas selain ISO-8601.
 Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
 
 ### 4. Bagian lain yang belum
@@ -256,7 +267,7 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 341/341 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 397/397 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 
