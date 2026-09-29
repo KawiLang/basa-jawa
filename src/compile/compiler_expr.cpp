@@ -791,27 +791,27 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
     // `gawe f() { tulis(y); tetep y = 1; }` menghasilkan galat TDZ.
     if (!n->ekspresi_badan) pradaftar_tdz(n->awak);
 
-    // Prolog parameter default: kalau slot parameter masih kosong, isi dengan
-    // nilai default-nya.
+    // Prolog parameter default: kalau pemanggil TIDAK memberikan argumen pada
+    // posisi itu, isi slot dengan nilai default-nya.
     //
     // CATATAN: `nilai_default` sudah lama di-parse tapi TIDAK pernah dikompilasi,
     // jadi `gawe f(a, b = 2) {}` diam-diam memberi `mboh` untuk `b` (ditemukan
     // regression test hasil fuzzing, bukan test yang ditulis orang).
     //
-    // Penentuan "argumen tidak diberikan" memakai `JUMP_IF_NOT_NULLISH`, bukan
-    // jumlah argumen yang diterima. Konsekuensinya: argumen yang sengaja
-    // dilewatkan sebagai `mboh` juga akan memakai nilai default. Membedakan
-    // keduanya butuh opcode baru yang membaca `Frame::n_argumen`; Untuk sekarang,
-    // selisihnya dianggap tidak sepadat dengan complexity-nya (lihat
-    // `STATUS.md`).
+    // Penentuan "argumen tidak diberikan" memakai opcode `PARAM_HADAH a`, yang
+    // membaca `Frame::n_argumen` -- BUKAN `JUMP_IF_NOT_NULLISH` atas nilainya.
+    // Bedanya menentukan: dengan `JUMP_IF_NOT_NULLISH`, pemanggilan
+    // `f(mboh)` yang SENGAJA mengosongkan argumen ikut memakai nilai default,
+    // jadi `f(mboh)` dan `f()` tidak bisa dibedakan. Lihat D-036.
     for (std::size_t i = 0; i < n->param.size(); ++i) {
         const auto* par = static_cast<const ast::ParamDeklarasi*>(n->param[i]);
         if (par == nullptr || par->rest || par->nilai_default == nullptr) continue;
         const std::size_t slot = i + 1;
         if (slot > 0xFFu) continue;
-        emit(Op::GET_LOCAL, static_cast<std::uint16_t>(slot));
-        const std::size_t l_ada = emit(Op::JUMP_IF_NOT_NULLISH, 0);
+        emit(Op::PARAM_HADAH, static_cast<std::uint16_t>(i));
+        const std::size_t l_ada = emit(Op::JUMP_IF_TRUE, 0);  // hanya peek
         emit(Op::POP);
+        emit(Op::MBOH);
         ekspresi(par->nilai_default);
         emit(Op::SET_LOCAL, static_cast<std::uint16_t>(slot));
         patch(l_ada, fn().chunk->ukuran_kode());

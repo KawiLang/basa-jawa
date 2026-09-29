@@ -245,7 +245,8 @@ std::size_t Compiler::cari_upvalue(const std::string_view nama) {
 // ===========================================================================
 
 bool Compiler::adalah_sel(std::string_view nama) const {
-    return sel_slot_.find(std::string(nama)) != sel_slot_.end();
+    if (sel_slot_.find(std::string(nama)) != sel_slot_.end()) return true;
+    return !fungsi_stack_.empty() && fungsi_stack_.back().sel_nama.count(std::string(nama)) != 0;
 }
 
 /// Catat nama yang diekspor sebagai **variabel** (bukan fungsi/kelas), supaya

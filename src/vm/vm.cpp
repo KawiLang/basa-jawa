@@ -59,7 +59,14 @@ VM::VM(const VMOptions& opt) : opt_(opt), heap_(opt.gc_stress, opt.maks_memori_m
             if (u != nullptr) rv.rooted(u->get());
         }
         for (const auto& sel : sel_tutup_) {
-            if (sel != nullptr && !sel->open()) rv.rooted(sel->nilai);
+            if (sel == nullptr) continue;
+            if (!sel->open()) rv.rooted(sel->nilai);
+            // Upvalue terikat-sel menyimpan `SelObj*` mentahnya. Sel itu harus
+            // menjadi akar juga: pengikat per-iterasi `kanggo` mengganti isi
+            // slot tiap iterasi (`SEL_SALIN`), jadi sel lama hanya dipegang
+            // upvalue milik closure -- tanpa baris ini sel itu tersapu dan
+            // upvalue menunjuk memori bebas (ditemukan dengan `--gc-stress`).
+            if (sel->terikat_sel()) rv.rooted(Value::obyek(sel->sel));
         }
         rv.rooted(proto_dasar_);
         rv.rooted(proto_dhaptar_);

@@ -154,10 +154,37 @@ yang tidak dibaca sebelum deklarasi adalah nol opcode.
 - Destructuring deklaratif (`const { a } = ...`) menutup TDZ di akhir statement,
   jadi slotnya terbaca sebagai sudah siap setelah seluruh pengikatan selesai.
 
+## Pengikatan per-iterasi `kanggo`
+
+`kanggo (ana i = 0; i < 3; i = i + 1)` mengikat `i` **per-iterasi**, sama
+seperti ECMAScript: closure yang dibuat di dalam body setiap iterasi melihat
+nilai `i` pada iterasinya sendiri, bukan nilai iterasi terakhir.
+
+```
+ana t = [];
+kanggo (ana i = 0; i < 3; i = i + 1) t.tambah(() => i);
+kanggo (ana f saka t) tulis(f());   // 0, 1, 2
+```
+
+Caranya: slot pengikat loop berisi `SelObj` (`SEL_BUAT`), dan tiap akhir
+iterasi `SEL_SALIN` menggantinya dengan sel baru berisi nilai yang sama
+(`CreatePerIterationEnvironment`). Pembacaan & penulisan `i` memakai
+`GET_CELL`/`SET_CELL`, jadi `cari_atau_buat_upvalue` mengikat closure ke sel
+yang sedang aktif -- bukan ke slot stack. Lihat D-037.
+
+`terusna` melompat ke titik **sebelum** `SEL_SALIN`, bukan langsung ke bagian
+pembaruan: kalau tidak, pembaruan menulis ke sel yang sudah ditangkap closure
+iterasi itu.
+
+Setelah loop, `i` berisi nilai iterasi terakhir (sel terakhir tidak disalin
+lagi karena kondisi sudah gagal) -- sama seperti JavaScript.
+
 ### Batasan yang disengaja
 
 - Slot bersifat **fungsi-wide**, bukan blok-wide, jadi kompilator ini tidak
   mengimplementasikan skop blok. `pradaftar_tdz` karena itu menelusuri seluruh
-  badan fungsi; pengikatan per-iterasi `for (let i...)` tidak dimodelkan
-  (nilai `i` di akhir loop adalah nilai iterasi terakhir).
+  badan fungsi. Konsekuensinya: dua pengikat dengan nama sama di loop berbeda
+  dalam satu fungsi saling berebut slot, dan loop kedua yang memakai
+  `kanggo (x saka ...)` tanpa `ana` bisa salah membaca pengikat loop lain.
+  Pengikatan per-iterasi sendiri sudah dimodelkan (di atas).
 - `catch (e)` tidak punya TDZ.

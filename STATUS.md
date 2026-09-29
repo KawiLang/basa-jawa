@@ -14,12 +14,12 @@ lokal, pustaka standar lengkap, dan tooling (REPL, `fmt`, `bench`).
 | Metrik | Nilai |
 |---|---|
 | Baris kode C++ (`src/` + `tests/`) | 21.260 |
-| Opcode bytecode | 126 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC` baru) |
+| Opcode bytecode | 128 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN` baru) |
 | Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 3 berkas, 152 cek, 81 test |
-| Uji bahasa (`jawa tes`) | 5 berkas, 257 assertion (regex, `Tanggal`, live binding modul, field kelas, ...) |
+| Uji bahasa (`jawa tes`) | 5 berkas, 284 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, ...) |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di ketiganya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
@@ -144,8 +144,14 @@ Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
   `pilih` sebagai ekspresi pun belum. Lihat `docs/control-flow.md`.
 - Hanya `tangkep` pertama yang dipakai sebagai handler; seleksi berdasarkan
   tipe kleru belum ada (kompilator memberi peringatan S504).
-- `for (let i ...)` mengikat per-fungsi, bukan per-iterasi, jadi `i` di akhir
-  loop adalah nilai iterasi terakhir (slot kompilator bersifat fungsi-wide).
+- **Pengikatan per-iterasi `kanggo` SELESAI (tahap 2).** `kanggo (ana i = ...)`
+  dan `kanggo (ana x saka ...)` mengikat per-iterasi lewat `SelObj` +
+  `SEL_SALIN` (D-037), jadi closure tiap iterasi melihat nilai iterasinya
+  sendiri. Yang **tetap** belum ada: skop blok, sehingga dua pengikat dengan
+  nama sama di loop berbeda dalam satu fungsi masih saling berebut slot.
+- **Parameter default: `mboh` vs argumen hilang SELESAI (tahap 2).** Opcode
+  `PARAM_HADAH` membaca `Frame::n_argumen` (D-036), jadi `f(mboh)` tidak lagi
+  tertukar dengan `f()`.
 - `Wektu.tundha` hanya mengurutkan timer, tidak menunggu ms sungguhan
   (loop acara deterministik, lihat `docs/async.md`).
 - Pemanggil fungsi `mengko` menunggu sampai fungsi itu selesai; `tulis(f())`
@@ -229,7 +235,7 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 93/93 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 284/284 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

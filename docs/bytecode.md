@@ -173,6 +173,7 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 | 98 | `JUMP_IF_NULLISH` | 1 | `c - >` | Lompat ke `a` bila puncak nullish. MEMBATAS. |
 | 99 | `LOOP` | 1 | `- > ` | Alias `JUMP`. |
 | 100 | `TEST_TRUTHY` | 0 | `c - >` | Dorong kebenaran puncak. |
+| 100b | `PARAM_HADAH` | 1 | `- > b` | Dorong true bila argumen indeks `a` benar-benar diberikan pemanggil (`Frame::n_argumen > a`). Dipakai prolog parameter default supaya `f(mboh)` tidak tertukar dengan `f()` (D-036). |
 
 ## Galat & handler  (`galat`, 4 opcode)
 
@@ -228,7 +229,8 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 | 159 | `SEL_ALIAS` | 1 | `s - > ` | Arahkan sel di puncak ke sel yang sudah ada, jadi pembacaan & penulisan diteruskan. Rantai alias ditelusuri sampai ke akar. |
 | 160 | `GET_CELL` | 1 | `- > v` | Baca isi sel upvalue (bukan upvalue-nya). |
 | 161 | `SET_CELL` | 1 | `v - > v` | Tulis isi sel upvalue; **harus** lewat `SelObj::tulis()` supaya alias ikut — menulis `nilai` langsung membuat live binding hanya satu arah. |
-| 162 | `SEL_BUAT` | 0 | `v - > s` | Bungkus nilai menjadi `SelObj` baru (variabel modul yang diekspor). |
+| 162 | `SEL_BUAT` | 0 | `v - > s` | Bungkus nilai menjadi `SelObj` baru (variabel modul yang diekspor, atau pengikat per-iterasi `kanggo`). |
+| 163 | `SEL_SALIN` | 1 | `- > -` | Ganti sel pada slot `a` dengan sel BARU berisi nilai yang sama. Dipanggil tiap akhir iterasi `kanggo` supaya closure tiap iterasi menangkap sel berbeda (D-037). |
 
 ## Nilai runtime  (`objek`)
 

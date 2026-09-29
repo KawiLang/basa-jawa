@@ -314,6 +314,13 @@ void Heap::tandai_anak(Obj* o, Worklist& wl) {
             mark(static_cast<rt::KleruObj*>(o)->sebab);
             break;
         }
+        case rt::OK::Sel: {
+            // Sel menyimpan nilainya sendiri. Tanpa penandaan ini nilai di
+            // dalam sel bisa tersapu padahal sel-nya masih hidup.
+            auto* s = static_cast<rt::SelObj*>(o);
+            mark(s->nilai);
+            break;
+        }
         case rt::OK::BoundFn: {
             auto* b = static_cast<rt::BoundFnObj*>(o);
             mark(b->target);

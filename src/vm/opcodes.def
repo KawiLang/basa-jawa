@@ -133,6 +133,10 @@ JAWA_OP(JUMP_IF_FALSE, 1, "c - >", "kontrol")
 JAWA_OP(JUMP_IF_TRUE,  1, "c - >", "kontrol")
 JAWA_OP(JUMP_IF_NOT_NULLISH, 0, "v - >", "kontrol")
 JAWA_OP(JUMP_IF_NULLISH, 1, "c - >", "kontrol")
+// `PARAM_HADAH a`: dorong boolean "argumen pada indeks `a` benar-benar diberikan
+// oleh pemanggil". Membedakan "argumen tidak diberikan" dari "argumen bernilai
+// `mboh`" -- yang tidak bisa dilakukan `JUMP_IF_NOT_NULLISH` (lihat D-036).
+JAWA_OP(PARAM_HADAH,  1, "- > b", "kontrol")
 JAWA_OP(LOOP,       1, "- > ", "kontrol")
 JAWA_OP(TEST_TRUTHY,0, "c - >", "kontrol")
 
@@ -166,6 +170,10 @@ JAWA_OP(SEL_ALIAS,  1, "s - > ", "modul")
 JAWA_OP(GET_CELL,   1, "- > v", "variabel")
 JAWA_OP(SET_CELL,   1, "v - > v", "variabel")
 JAWA_OP(SEL_BUAT,   0, "v - > s", "modul")
+// `SEL_SALIN a`: ganti sel pada slot `a` dengan sel BARU berisi nilai yang
+// sama. Dipakai pengikat per-iterasi `kanggo`: closure tiap iterasi menangkap
+// sel yang berbeda, sehingga `i` yang dilihat closure tetap nilai iterasinya.
+JAWA_OP(SEL_SALIN, 1, "- > -", "modul")
 // --- nilai runtime yang butuh konstruksi ---
 // `MAKE_REGEX k` / `MAKE_TANGGAL k` membentuk objek dari konstanta teks (pola &
 // flag regex, atau ISO-8601). Opcode terpisah karena keduanya bisa gagal

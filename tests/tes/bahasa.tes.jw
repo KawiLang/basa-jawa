@@ -103,6 +103,57 @@ kanggo (ana i = 0; i < 5; i = i + 1) {
 }
 pratelas(jumlah_terusna, 0 + 2 + 3 + 4);
 
+// --- pengikat per-iterasi `kanggo` -----------------------------------------
+// `kanggo (ana i = ...)` mengikat per-iterasi (lihat D-037): tiap closure
+// harus melihat nilai `i` pada iterasinya, bukan nilai iterasi terakhir.
+ana tangkap_klasik = [];
+kanggo (ana i = 0; i < 3; i = i + 1) tangkap_klasik.tambah(() => i);
+pratelas(tangkap_klasik[0](), 0);
+pratelas(tangkap_klasik[1](), 1);
+pratelas(tangkap_klasik[2](), 2);
+
+// CATATAN: nama pengikat di sini bukan `x`/`i` yang sudah dipakai loop lain di
+// berkas ini. Slot kompilator bersifat fungsi-wide (belum ada scope blok), jadi
+// dua pengikat dengan nama sama di loop berbeda saling berebut slot -- lihat
+// STATUS.md.
+ana tangkap_of = [];
+kanggo (ana huruf saka ["a", "b", "c"]) tangkap_of.tambah(() => huruf);
+pratelas(tangkap_of[0](), "a");
+pratelas(tangkap_of[1](), "b");
+pratelas(tangkap_of[2](), "c");
+
+// Nilai pengikut setelah loop tetap yang terakhir (sel terakhir tidak disalin
+// ulang karena kondisi sudah gagal).
+kanggo (ana i = 0; i < 3; i = i + 1) { }
+pratelas(i, 3);
+
+// Loop tanpa closure harus berperilaku sama seperti sebelumnya.
+ana jumlah_klasik = 0;
+kanggo (ana i = 1; i <= 4; i = i + 1) jumlah_klasik = jumlah_klasik + i;
+pratelas(jumlah_klasik, 1 + 2 + 3 + 4);
+
+// `terusna` juga harus menyalin sel: kalau tidak, pembaruan menulis ke sel yang
+// sudah ditangkap closure iterasi itu.
+ana tangkap_terusna = [];
+kanggo (ana i = 0; i < 4; i = i + 1) {
+    tangkap_terusna.tambah(() => i);
+    yen (i == 1) { terusna; }
+}
+pratelas(tangkap_terusna.panjang, 4);
+pratelas(tangkap_terusna[0](), 0);
+pratelas(tangkap_terusna[1](), 1);
+pratelas(tangkap_terusna[2](), 2);
+pratelas(tangkap_terusna[3](), 3);
+
+// `mandheg` keluar sebelum salinan -- tidak ada iterasi tambahan.
+ana tangkap_mandheg = [];
+kanggo (ana i = 0; i < 5; i = i + 1) {
+    tangkap_mandheg.tambah(() => i);
+    yen (i == 2) { mandheg; }
+}
+pratelas(tangkap_mandheg.panjang, 3);
+pratelas(tangkap_mandheg[2](), 2);
+
 // --- `lakoni` (minimal sekali) ---------------------------------------------
 ana dihitung = 0;
 lakoni { dihitung = dihitung + 1; } nalika (dihitung < 3);
@@ -133,6 +184,24 @@ pratelas(fib(10), 55);
 gawe greet(sapaan = "Halo") { bali sapaan; }
 pratelas(greet(), "Halo");
 pratelas(greet("Dumet"), "Dumet");
+// `mboh` yang SENGAJA diberikan bukan "argumen tidak diberikan" (D-036).
+gawe mungkin(a, b = "default") { bali jenis(b) == "mboh" ? "mboh" : b; }
+pratelas(mungkin(1), "default");
+pratelas(mungkin(1, mboh), "mboh");
+pratelas(mungkin(1, "ada"), "ada");
+// Nilai falsy bukan nullish: `0`, `kosong`, `salah`, `""` tidak memicu default.
+gawe falsy(a = "default") { bali a; }
+pratelas(falsy(0), 0);
+pratelas(falsy(kosong), kosong);
+pratelas(falsy(salah), salah);
+pratelas(falsy(""), "");
+pratelas(falsy(), "default");
+// Rantai default: yang tidak diberikan memakai default, yang diberikan tidak.
+gawe rantai(a = 1, b = 2, c = 3) { bali `${a}-${b}-${c}`; }
+pratelas(rantai(), "1-2-3");
+pratelas(rantai(9), "9-2-3");
+pratelas(rantai(9, 8), "9-8-3");
+pratelas(rantai(9, 8, 7), "9-8-7");
 
 // Arrow ringkas.
 ana kali_kali = (a, b) => a * b;

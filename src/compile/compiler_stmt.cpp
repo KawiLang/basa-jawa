@@ -218,12 +218,49 @@ void Compiler::stmt_lakoni(const ast::LakoniStmt* n) {
     for (std::size_t p : Loop.patch_terusna) patch(p, mulai);
 }
 
+std::size_t Compiler::slot_iterasi(const ast::Node* target) {
+    // `kanggo (ana i = 0; ...)` dan `kanggo (ana x saka ...)`: pengikatnya
+    // per-iterasi. Slotnya berisi `SelObj`, dan tiap awal iterasi sel itu
+    // DISALIN (`SEL_SALIN`) sehingga closure yang dibuat pada iterasi ini
+    // menangkap sel yang tidak berubah pada iterasi berikutnya.
+    //
+    // Tanpa ini slot kompilator bersifat fungsi-wide: seluruh closure dalam
+    // loop membaca `i` yang sama, jadi setelah loop semuanya melihat nilai
+    // iterasi terakhir -- bukan nilai iterasinya (lihat D-037).
+    if (target == nullptr || target->kind != NK::DeklarasiVar) return std::string::npos;
+    const auto* d = static_cast<const ast::DeklarasiVarStmt*>(target);
+    if (d->destruktur || d->jeneng.empty()) return std::string::npos;
+    const std::size_t s = slot_baru_tdz(d->jeneng);
+    fn().sel_nama.insert(std::string(d->jeneng));
+    return s;
+}
+
 void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
     if (n == nullptr) return;
     // Inisialisasi (dijalankan sekali).
+    std::size_t s_iterasi = std::string::npos;
     if (n->inisialisasi != nullptr) {
         if (n->inisialisasi->kind == NK::DeklarasiVar) {
-            statement(n->inisialisasi);
+            s_iterasi = slot_iterasi(n->inisialisasi);
+            const auto* d = static_cast<const ast::DeklarasiVarStmt*>(n->inisialisasi);
+            if (d->destruktur || d->jeneng.empty()) {
+                statement(n->inisialisasi);
+            } else {
+                // Nilainya dihitung sekali, lalu disimpan di dalam sel.
+                if (d->nilai != nullptr) {
+                    ekspresi(d->nilai);
+                } else {
+                    emit(Op::MBOH);
+                }
+                emit(Op::SEL_BUAT);
+                emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s_iterasi));
+                // Tutup TDZ pengikat loop.
+                if (const auto it = fn().tdz_menunggu.find(s_iterasi); it != fn().tdz_menunggu.end()) {
+                    fn().chunk->tdz_daftar[it->second] =
+                        static_cast<std::uint16_t>(fn().chunk->ukuran_kode());
+                    fn().tdz_menunggu.erase(it);
+                }
+            }
         } else {
             ekspresi(n->inisialisasi);
             emit(Op::POP);
@@ -239,9 +276,21 @@ void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
         emit(Op::POP);
         fn().loop.back().terusna_tujuan = fn().chunk->ukuran_kode();
         stmt_awak(n->awak);
-        // `terusna` pada `kanggo` melompat ke BAGIAN PEMBARUAN (bukan ke kondisi),
-        // kalau tidak `i` tidak pernah bertambah.
-        const std::size_t ip_pembaruan = fn().chunk->ukuran_kode();
+        // Sel BARU tiap akhir iterasi, sebelum bagian pembaruan -- urutan yang
+        // sama dengan `CreatePerIterationEnvironment` ECMAScript: closure di
+        // body menangkap sel iterasinya, lalu salinan baru dipakai iterasi
+        // berikutnya (dan pembaruan menulis ke salinan itu).
+        // `terusna` pada `kanggo` melompat ke BAGIAN PEMBARUAN (bukan ke
+        // kondisi), kalau tidak `i` tidak pernah bertambah. Titik lompatnya
+        // TETAP SEBELUM salinan sel: salinan baru wajib dibuat juga pada jalur
+        // `terusna`. Kalau tidak, pembaruan menulis ke sel yang sudah ditangkap
+        // closure iterasi itu -- hasilnya `0 2 2 3` untuk
+        // `kanggo (ana i=0;i<4;i=i+1) { t.tambah(()=>i); yen (i==1) terusna; }`,
+        // bukan `0 1 2 3`.
+        const std::size_t ip_terusna = fn().chunk->ukuran_kode();
+        if (s_iterasi != std::string::npos) {
+            emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s_iterasi));
+        }
         if (n->pembaruan != nullptr) {
             ekspresi(n->pembaruan);
             emit(Op::POP);
@@ -250,14 +299,17 @@ void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
         const FungsiKonteks::Loop Loop = fn().loop.back();
         fn().loop.pop_back();
         for (std::size_t p : Loop.patch_mandheg) patch(p, fn().chunk->ukuran_kode());
-        for (std::size_t p : Loop.patch_terusna) patch(p, ip_pembaruan);
+        for (std::size_t p : Loop.patch_terusna) patch(p, ip_terusna);
         patch(keluar, fn().chunk->ukuran_kode());
         return;
     }
 
     fn().loop.back().terusna_tujuan = mulai;
     stmt_awak(n->awak);
-    const std::size_t ip_pembaruan = fn().chunk->ukuran_kode();
+    const std::size_t ip_terusna = fn().chunk->ukuran_kode();
+    if (s_iterasi != std::string::npos) {
+        emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s_iterasi));
+    }
     if (n->pembaruan != nullptr) {
         ekspresi(n->pembaruan);
         emit(Op::POP);
@@ -266,7 +318,7 @@ void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
     const FungsiKonteks::Loop Loop = fn().loop.back();
     fn().loop.pop_back();
     for (std::size_t p : Loop.patch_mandheg) patch(p, fn().chunk->ukuran_kode());
-    for (std::size_t p : Loop.patch_terusna) patch(p, ip_pembaruan);
+    for (std::size_t p : Loop.patch_terusna) patch(p, ip_terusna);
 }
 
 void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
@@ -286,13 +338,27 @@ void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
     emit(Op::POP);  // buang flag
 
     // Target harus berupa pengenal (destruktur perlu opcode sendiri).
+    //
+    // `kanggo (ana x saka ...)` juga mengikat per-iterasi (D-037): nilainya
+    // dibungkus sel baru tiap iterasi, jadi closure yang dibuat di dalam loop
+    // melihat nilai iterasinya sendiri, bukan nilai terakhir.
     if (n->target != nullptr && n->target->kind == NK::DeklarasiVar) {
         const auto* d = static_cast<const ast::DeklarasiVarStmt*>(n->target);
+        const std::size_t s_per = slot_iterasi(n->target);
         if (!d->destruktur && !d->jeneng.empty()) {
-            const std::size_t s = slot_baru_tdz(d->jeneng);
-            emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
+            if (s_per != std::string::npos) {
+                // Nilai iterasi ada di puncak stack: bungkus jadi sel dulu,
+                // lalu salin sel itu agar iterasi ini punya sel sendiri.
+                emit(Op::SEL_BUAT);
+                emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s_per));
+                emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s_per));
+            } else {
+                const std::size_t s = slot_baru_tdz(d->jeneng);
+                emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
+            }
             // Tutup TDZ target loop: `i` terikat sejak header dievaluasi.
-            if (const auto it = fn().tdz_menunggu.find(s); it != fn().tdz_menunggu.end()) {
+            const std::size_t s_tdz = s_per != std::string::npos ? s_per : slot_baru_tdz(d->jeneng);
+            if (const auto it = fn().tdz_menunggu.find(s_tdz); it != fn().tdz_menunggu.end()) {
                 fn().chunk->tdz_daftar[it->second] =
                     static_cast<std::uint16_t>(fn().chunk->ukuran_kode());
                 fn().tdz_menunggu.erase(it);

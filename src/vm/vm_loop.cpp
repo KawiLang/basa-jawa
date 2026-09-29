@@ -927,6 +927,13 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 if (v.is_mboh() || v.is_kosong()) f.ip = ins.a;
                 break;
             }
+            // Berapa argumen yang benar-benar diberikan pemanggil? Prolog
+            // parameter default butuh ini: `f(mboh)` HARUS menghasilkan `mboh`,
+            // bukan nilai default (lihat D-036).
+            case Op::PARAM_HADAH: {
+                dorong(Value::boolean(ins.a < f.n_argumen));
+                break;
+            }
             case Op::LOOP: f.ip = ins.a; break;
             case Op::TEST_TRUTHY: {
                 const Value v = ambil();
@@ -1095,6 +1102,20 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                               ? static_cast<rt::SelObj*>(target.mutable_pointer())
                               : nullptr;
                 if (sel != nullptr && t != nullptr && t != sel) sel->alias = t;
+                break;
+            }
+            // `SEL_SALIN a`: sel BARU berisi nilai sel lama. Dipakai pengikat
+            // per-iterasi `kanggo`, jadi closure yang dibuat pada iterasi
+            // berikutnya menangkap sel berbeda dan tidak melihat perubahan
+            // iterasi berikutnya (sifat ECMAScript untuk `for (let i ...)`).
+            case Op::SEL_SALIN: {
+                const Value& s = stack_[f.slot_base + ins.a];
+                Obj* o = objek(s);
+                auto* lama = (o != nullptr && o->h.kind == OK::Sel) ? static_cast<rt::SelObj*>(o) : nullptr;
+                auto* baru = heap_.alokasi<rt::SelObj>();
+                baru->h.kind = OK::Sel;
+                baru->nilai = lama != nullptr ? lama->baca() : s;
+                stack_[f.slot_base + ins.a] = Value::obyek(baru);
                 break;
             }
             // Baca/tulis lewat sel live binding. Slot lokal pengikatan impor

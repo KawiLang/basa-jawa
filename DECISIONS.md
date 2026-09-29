@@ -728,22 +728,30 @@ perilaku yang diinginkan, bukan regresi.
 
 ---
 
-## D-036. Parameter default: prolog `JUMP_IF_NOT_NULLISH`, bukan jumlah argumen
+## D-036. Parameter default: opcode `PARAM_HADAH`, bukan `JUMP_IF_NOT_NULLISH`
 
 **Konteks.** `ParamDeklarasi::nilai_default` sudah di-parse sejak Fase 2 tapi
-tidak pernah dikompilasi -- `gawe f(a, b = 2) { bali b; }` memberi `mboh`,
+tidak pernah dikompilasi -- `gawe f(a, b = 2) { bali b; }` selalu menghasilkan `mboh`, --
 selama ini tanpa test yang menangkapnya (ditemukan regression test hasil
-fuzzing).
+fuzzing). Perbaikannya sempat memakai `JUMP_IF_NOT_NULLISH` atas nilai slot,
+dengan penyimpangan yang tercatat: argumen yang **sengaja** diberi `mboh`
+ikut memakai nilai default.
 
-**Keputusan.** Prolog di awal badan fungsi: untuk tiap parameter dengan
-`nilai_default`, emit `GET_LOCAL slot; JUMP_IF_NOT_NULLISH Lewati; POP;
-<nilai_default>; SET_LOCAL slot; Lewati:`.
+**Keputusan (direvisi tahap 2).** Opcode baru `PARAM_HADAH a` yang mendorong
+`a < Frame::n_argumen`. Prolog jadi:
 
-**Penyimpangan yang diketahui.** JS membedakan "argumen tidak diberikan" dari
-"argumen bernilai `mboh`"; `JUMP_IF_NOT_NULLISH` tidak bisa. Membedakan keduanya
-butuh opcode baru yang membaca `Frame::n_argumen`, yang berarti menambah satu
-opcode dan satu jalur di loop bytecode untuk selisih yang jarang menimbulkan
-kejutan. Dicatat di `STATUS.md`.
+```
+PARAM_HADAH i ; JUMP_IF_TRUE Lewati ; POP ; MBOH ; <default> ; SET_LOCAL slot ; Lewati:
+```
+
+Jadi "argumen tidak diberikan" ditentukan oleh **jumlah argumen**, bukan oleh
+nilai slot.
+
+**Kenapa revisi ini penting.** Tanpa itu, `f(mboh)` dan `f()` tidak bisa
+dibedakan -- dan bentuk `gawe f(a, b = a)` ikut salah: `f(mboh)` seharusnya
+memberi `mboh`, bukan `mboh` yang sama secara tak sengaja, sementara
+`f(1, mboh)` jelas-jelas harus `mboh`. Selisihnya satu opcode; ketiadaannya
+sebuah penyimpangan yang terlihat oleh pengguna biasa, bukan kasus tepi.
 
 **Bug kedua yang ikut ketahuan.** `Chunk::n_argumen_tetap` ada tapi tidak pernah
 diisi, jadi VM menyalin argumen ke slot parameter rest dan mendahulukan dhaptar
@@ -751,6 +759,50 @@ sisa satu slot. Akibatnya `gawe f(a, ...sisa) { bali jenis(sisa); }` memberi
 `angka`. Diperbaiki dengan mengisi `n_argumen_tetap` di kompilator dan memakai
 `n_argumen_tetap` (bukan `jumlah_param`) untuk menyalin argumen di
 `VM::dorong_frame`.
+
+---
+
+## D-037. Pengikatan per-iterasi `kanggo` lewat `SelObj` + `SEL_SALIN`
+
+**Konteks.** Slot kompilator bersifat fungsi-wide (tidak ada skop blok --
+lihat D-033), jadi `kanggo (ana i = 0; i < 3; i = i + 1) t.tambah(() => i)`
+menghasilkan `3 3 3`: seluruh closure membaca slot `i` yang sama, dan setelah
+loop isinya nilai iterasi terakhir. ECMAScript mengikat per-iterasi, dan
+menyimpang dari sana adalah kesalahan yang sangat mudah programs-program
+sekarang andalkan.
+
+**Keputusan.** Mekanisme sel yang sudah ada untuk live binding modul (D-010
+live binding / `SelObj`, lihat 0.10.0) dipakai ulang:
+
+1. Slot pengikut loop berisi `SelObj` (`SEL_BUAT`), dan aksesnya lewat
+   `GET_CELL`/`SET_CELL` -- sama seperti variabel modul yang diekspor.
+   `cari_atau_buat_upvalue` sudah mengenali slot berisi sel, jadi upvalue
+   terikat ke **sel**, bukan ke slot stack.
+2. Opcode baru `SEL_SALIN a` mengganti sel pada slot `a` dengan sel baru berisi
+   nilai yang sama. Diterbitkan **tiap akhir iterasi**, sebelum bagian
+   pembaruan -- urutan yang sama dengan `CreatePerIterationEnvironment`.
+
+**Alasan memakai sel, bukan menambah konsep baru.** Upvalue terikat-slot sudah
+bisa "diperkecil" per iterasi hanya dengan menukar objek yang dibaca; tidak ada
+state per-frame baru, jadi continuation async/generator (D-023/D-028) ikut
+benar tanpa perubahan apa pun.
+
+**Dua detail yang menentukan benar/tidaknya:**
+
+- **`terusna` melompat ke titik SEBELUM `SEL_SALIN`.** Kalau lompatannya
+  langsung ke bagian pembaruan, pembaruan menulis ke sel yang sudah ditangkap
+  closure iterasi itu: `kanggo (ana i=0;i<4;i=i+1) { t.tambah(()=>i); yen
+  (i==1) terusna; }` menghasilkan `0 2 2 3`, bukan `0 1 2 3`. Ditemukan saat
+  menulis test, bukan saat membaca spesifikasi.
+- **GC harus menandai sel yang hanya dipegang upvalue.** `SEL_SALIN` membuat
+  sel lama takreachable dari stack, tapi masih dirujuk `Upvalue::sel`. Dua
+  perbaikan: `Heap::tandai_objek` akhirnya menandai `SelObj::nilai`, dan root
+  visitor VM menandai sel milik upvalue terikat-sel. Tanpa ini, program yang
+  benar gagal hanya pada `--gc-stress`.
+
+**Batasan yang tetap ada.** Dua pengikat dengan nama sama di loop berbeda
+dalam satu fungsi masih saling berebut slot (slot fungsi-wide). Dinyatakan di
+`docs/control-flow.md`.
 
 
 ---

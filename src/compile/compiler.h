@@ -82,6 +82,10 @@ private:
         /// yang deklarasinya belum terkompilasi. Setelah deklarasi selesai
         /// entrinya dihapus, jadi pembacaan sesudahnya tidak butuh `TDZ_CHECK`.
         std::unordered_map<std::size_t, std::size_t> tdz_menunggu;
+        /// Nama yang slotnya berisi `SelObj` (live binding modul ATAU pengikat
+        /// per-iterasi `kanggo`). Pembacaan & penulisan keduanya lewat
+        /// `GET_CELL`/`SET_CELL` -- lihat `Compiler::adalah_sel`.
+        std::unordered_set<std::string> sel_nama;
         /// Nama pengikat leksikal -> slot yang dipra-daftarkan. Diisi
         /// `pradaftar_tdz` sebelum statement apa pun dikompilasi.
         std::unordered_map<std::string_view, std::size_t> tdz_slot;
@@ -140,6 +144,11 @@ private:
     void stmt_lakoni(const ast::LakoniStmt* n);
     void stmt_kanggo(const ast::KanggoStmt* n);
     void stmt_kanggo_of(const ast::KanggoOfStmt* n);
+    /// Pengikat per-iterasi untuk `kanggo`: slot berisi `SelObj` yang disalin
+    /// ulang tiap iterasi, jadi closure tiap iterasi menangkap sel berbeda
+    /// (sifat ECMAScript untuk `for (let i ...)`). Mengembalikan slot, atau
+    /// `npos` bila pengikatnya bukan nama tunggal.
+    std::size_t slot_iterasi(const ast::Node* target);
     void stmt_pilih(const ast::PilihStmt* n);
     void stmt_coba(const ast::CobaStmt* n);
     void stmt_golongan(const ast::GolonganDeklarasi* n);
@@ -238,7 +247,8 @@ private:
     }
     /// Tandai nama variabel modul yang diekspor sebagai slot sel.
     void tandai_sel_ekspor(const std::vector<ast::Node*>& statements);
-    /// Apakah `nama` adalah variabel modul yang diekspor (slot sel)?
+    /// Apakah `nama` disimpan sebagai sel (live binding modul, atau pengikat
+    /// per-iterasi `kanggo`) sehingga aksesnya harus lewat `GET_CELL`/`SET_CELL`.
     [[nodiscard]] bool adalah_sel(std::string_view nama) const;
 };
 
