@@ -1,0 +1,244 @@
+// Uji bahasa inti untuk `jawa tes`.
+//
+// Fungsi bawaan: `pratelas`, `wajib_bener`, `wajib_salah`, `wajib_lempar`.
+// Lihat `docs/testing.md` untuk penjelasan lengkap.
+//
+// CATATAN: kata kunci deklarasi variabel adalah `ana` (ngoko) / `wonten` (krama)
+// dan `tetep` untuk konstanta. `let` BUKAN keyword di Basa Jawa, dan nilai
+// boolean ditulis `bener` / `salah` (bukan `true` / `false`).
+
+// --- aritmetika & operator -------------------------------------------------
+pratelas(1 + 1, 2);
+pratelas(7 - 2, 5);
+pratelas(6 * 7, 42);
+pratelas(7 / 2, 3.5);
+pratelas(7 % 3, 1);
+pratelas(2 ** 10, 1024);
+pratelas(0 - 5, -5);
+pratelas(0 - (3), -3);
+
+// Beda tipe tidak boleh dianggap sama (D-007: tanpa koersi implisit).
+pratelas(1 == "1", salah);
+pratelas(1 == 1, bener);
+
+// --- teks ------------------------------------------------------------------
+pratelas("a" + "b", "ab");
+pratelas(Teks(42), "42");
+pratelas("Halo".dawa(), 4);
+pratelas("Halo".huruf_kecil(), "halo");
+pratelas("a-b-c".ganti("-", "+"), "a+b+c");
+pratelas("a,b,c".pecah(",").panjang, 3);
+wajib_bener("abc".termasuk("b"));
+wajib_bener("abc".mulainya_dengan("ab"));
+wajib_salah("abc".termasuk("z"));
+
+// --- dhaptar ---------------------------------------------------------------
+pratelas([1, 2, 3].panjang, 3);
+pratelas([1, 2, 3].peta((x) => x * 2), [2, 4, 6]);
+pratelas([1, 2, 3, 4].saring((x) => x % 2 == 0), [2, 4]);
+pratelas([1, 2, 3].saben((x) => x > 0), bener);
+pratelas([1, 2, 3].kurangi((a, b) => a + b), 6);
+
+ana dh = [1];
+dh.tambah(2, 3);
+pratelas(dh, [1, 2, 3]);
+pratelas(dh.copot(), 3);
+pratelas(dh, [1, 2]);
+
+// --- operator logis (short-circuit) ----------------------------------------
+wajib_bener(bener lan bener);
+wajib_salah(bener lan salah);
+wajib_bener(salah utawa bener);
+wajib_salah(salah utawa salah);
+wajib_bener(ora salah);
+pratelas(1 < 2, bener);
+
+// --- `kanggo` klasik -------------------------------------------------------
+ana total = 0;
+kanggo (ana i = 0; i < 5; i = i + 1) total = total + i;
+pratelas(total, 10);
+
+// --- `kanggo ... saka` -----------------------------------------------------
+ana ranten = "";
+kanggo (x saka [1, 2, 3]) ranten = ranten + Teks(x);
+pratelas(ranten, "123");
+
+// Basa Jawa tidak mengoersi `+` (D-007): teks + angka harus lewat `Teks()`.
+gawe jumlah_teks_angka() { bali "" + 1; }
+wajib_lempar(jumlah_teks_angka, "teks + angka tanpa koersi harus galat");
+
+// --- `nalika` --------------------------------------------------------------
+ana n = 0;
+nalika (n < 3) n = n + 1;
+pratelas(n, 3);
+
+// --- `mandheg` -------------------------------------------------------------
+// `mandheg` harus keluar dari loop SEBELUM sisa nilai body dibuang: kalau tidak,
+// satu `POP` terlalu banyak memakan nilai milik frame pemanggil.
+ana ketemu = 0;
+kanggo (x saka [1, 2, 3, 4]) {
+    yen (x == 3) { ketemu = x; mandheg; }
+}
+pratelas(ketemu, 3);
+
+ana hitung = 0;
+nalika (hitung < 5) {
+    hitung = hitung + 1;
+    yen (hitung == 3) { mandheg; }
+}
+pratelas(hitung, 3);
+
+// `mandheg` di `kanggo` klasik.
+anaCLASSIC = 0;
+kanggo (ana i = 0; i < 5; i = i + 1) {
+    yen (i == 2) { anaCLASSIC = i; mandheg; }
+}
+pratelas(anaCLASSIC, 2);
+
+// --- `terusna` -------------------------------------------------------------
+ana jumlah_terusna = 0;
+kanggo (ana i = 0; i < 5; i = i + 1) {
+    yen (i == 1) { terusna; }
+    jumlah_terusna = jumlah_terusna + i;
+}
+pratelas(jumlah_terusna, 0 + 2 + 3 + 4);
+
+// --- `lakoni` (minimal sekali) ---------------------------------------------
+ana dihitung = 0;
+lakoni { dihitung = dihitung + 1; } nalika (dihitung < 3);
+pratelas(dihitung, 3);
+
+// --- `yen` / `liyane` ------------------------------------------------------
+ana cabang = 0;
+yen (bener) { cabang = 1; } liyane { cabang = 2; }
+pratelas(cabang, 1);
+yen (salah) { cabang = 3; } liyane { cabang = 4; }
+pratelas(cabang, 4);
+
+// --- fungsi, closure, rekursi ----------------------------------------------
+gawe tambah(a, b) { bali a + b; }
+pratelas(tambah(2, 3), 5);
+
+gawe penghitung() {
+    ana n = 10;
+    gawe nambah(s) { bali n + s; }
+    bali nambah;
+}
+pratelas(penghitung()(5), 15);
+
+gawe fib(n) { yen (n < 2) { bali n; } bali fib(n - 1) + fib(n - 2); }
+pratelas(fib(10), 55);
+
+// Parameter default & rest.
+gawe greet(sapaan = "Halo") { bali sapaan; }
+pratelas(greet(), "Halo");
+pratelas(greet("Dumet"), "Dumet");
+
+// Arrow ringkas.
+ana kali_kali = (a, b) => a * b;
+pratelas(kali_kali(6, 7), 42);
+ana kali_kali2 = (a) => a * 2;
+pratelas(kali_kali2(21), 42);
+
+// --- kelas -----------------------------------------------------------------
+// Field harus dideklarasikan di badan class; `iki.sisi = ...` tanpa deklarasi
+// tidak membuat field, dan `iki.sisi` jadi `mboh`.
+golongan Kotak {
+    sisi;
+    wiwit(sisi) { iki.sisi = sisi; }
+    luas() { bali iki.sisi * iki.sisi; }
+    statis bounty() { bali 4; }
+}
+pratelas(anyar Kotak(5).luas(), 25);
+pratelas(Kotak.bounty(), 4);
+
+// Field privat + accessor.
+golongan KotakPriba {
+    #sisi;
+    wiwit(sisi) { iki.#sisi = sisi; }
+    nampa sisi() { bali iki.#sisi; }
+}
+pratelas(anyar KotakPriba(3).sisi, 3);
+
+// --- pola `cocog` ----------------------------------------------------------
+gawe kelompok(x) {
+  bali cocog (x) {
+    kasus 0 => "nol",
+    kasus [a, b] => "pasangan",
+    kasus {jeneng, umur} => jeneng,
+    kasus _ => "liyane"
+  };
+}
+pratelas(kelompok(0), "nol");
+pratelas(kelompok([1, 2]), "pasangan");
+pratelas(kelompok({jeneng: "Sari", umur: 20}), "Sari");
+pratelas(kelompok("lain"), "liyane");
+
+// --- penanganan galat ------------------------------------------------------
+gawe tangkap_nilai() {
+    ana hasil = "nihil";
+    coba { uncal "bahaya" } tangkep (err) { hasil = err; }
+    bali hasil;
+}
+pratelas(tangkap_nilai(), "bahaya");
+
+// Galat di dalam fungsi yang dipanggil dari `coba` harus ikut tertangkap.
+gawe melempar_dalam() { uncal "dari dalam"; }
+gawe tangkap_dalam() {
+    ana hasil = "nihil";
+    coba { melempar_dalam() } tangkep (err) { hasil = err; }
+    bali hasil;
+}
+pratelas(tangkap_dalam(), "dari dalam");
+
+// --- zona mati-temporal ----------------------------------------------------
+// Membaca `nilai_tdz` sebelum deklarasinya dievaluasi harus melempar, bukan
+// menghasilkan `mboh`. Yang di-pra-daftarkan sebagai zona mati-temporal adalah
+// badan modul & badan fungsi; baca lewat closure (upvalue) BELUM memakai
+// TDZ_CHECK -- lihat STATUS.md.
+gawe baca_nanti() { bali nilai_tdz; }
+ana nilai_tdz = 1;
+pratelas(nilai_tdz, 1);
+pratelas(baca_nanti(), 1);
+
+// --- pipeline --------------------------------------------------------------
+pratelas(5 |> (x => x * 2), 10);
+pratelas(1 |> (x => x + 1) |> (x => x * 2), 4);
+
+// --- bayangan nama (shadowing) --------------------------------------------
+// Closure WAJIB membaca `n` lokal di `penghitung`, bukan `n` modul yang
+// namanya sama. Kalau resolusi upvalue memindai semua nenek moyang sekaligus,
+// Closure ini menangkap slot modul dan `hasil` salah.
+ana bayangan = 0;
+gawe penghitung_bayang() {
+    ana n = 10;
+    gawe tambah_lokal(s) { bali n + s; }
+    bali tambah_lokal;
+}
+pratelas(penghitung_bayang()(5), 15);
+pratelas(bayangan, 0);
+
+// Tiga tingkat bersarang: closure paling dalam harus membaca `n` milik
+// `tengah`, bukan `n` modul maupun `n` milik `luar`. Setiap tingkat punya
+// `n` dengan nilai berbeda, jadi satu slot yang salah langsung terlihat.
+ana n = 1;
+gawe luar() {
+    ana n = 2;
+    gawe tengah() {
+        ana n = 3;
+        gawe dalam() { bali n; }
+        bali dalam;
+    }
+    bali tengah;
+}
+pratelas(luar()()(), 3);
+pratelas(n, 1);
+
+// Closure yang HANYA meneruskan nilai upvalue (tidak pernah membacanya sendiri
+// di badannya) harus tetap meneruskannya. Kalau fungsi perantara tidak
+// mendaftarkan upvalue-nya, closure innermost membaca sel kosong -> `mboh`.
+gawe penerus() {
+    ana q = 9;
+    bali gawe () { bali q; };
+}
+pratelas(penerus()(), 9);

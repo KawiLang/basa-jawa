@@ -90,9 +90,17 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
         }
 
         const Instruksi& ins = c->kode[f.ip];
-        if (ins.baris != 0) {
-            f.baris = static_cast<int>(ins.baris);
-            pos_sumber_.baris = ins.baris;
+        // `NOP_LINE` menandai pergantian baris sumber: operand `a`-nya adalah
+        // baris baru. Instruksi lain tidak membawa baris (selalu 0), jadi
+        // `pos_sumber_` hanya berubah di titik ini.
+        //
+        // CATATAN: `NOP_LINE` tidak di-skip di bawah advance `f.ip` -- kalau
+        // di-skip, `pos_sumber_` tidak pernah berubah dan semua pesan galat
+        // menunjuk baris 1. Ini yang membuat nomor baris pada pesan galat
+        // runtime & laporan `jawa tes` selalu benar.
+        if (ins.op == Op::NOP_LINE) {
+            f.baris = static_cast<int>(ins.a);
+            pos_sumber_.baris = ins.a;
             pos_sumber_.offset = static_cast<std::uint32_t>(f.ip);
         }
         f.ip++;

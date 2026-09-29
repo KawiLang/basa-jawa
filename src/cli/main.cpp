@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cli/cli.h"
+#include "cli/tes.h"
 #include "lex/lexer.h"
 #include "parse/ast.h"
 #include "parse/parser.h"
@@ -108,6 +109,7 @@ void cetak_bantuan() {
         "  jawa cek   berkas.jw              Parse + analisis, tanpa eksekusi\n"
         "  jawa token berkas.jw              Cetak daftar token\n"
         "  jawa ast   berkas.jw              Cetak AST\n"
+        "  jawa tes   berkas|dir            Jalankan berkas uji (.tes.jw)\n"
         "  jawa versi                        Cetak versi\n"
         "  jawa bantuan                      Cetak bantuan ini\n"
         "\n"
@@ -244,11 +246,22 @@ void cetak_chunk(const vm::Chunk& c, int kedalaman, const std::vector<vm::ChunkP
         std::printf("%s   nama[%zu] = %s\n", indent.c_str(), i, teks.c_str());
     }
     for (std::size_t i = 0; i < c.upvalue.size(); ++i) {
-        std::printf("%s   up[%zu] = %.*s%s\n", indent.c_str(), i, static_cast<int>(c.upvalue[i].size()),
-                    c.upvalue[i].data(),
-                    i < c.upvalue_sumber.size() && c.upvalue_sumber[i] < 0
-                        ? (c.upvalue_sumber[i] == -0x40000000 ? "  (global)" : "  (dari upvalue)")
-                        : "");
+        std::printf("%s   up[%zu] = %.*s", indent.c_str(), i, static_cast<int>(c.upvalue[i].size()),
+                    c.upvalue[i].data());
+        // Sumber upvalue menentukan sel mana yang diambil saat `CLOSURE`
+        // dijalankan. Tanpa ini, rantai upvalue 3 tingkat yang salah tidak bisa
+        // dibedakan dari yang benar hanya dari bytecode-nya.
+        if (i < c.upvalue_sumber.size()) {
+            const std::int32_t s = c.upvalue_sumber[i];
+            if (s == -0x40000000) {
+                std::printf("  (global)");
+            } else if (s < 0) {
+                std::printf("  (upvalue nenek #%d)", -s - 1);
+            } else {
+                std::printf("  (lokal nenek slot %d)", s);
+            }
+        }
+        std::printf("\n");
     }
     for (std::size_t i = 0; i < c.kode.size(); ++i) {
         const vm::Instruksi& in = c.kode[i];
@@ -286,6 +299,54 @@ int perintah_berkas(const std::string& perintah, const std::string& path, bool w
     if (perintah == "ast") return perintah_ast(kode, warna);
     if (perintah == "bytecode") return perintah_bytecode(kode, warna);
     return SalahPakai;
+}
+
+// ---------------------------------------------------------------------------
+// `jawa tes`
+// ---------------------------------------------------------------------------
+
+std::string merah_skema(const std::string& s, bool warna) {
+    return warna ? "\x1b[31m" + s + "\x1b[0m" : s;
+}
+
+int perintah_tes(const std::vector<std::string>& posisial, const vm::VMOptions& opsi, bool warna) {
+    if (posisial.empty()) {
+        tulis_stderr("KleruCLI [C002] `jawa tes` butuh path berkas uji utawa direktori.");
+        std::fputs("Contoh: jawa tes tests/tes\n", stderr);
+        return SalahPakai;
+    }
+    RingkasanTes ringkas;
+    for (const std::string& akar : posisial) {
+        const std::vector<std::string> berkas = kumpulkan_berkas_tes(akar);
+        if (berkas.empty()) {
+            std::error_code ec;
+            if (!std::filesystem::exists(akar, ec)) {
+                std::fprintf(stderr, "KleruCLI [C003] Berkas ora ketemu: %s\n", akar.c_str());
+            } else {
+                std::fprintf(stderr, "KleruCLI [C004] Ora ada berkas uji ing %s "
+                                     "(cari `*.tes.jw` utawa `*.jw`)\n", akar.c_str());
+            }
+            ++ringkas.berkas_gagal;
+            continue;
+        }
+        for (const std::string& p : berkas) (void)jalankan_berkas_tes(p, opsi, warna, ringkas);
+    }
+    std::printf("\n%zu assertion ing %zu berkas", ringkas.assertion, ringkas.berkas);
+    if (ringkas.berkas_gagal != 0) std::printf(", %zu berkas gagal", ringkas.berkas_gagal);
+    if (ringkas.gagal != 0 || ringkas.berkas_gagal != 0) {
+        // Berkas yang gagal dijalankan juga bikin exit code bukan nol: tanpa ini
+        // `jawa tes` keluar "semua lulus" padahal tidak ada assertion yang jalan.
+        std::string rincian;
+        if (ringkas.gagal != 0) rincian = std::to_string(ringkas.gagal) + " assertion GAGAL";
+        if (ringkas.berkas_gagal != 0) {
+            if (!rincian.empty()) rincian += ", ";
+            rincian += std::to_string(ringkas.berkas_gagal) + " berkas GAGAL";
+        }
+        std::printf(" — %s\n", merah_skema(rincian, warna).c_str());
+        return GalatProgram;
+    }
+    std::printf(" — semua lulus\n");
+    return Sukses;
 }
 
 }  // namespace
@@ -398,6 +459,9 @@ int jalankan(int argc, char** argv) {
     if (ada_e && perintah != "run") {
         if (perintah == "bytecode") return perintah_bytecode(kode_e, warna);
         return perintah_cek(kode_e, warna);
+    }
+    if (perintah == "tes") {
+        return perintah_tes(posisial, opsi, warna);
     }
     if (perintah == "run") {
         if (ada_e) {

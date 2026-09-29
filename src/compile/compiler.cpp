@@ -28,6 +28,19 @@ std::uint16_t Compiler::emit(Op op, std::uint16_t a, std::uint16_t b) {
     return fn().chunk->emit(op, a, b, 0);
 }
 
+/// Terbitkan `NOP_LINE` bila baris sumber berpindah.
+///
+/// Tanpa ini `pos_sumber_` di VM selalu tertinggal di baris pertama chunk:
+/// setiap `Instruksi` memang menyimpan `baris` sendiri, tapi baris placeholder
+/// `0` hanya diisi oleh `NOP_LINE`. Akibatnya pesan galat runtime, jejak stack,
+/// dan laporan assertion `jawa tes` menunjuk baris yang salah.
+void Compiler::tandai_baris(uint32_t baris) {
+    FungsiKonteks& f = fn();
+    if (baris == 0 || baris == f.baris_terakhir) return;
+    f.baris_terakhir = baris;
+    f.chunk->emit(Op::NOP_LINE, static_cast<std::uint16_t>(baris), 0);
+}
+
 std::uint16_t Compiler::emit_at(std::size_t idx, Op op, std::uint16_t a, std::uint16_t b) {
     (void)idx;
     return emit(op, a, b);

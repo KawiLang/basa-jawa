@@ -33,19 +33,13 @@ using rt::Value;
 
 namespace {
 
-/// Tabel global & native.
-struct Global {
-    std::unordered_map<std::string, Value> tabel;
-    /// Method bawaan pada prototype: kunci "jenis:nama" -> fungsi native.
-    std::unordered_map<std::string, Value> metode;
-    /// Method objek Janji: nama -> fungsi native (lihat `method_janji`).
-    std::unordered_map<std::string, rt::NativeFn> janji_metode;
-};
-
-Global& global() {
-    static Global g;
-    return g;
-}
+/// Tabel global & method bawaan milik VM yang sedang memasang.
+///
+/// Dulu `static` di dalam fungsi, jadi SEMUA VM dalam satu proses berbagi satu
+/// tabel. `jawa tes` membuat satu VM per berkas uji, jadi nilainya akan menunjuk
+/// heap VM yang sudah dihancurkan. Sekarang tabelnya milik VM (lihat
+/// `stdlib::State` dan `VM::stdlib_`).
+State& global(VM& vm) { return vm.tabel_stdlib(); }
 
 Value native_teks_objek(VM& vm, std::string_view s) { return Value::obyek(rt::buat_teks(vm.heap(), s)); }
 
@@ -57,11 +51,11 @@ void daftarkan(VM& vm, std::string_view nama, std::size_t n_param, bool variadic
     n->nama = nama;
     n->jumlah_param = static_cast<std::uint8_t>(n_param);
     n->variadic = variadic;
-    global().tabel[std::string(nama)] = Value::obyek(n);
+    global(vm).tabel[std::string(nama)] = Value::obyek(n);
 }
 
 /// Daftarkan nilai konstan sebagai global.
-void daftarkan_nilai(VM& /*vm*/, std::string_view nama, Value v) { global().tabel[std::string(nama)] = v; }
+void daftarkan_nilai(VM& vm, std::string_view nama, Value v) { global(vm).tabel[std::string(nama)] = v; }
 
 /// Bantu: objek dengan properti native (namespace `Math`, `JSON`, ...).
 ObyekObj* buat_namespace(VM& vm, std::string_view nama) {
@@ -557,23 +551,25 @@ Value json_teks(VM& vm, Value /*this*/, std::vector<Value>& args) {
 // ===========================================================================
 
 namespace {
-std::unordered_map<std::string, Value>& metode_bawaan() { return global().metode; }
+std::unordered_map<std::string, Value>& metode_bawaan(VM& vm) { return global(vm).metode; }
 }  // namespace
 
-std::unordered_map<std::string, rt::NativeFn>& method_janji() { return global().janji_metode; }
+std::unordered_map<std::string, rt::NativeFn>& method_janji(VM& vm) { return global(vm).janji_metode; }
 
-Value ambil_global(VM& /*vm*/, std::string_view nama) {
-    auto it = global().tabel.find(std::string(nama));
-    if (it == global().tabel.end()) return Value::mboh();
+Value ambil_global(VM& vm, std::string_view nama) {
+    State& g = global(vm);
+    auto it = g.tabel.find(std::string(nama));
+    if (it == g.tabel.end()) return Value::mboh();
     return it->second;
 }
 
-void set_global(VM& /*vm*/, std::string_view nama, Value v) { global().tabel[std::string(nama)] = v; }
+void set_global(VM& vm, std::string_view nama, Value v) { global(vm).tabel[std::string(nama)] = v; }
 
-Value cari_metode_builtin(std::string_view nama, std::uint8_t jenis_objek) {
+Value cari_metode_builtin(VM& vm, std::string_view nama, std::uint8_t jenis_objek) {
     const std::string kunci = std::to_string(static_cast<int>(jenis_objek)) + ":" + std::string(nama);
-    auto it = metode_bawaan().find(kunci);
-    if (it == metode_bawaan().end()) return Value::mboh();
+    auto& m = metode_bawaan(vm);
+    auto it = m.find(kunci);
+    if (it == m.end()) return Value::mboh();
     return it->second;
 }
 
@@ -594,7 +590,7 @@ void pasang_prototype_metode(VM& vm, std::uint8_t jenis_objek, std::string_view 
     n->fn = fn;
     n->nama = nama;
     n->jumlah_param = static_cast<std::uint8_t>(n_param);
-    metode_bawaan()[std::to_string(static_cast<int>(jenis_objek)) + ":" + std::string(nama)] = Value::obyek(n);
+    metode_bawaan(vm)[std::to_string(static_cast<int>(jenis_objek)) + ":" + std::string(nama)] = Value::obyek(n);
 }
 
 void pasang_objek_metode(VM& vm, ObyekObj* o, std::string_view nama, std::size_t n_param, rt::NativeFn fn) {
@@ -610,9 +606,9 @@ void pasang_objek_metode(VM& vm, ObyekObj* o, std::string_view nama, std::size_t
 void pasang_semua(VM& vm) {
     // Tabel global & method bawaan adalah root GC: tanpa ini, koleksi pertama
     // akan membebaskan seluruh objek native.
-    vm.registrasikan_root_visitor([](gc::RootVisitor& rv) {
-        for (const auto& kv : global().tabel) rv.rooted(kv.second);
-        for (const auto& kv : global().metode) rv.rooted(kv.second);
+    vm.registrasikan_root_visitor([&vm](gc::RootVisitor& rv) {
+        for (const auto& kv : global(vm).tabel) rv.rooted(kv.second);
+        for (const auto& kv : global(vm).metode) rv.rooted(kv.second);
     });
 
     // --- global fungsi ---
@@ -687,8 +683,8 @@ void pasang_semua(VM& vm) {
     daftarkan_nilai(vm, "Wektu", Value::obyek(wektu));
 
     // --- method Janji ---
-    method_janji()[std::string("then")] = native_janji_then;
-    method_janji()[std::string("tangkep")] = native_janji_tangkep;
+    method_janji(vm)[std::string("then")] = native_janji_then;
+    method_janji(vm)[std::string("tangkep")] = native_janji_tangkep;
 
     // --- prototype Dhaptar & Teks (method bawaan) ---
     const std::uint8_t ARR = static_cast<std::uint8_t>(OK::Array);

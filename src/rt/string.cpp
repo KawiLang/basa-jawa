@@ -171,8 +171,48 @@ std::string dhaptar_ke_teks(VM& vm, ArrayObj* a, int kedalaman) {
     return out;
 }
 
-std::string peta_ke_teks(VM& vm, PetaObj* p, int kedalaman) {
-    if (p == nullptr) return "{}";
+std::string nilai_ke_teks_inspect(VM& vm, Value v, int kedalaman) {
+    // Bentuk "dalam": teks diapit tanda kutip supaya pesan kegagalan assertion
+    // (`pratelas("a", "b")`) bisa langsung dibaca -- tanpa itu, nilai `"a"` dan
+    // `a` tampil sama dan penyebab kegagalan hilang.
+    if (v.is_obyek() || v.is_bigint() || v.is_simbol()) {
+        const void* p = v.pointer();
+        if (p == nullptr) return "undefined";
+        const auto* o = static_cast<const Obj*>(p);
+        if (o->h.kind == OK::Teks) {
+            return "\"" + static_cast<const TeksObj*>(o)->str() + "\"";
+        }
+        if (o->h.kind == OK::Obyek && kedalaman <= 6) {
+            // Obyek datar: tampilkan properti yang bisa dibaca, Supaya kegagalan
+            // `pratelas({a: 1}, {a: 2})` langsung menunjukkan selisihnya.
+            const auto* ob = static_cast<const ObyekObj*>(o);
+            std::string out = "{";
+            bool first = true;
+            auto tulis = [&](Value kunci, Value nilai) {
+                if (!first) out += ", ";
+                first = false;
+                out += nilai_ke_teks_inspect(vm, kunci, kedalaman + 1);
+                out += ": ";
+                out += nilai_ke_teks_inspect(vm, nilai, kedalaman + 1);
+            };
+            if (ob->slot != nullptr && ob->shape != nullptr) {
+                for (std::size_t i = 0; i < ob->shape->jumlah(); ++i) {
+                    const auto& prop = ob->shape->at(i);
+                    if (prop.index < 0) continue;
+                    const auto idx = static_cast<std::size_t>(prop.index);
+                    if (idx < ob->jumlah_slot) tulis(prop.kunci, ob->slot[idx]);
+                }
+            } else {
+                for (const auto& [kunci, nilai] : ob->dict) tulis(kunci, nilai);
+            }
+            out += "}";
+            return out;
+        }
+    }
+    return nilai_ke_teks(vm, v);
+}
+
+std::string peta_ke_teks(VM& vm, PetaObj* p, int kedalaman) {    if (p == nullptr) return "{}";
     if (kedalaman > 6) return "{...}";
     std::string out = "{";
     bool first = true;

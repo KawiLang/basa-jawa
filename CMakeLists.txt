@@ -62,6 +62,7 @@ set(JAWA_SOURCES
     src/parse/parser_match.cpp
     src/parse/ast_print.cpp
     src/cli/main.cpp
+    src/cli/tes.cpp
 )
 
 add_library(jawa STATIC ${JAWA_SOURCES})
@@ -191,6 +192,20 @@ if(JAWA_BUILD_TESTS)
     else()
         message(STATUS "python3 tidak ditemukan: uji emas dilewati")
     endif()
+
+    # Uji bahasa Basa Jawa (`jawa tes`). Berkas uji memakai sub-perintah `tes`,
+    # jadi target `jawa_cli` harus sudah dibangun -- `add_test` di bawah
+    # dievaluasi saat konfigurasi, sementara `jawa_cli` didefinisikan di atas,
+    # jadi urutannya aman.
+    add_test(NAME tes.bahasa
+             COMMAND jawa_cli tes ${CMAKE_CURRENT_SOURCE_DIR}/tests/tes)
+    set_tests_properties(tes.bahasa PROPERTIES TIMEOUT 300)
+
+    # Uji bahasa dengan `--gc-stress`: koleksi tiap alokasi. Lambat, tapi
+    # menangkap bug akar GC yang hilang tanpa mode ini.
+    add_test(NAME tes.bahasa_gcstress
+             COMMAND jawa_cli --gc-stress tes ${CMAKE_CURRENT_SOURCE_DIR}/tests/tes)
+    set_tests_properties(tes.bahasa_gcstress PROPERTIES TIMEOUT 1800)
 endif()
 
 # ---------------------------------------------------------------------------

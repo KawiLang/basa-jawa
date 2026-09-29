@@ -1,6 +1,7 @@
 // Kompiler Basa Jawa bagian 3: ekspresi.
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include "compile/compiler.h"
 #include "rt/number.h"
@@ -846,40 +847,66 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
     ctx.chunk->generator = n->generator;
     ctx.chunk->peta_baris.finalize();
 
-    // --- Resolusi upvalue (Lox): lokal di induk, atau upvalue di induk ----
+    // --- Resolusi upvalue (Lox) ---------------------------------------------
+    //
+    // Untuk setiap nama yang dibaca fungsi ini, cari selnya dengan naik satu
+    // tingkat demi satu tingkat dari induk langsung, lalu kembalikan encode:
+    //
+    //   `>= 0`        -> indeks lokal pada nenek moyang yang memilikinya
+    //   `-k-1`         -> upvalue ke-`k` milik nenek moyang itu
+    //   `-0x40000000`  -> tidak ada di mana pun: perlakukan sebagai global
+    //                     (`GET_UPVAL` dengan sel null)
+    //
+    // Dua detail yang menentukan benar/tidaknya hasil:
+    //
+    // 1. Hanya induk langsung boleh "menang" atas nama yang sama di modul.
+    //    Kalau semua nenek moyang dipindai dari luar ke dalam sekaligus,
+    //    bayangan (shadowing) rusak: closure membaca slot yang salah. Gejalanya
+    //    hanya muncul bila ada variabel modul yang namanya sama dengan variabel
+    //    lokal di fungsi -- program pendek tidak pernah mengalaminya, jadi
+    //    bug-nya mudah sekali tersembunyi.
+    //
+    // 2. Kalau suatu nenek moyang tidak punya nama itu sebagai lokal DAN belum
+    //    punya upvalue untuk nama itu, permintaannya HARUS didaftarkan ke
+    //    `ambil_upvalue` nenek moyang itu -- supaya nenek moyang ikut menarik
+    //    nama yang sama saat chunk-nya sendiri dirangkai. Tanpa pendaftaran itu,
+    //    fungsi yang hanya meneruskan closure (tidak pernah membaca nama itu
+    //    sendiri) gagal meneruskan nilainya dan hasilnya `mboh`.
+    constexpr std::int32_t kSentinelGlobal = -0x40000000;
+
+    // Sel untuk `nama` yang dibutuhkan fungsi `fungsi_stack_[idx]`.
+    // Encode yang dikembalikan SELALU relatif terhadap induk langsung
+    // (`fungsi_stack_[idx - 1]`), karena itulah yang dibaca opcode `CLOSURE`.
+    std::function<std::int32_t(std::size_t, std::string_view)> petakan_upvalue;
+    petakan_upvalue = [&](std::size_t idx, std::string_view nama) -> std::int32_t {
+        if (idx == 0) return kSentinelGlobal;  // modul: tidak punya induk
+        FungsiKonteks& induk = fungsi_stack_[idx - 1];
+        // (1) Lokal pada induk? Slot 0 adalah `this`, tidak bisa jadi upvalue.
+        const auto it = induk.lokal.find(std::string(nama));
+        if (it != induk.lokal.end() && it->second != 0) {
+            return static_cast<std::int32_t>(it->second);
+        }
+        // (2) Induk sudah menarik nama ini sebagai upvalue? Pakai sel itu juga,
+        //     supaya semua pemanggil berbagi satu sel.
+        for (std::size_t k = 0; k < induk.info.ambil_upvalue.size(); ++k) {
+            if (induk.info.ambil_upvalue[k].second == nama) {
+                return -static_cast<std::int32_t>(k) - 1;
+            }
+        }
+        // (3) Induk belum menariknya: daftarkan, lalu minta induk memetakannya
+        //     sendiri ke atas. Tanpa langkah ini, fungsi yang hanya MENERUSKAN
+        //     closure (tidak pernah membaca nama itu di badannya sendiri) tidak
+        //     akan menarik nilainya, dan closure yang dikembalikannya membaca
+        //     sel kosong.
+        petakan_upvalue(idx - 1, nama);  // induk ikut menarik nama yang sama
+        induk.info.ambil_upvalue.emplace_back(0, nama);
+        return -static_cast<std::int32_t>(induk.info.ambil_upvalue.size());
+    };
+
     std::vector<std::int32_t> sumber;
-    for (auto& up : ctx.info.ambil_upvalue) {
-        std::int32_t dari = 0x7FFFFFFE;  // "belum ditemukan"
-        for (std::size_t i = 0; i + 1 < fungsi_stack_.size(); ++i) {
-            FungsiKonteks& anc = fungsi_stack_[i];
-            auto it = anc.lokal.find(std::string(up.second));
-            if (it != anc.lokal.end()) {
-                dari = static_cast<std::int32_t>(it->second);
-                break;
-            }
-        }
-        if (dari < 0) {
-            // Bukan lokal nenek moyang: cari sebagai upvalue pada setiap
-            // fungsi di rantai (terdekat lebih dulu).
-            for (std::size_t i = fungsi_stack_.size() - 1; i > 0; --i) {
-                FungsiKonteks& anc = fungsi_stack_[i - 1];
-                for (std::size_t k = 0; k < anc.info.ambil_upvalue.size(); ++k) {
-                    if (anc.info.ambil_upvalue[k].second == up.second) {
-                        dari = -static_cast<std::int32_t>(k) - 1;
-                        break;
-                    }
-                }
-                if (dari < 0) break;
-            }
-        }
-        if (dari == 0) dari = -1;  // slot 0 = `this`, tidak bisa jadi upvalue
-        if (dari == 0x7FFFFFFE) {
-            // Nama tidak ada di lokal/upvalue nenek moyang -> diperlakukan sebagai
-            // global. `GET_UPVAL` dengan sel null lalu membaca tabel global
-            // memakai nama yang tersimpan di `Chunk::upvalue`.
-            dari = -0x40000000;  // sentinel "global"
-        }
-        sumber.push_back(dari);
+    const std::size_t ini = fungsi_stack_.size() - 1;
+    for (const auto& up : ctx.info.ambil_upvalue) {
+        sumber.push_back(petakan_upvalue(ini, up.second));
     }
     for (const auto& up : ctx.info.ambil_upvalue) ctx.chunk->tambah_nama_upvalue(up.second);
     ctx.chunk->jumlah_upvalue = static_cast<std::uint8_t>(sumber.size());

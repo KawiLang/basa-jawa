@@ -86,6 +86,9 @@ private:
         /// `pradaftar_tdz` sebelum statement apa pun dikompilasi.
         std::unordered_map<std::string_view, std::size_t> tdz_slot;
         bool dalam_fungsi = false;
+        /// Baris sumber terakhir yang sudah diberi `NOP_LINE` (lihat
+        /// `Compiler::tandai_baris`). `0` = belum ada.
+        uint32_t baris_terakhir = 0;
         /// Satu loop yang sedang dikompilasi. Dipakai untuk patch `mandheg`
         /// (break) & `terusna` (continue) tanpa placeholder lompat ke 0.
         struct Loop {
@@ -101,6 +104,9 @@ private:
     [[nodiscard]] const FungsiKonteks& fn() const { return fungsi_stack_.back(); }
     std::uint16_t emit(vm::Op op, std::uint16_t a = 0, std::uint16_t b = 0);
     std::uint16_t emit_at(std::size_t idx, vm::Op op, std::uint16_t a = 0, std::uint16_t b = 0);
+    /// Terbitkan `NOP_LINE` kalau baris sumber berpindah, supaya `pos_sumber_`
+    /// di VM akurat (pesan galat, jejak stack, laporan `jawa tes`).
+    void tandai_baris(uint32_t baris);
     std::size_t tambah_konstanta(Value v);
     std::size_t tambah_nama(Value v);
     void patch(std::size_t idx, std::size_t tujuan);

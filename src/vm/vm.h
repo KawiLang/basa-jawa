@@ -42,6 +42,12 @@ using support::SourcePos;
 class VM;
 class Module;
 
+namespace stdlib {
+/// Tabel global & method pustaka standar milik VM ini (lihat `stdlib/stdlib.h`).
+/// Dideklarasikan buram supaya `vm.h` tidak perlu menarik header stdlib.
+struct State;
+}  // namespace stdlib
+
 /// Upvalue (cell) untuk closure. `open` = masih menunjuk ke slot stack frame.
 ///
 /// Owned by VM: `open_upvalues_` menyimpan daftar sel yang masih terbuka; sel
@@ -418,6 +424,21 @@ private:
     /// Cache prototype (root GC; bukan `static` supaya bebas bila ada >1 VM).
     Value proto_dasar_ = Value::mboh();
     Value proto_dhaptar_ = Value::mboh();
+public:
+    /// Tabel global & method pustaka standar. Dimiliki VM (bukan `static`):
+    /// nilainya menunjuk heap VM ini, jadi dua VM tidak boleh berbagi.
+    /// Akses lewat `VM::tabel_stdlib()`.
+    std::unique_ptr<stdlib::State> stdlib_;
+
+    /// Tabel global & method pustaka standar milik VM ini.
+    [[nodiscard]] stdlib::State& tabel_stdlib() noexcept { return *stdlib_; }
+
+    /// Posisi sumber frame teratas (dipakai `jawa tes` untuk melaporAssertion
+    /// dengan nomor baris).
+    [[nodiscard]] SourcePos posisi_sumber() const noexcept { return pos_sumber_; }
+    [[nodiscard]] const std::string& nama_berkas_aktif() const noexcept { return pos_berkas_; }
+
+private:
 
 public:
     /// Tumpukan modul yang sedang dievaluasi. Modul A yang mengimpor B

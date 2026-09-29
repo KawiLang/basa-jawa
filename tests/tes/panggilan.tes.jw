@@ -1,0 +1,44 @@
+// Assertion `jawa tes` yang memanggil KEMBALI ke bytecode dari kode native.
+//
+// `pratelas`/`wajib_bener`/`wajib_salah`/`wajib_lempar` adalah native function.
+// Untuk evaluates argumennya, dan `wajib_lempar` memanggil fungsi Basa Jawa dari
+// dalam native -- itu reentrancy native -> JS, yang masuk ke loop bytecode yang
+// sama. Kalau frame yang muncul tidak dibersihkan, kontrol kembali ke loop
+// pemanggil dengan `frames_.back()` yang salah, dan program dilanjutkan dari
+// bytecode fungsi yang bukan pemanggil.
+//
+// Berkas ini menguji jalur itu secara langsung. Dipisah dari `bahasa.tes.jw`
+// karena setiap pemanggilan balik memberi kesempatan bagi frame nyasar muncul.
+
+gawe total_melempar() { bali "" + 1; }
+
+gawe jumlah_yang_melempar(n) {
+    ana hasil = 0;
+    kanggo (ana i = 0; i < n; i = i + 1) {
+        wajib_lempar(total_melempar, "teks + angka harus melempar");
+        hasil = hasil + 1;
+    }
+    bali hasil;
+}
+
+// Loop berulang: kalau ada frame nyasar, `hasil` rusak sejak iterasi pertama.
+pratelas(jumlah_yang_melempar(2), 2);
+pratelas(jumlah_yang_melempar(5), 5);
+pratelas(jumlah_yang_melempar(0), 0);
+
+// Setelah pemanggilan balik yang melempar, program harus lanjut benar.
+ana setelah = "nyaris";
+kanggo (ana i = 0; i < 3; i = i + 1) {
+    wajib_lempar(total_melempar, "harus melempar");
+    setelah = "lolos-" + Teks(i);
+}
+pratelas(setelah, "lolos-2");
+
+// Nilai yang dikembalikan fungsi setelah pemanggilan balik harus utuh.
+gawe penghitung() {
+    ana m = 10;
+    gawe nambah(s) { bali m + s; }
+    bali nambah;
+}
+wajib_lempar(total_melempar, "satu kali lagi");
+pratelas(penghitung()(5), 15);

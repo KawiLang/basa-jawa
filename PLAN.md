@@ -161,7 +161,8 @@ Belum: TDZ, `pilih` dengan pola, hidden class (inline cache). Lihat
 ### Fase 10 — Tooling
 - [ ] REPL penuh + perintah meta
 - [ ] `fmt` idempoten, `ubah` krama/ngoko round-trip
-- [ ] `tes`, `bench`
+- [x] `tes` (`docs/testing.md`)
+- [ ] `bench`
 - [ ] Embedding API `include/jawa/jawa.h` + contoh
 - [ ] Native C ABI `include/jawa/jawa_ngapi.h` + contoh + test
 - [ ] `aksara_jawa`, `angka_jawa`, `pasaran`, `dina_jawa`

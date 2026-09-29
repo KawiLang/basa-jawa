@@ -2,6 +2,74 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/) + semver.
 
+## [0.9.0] — `jawa tes`: kerangka uji level bahasa
+
+### Ditambahkan
+- **`jawa tes`** — sub-perintah baru untuk menjalankan berkas uji `.jw`
+  (lihat `docs/testing.md`).
+  - Assertion dipasang sebagai global pada setiap berkas uji: `pratelas`
+    (sama secara mendalam), `wajib_bener`, `wajib_salah`, `wajib_lempar`.
+    `bener`/`salah` tidak bisa dipakai sebagai nama fungsi karena keduanya kata
+    kunci.
+  - Assertion yang gagal **tidak** menghentikan program: seluruh kegagalan di
+    satu berkas dilaporkan sekaligus, lengkap dengan nomor baris.
+  - `tulis` dialihkan ke buffer supaya keluaran program uji tidak mencampurkan
+    laporan assertion.
+  - Satu VM per berkas uji; global antar berkas tidak bocor.
+  - `jawa bytecode` kini menampilkan asal setiap upvalue: lokal nenek moyang
+    yang mana, upvalue nenek yang mana, atau global.
+- **`tests/tes/`** — 2 berkas uji bahasa, 85 assertion: aritmetika, teks,
+  dhaptar, operator logis, seluruh bentuk loop (`kanggo` klasik/saka,
+  `nalika`, `lakoni`, `mandheg`, `terusna`), `yen`/`liyane`, closure & upvalue
+  (termasuk bayangan nama 3 tingkat), kelas, `cocog`, penanganan galat,
+  pipeline, dan zona mati-temporal.
+- **`docs/testing.md`** — dokumentasi `jawa tes`, semantik perbandingan
+  mendalam, dan batasannya.
+- `ctest` menjalankan `tests/tes/` dua kali: biasa dan `--gc-stress`.
+  Total 8 test per konfigurasi build.
+
+### Diperbaiki (bug nyata)
+
+Menemukan lima bug yang sudah lama ada. Semuanya muncul begitu ada uji bahasa
+level yang sebenarnya; test C++ yang ada tidak menyentuhnya karena selalu
+menguji potongan yang terlalu pendek.
+
+| Bug | Gejala | Akar masalah |
+|---|---|---|
+| **Nomor baris selalu 1** | setiap pesan galat runtime & laporan assertion menunjuk `(1:1)` | opcode `NOP_LINE` ada di `opcodes.def` tapi **tidak pernah diterbitkan kompilator**, dan `vm_loop` membaca `Instruksi::baris` yang selalu `0`. `pos_sumber_` tidak pernah berubah |
+| **Frame menggantung setelah galat** | setelah native memanggil balik ke bytecode lalu galat, program dilanjutkan dari bytecode fungsi yang **salah** | `jalankan_loop` yang gagal tidak mem-pop frame-nya (`gagal()` hanya menandai `galat_`), dan `VM::panggil` tidak membersihkannya. `frames_.back()` jadi frame yang salah |
+| **Bayangan nama salah** | closure membaca variabel modul yang namanya sama, bukan variabel lokal fungsi | resolusi upvalue memindai **semua** nenek moyang dari luar ke dalam sekaligus, jadi fungsi paling luar menang atas induk langsung |
+| **Upvalue rantai 3 tingkat kosong** | closure yang hanya meneruskan nilai upvalue menghasilkan `mboh` | fungsi perantara tidak mendaftarkan upvalue-nya sendiri, jadi `CLOSURE` tidak punya sel untuk diwariskan |
+| **Tabel global dibagi semua VM** | program ke-2 (dan seterusnya) membaca objek dari heap VM sebelumnya | `stdlib.cpp` memakai `static Global` di dalam fungsi. Tidak terlihat selama satu proses hanya punya satu VM |
+
+Bug "tabel global dibagi" baru muncul begitu ada `jawa tes` — berkas uji
+membuat satu VM per berkas.
+
+### Perubahan internal
+- `stdlib::State` (tabel global & method) sekarang dimiliki `VM` lewat
+  `VM::tabel_stdlib()`. `cari_metode_builtin` & `method_janji` menerima `VM&`.
+- `rt::nilai_ke_teks_inspect` (dideklarasikan tapi tanpa definisi) diimplementasikan:
+  teks diapit tanda kutip dan obyek datar ditampilkan lengkap dengan
+  propertinya, supaya pesan kegagalan assertion bisa dibaca langsung.
+- `VM::posisi_sumber()` & `VM::nama_berkas_aktif()` ditambahkan untuk laporan
+  assertion.
+
+### Verifikasi
+
+| Preset | Hasil |
+|---|---|
+| `release` | build 0 warning; `ctest` 8/8 hijau; 85/85 assertion `jawa tes` |
+| `asan` (ASan+LSan) | 8/8 hijau |
+| `ubsan` | 8/8 hijau; 0 runtime error |
+| `nonanbox` (mode nilai 16-byte) | 8/8 hijau |
+| `--gc-stress` | 15/15 contoh emas + 85/85 assertion tetap identik |
+| front-end | 11/11 contoh acuan ter-parse bersih |
+
+**Metrik**: 19.567 baris C++, 119 opcode, 2 berkas uji bahasa / 85 assertion,
+15 contoh emas, 11 berkas `docs/`.
+
+---
+
 ## [0.1.0] — Fase 0, 1, dan 2 (front-end; runtime belum ada)
 
 ### Ditambahkan

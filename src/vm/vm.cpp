@@ -35,6 +35,7 @@ using rt::TeksObj;
 // ===========================================================================
 
 VM::VM(const VMOptions& opt) : opt_(opt), heap_(opt.gc_stress, opt.maks_memori_mb) {
+    stdlib_ = std::make_unique<stdlib::State>();
     heap_.set_log_gc(opt.log_gc);
     heap_.tambah_root_visitor([this](gc::RootVisitor& v) {
         for (const auto& fn : root_visitor_) fn(v);
@@ -274,6 +275,13 @@ Value VM::panggil(Value callee, Value this_val, const std::vector<Value>& args) 
         return Value::mboh();
     }
     const std::size_t simpan = stack_.size();
+    // Jumlah frame SEBELUM pemanggilan ini. `jalankan_loop` yang gagal TIDAK
+    // mem-pop frame-nya: `gagal()` hanya menandai `galat_` lalu keluar. Tanpa
+    // penanda ini, frame menggantung akan dibaca sebagai frame teratas begitu
+    // kontrol kembali ke loop pemanggil, dan program melanjutkan bytecode
+    // fungsi yang SALAH. Inilah yang merusak state VM saat native memanggil
+    // balik -- misalnya assertion `wajib_lempar` pada `jawa tes`.
+    const std::size_t frame_simpan = frames_.size();
     std::vector<Value> salinan(args);
     if (Obj* o = objek(callee); o != nullptr && o->h.kind == OK::Closure) {
         // Reentrancy native -> JS: kita masuk ke loop yang sama, tapi dengan
@@ -285,6 +293,13 @@ Value VM::panggil(Value callee, Value this_val, const std::vector<Value>& args) 
     }
     --reentrancy_;
     const Value hasil = stack_.empty() ? Value::mboh() : stack_.back();
+    if (frames_.size() > frame_simpan) {
+        // Galat (atau generator yang disuspensi) meninggalkan frame menggantung.
+        // Tutup upvalue-nya lebih dulu supaya sel yang menunjuk rentang stack
+        // yang dibuang tidak pernah dipakai lagi.
+        tutup_upvalue_frame(frame_simpan);
+        frames_.resize(frame_simpan);
+    }
     stack_.resize(simpan);
     if (galat_.ada) return Value::mboh();
     return hasil;

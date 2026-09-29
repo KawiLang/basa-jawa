@@ -31,6 +31,7 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | Modul ES (`impor`/`ekspor`) | selesai — impor, ekspor, alias, default, re-export, impor siklik (`docs/modules.md`) |
 | Generator lazy (`gawe*` + `metokake`) | selesai — tanpa fiber, tak berhingga bisa dipakai (`docs/generator.md`) |
 | async/await + loop acara | selesai (deterministik, tanpa fiber — `docs/async.md`) |
+| `jawa tes` | selesai — kerangka uji level bahasa (`docs/testing.md`) |
 | Regex runtime, `Tanggal`, berkas, proses | belum |
 
 ## Membangun
@@ -64,6 +65,7 @@ build/release/jawa run -e 'tulis(1 + 2 * 3)'
 build/release/jawa cek examples/halo.jw      # periksa sintaks saja
 build/release/jawa token -e 'tulis(1)'     # daftar token
 build/release/jawa ast -e 'gawe f() {}'    # cetak AST
+build/release/jawa tes tests/tes/          # jalankan berkas uji
 build/release/jawa bytecode -e 'tulis(1)'  # cetak bytecode
 build/release/jawa versi
 build/release/jawa bantuan

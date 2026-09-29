@@ -13,16 +13,17 @@ hidden class, *live binding* modul, pustaka standar lengkap, dan tooling
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 17.808 |
+| Baris kode C++ (`src/` + `tests/`) | 19.567 |
 | Opcode bytecode | 119 (`MARK_SPREAD` baru; `GET_EXPORT`) |
 | Target fuzz | 5 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 106 |
 | Uji unit | 3 berkas, 152 cek, 81 test |
+| Uji bahasa (`jawa tes`) | 2 berkas, 85 assertion |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
-| Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 6/6 `ctest` hijau di kelimanya; preset `fuzz` — 5/5 `ctest` hijau |
+| Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di kelimanya; preset `fuzz` — 5/5 `ctest` hijau |
 | Campaign fuzz terakhir | 20.000 kasus x 5 target (100.000) + ASan 14.000 kasus — 0 crash |
-| Dokumentasi | 10 berkas `docs/` + 4 berkas akar |
+| Dokumentasi | 11 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -66,7 +67,11 @@ Bahasa yang berjalan penuh, termasuk:
   yang menjadi penolakan Janji. Tanpa fiber (lihat `docs/async.md`).
 - Template literal, termasuk tag & bersarang.
 - GC mark-and-sweep presisi dengan akar lengkap; `--gc-stress` bersih.
-- CLI: `run`, `cek`, `token`, `ast`, `bytecode`, `versi`, `bantuan`, `-e`.
+- CLI: `run`, `cek`, `token`, `ast`, `bytecode`, `tes`, `versi`, `bantuan`, `-e`.
+- `jawa tes` — kerangka uji level bahasa: assertion (`pratelas`, `wajib_bener`,
+  `wajib_salah`, `wajib_lempar`) dipasang sebagai global, seluruh kegagalan di
+  satu berkas dilaporkan sekaligus, laporan menyebut nomor baris. Lihat
+  `docs/testing.md`.
 - Fuzzing 5 target (`preset fuzz`) dengan driver deterministik yang bisa jalan
   tanpa libFuzzer; sudah menemukan 6 bug nyata, lihat `docs/fuzzing.md`.
 - Modul ES: `impor` (nama / alias / namespace / `baku` / tanpa pengikat) dan
@@ -132,7 +137,7 @@ Lihat `docs/stdlib.md` dan `docs/async.md`.
 - Tanpa debugger, tanpa REPL, tanpa LSP, tanpa formatter, tanpa `jawa fmt` /
   `jawa ubah`, tanpa `jawa bench`, tanpa embedding API (`include/` belum ada --
   `CMakeLists.txt` sudah menyiapkan `install(DIRECTORY include/)` tapi
-  direktorinya belum dibuat).
+  direktorinya belum dibuat). `jawa tes` **sudah ada** (`docs/testing.md`).
 - Tidak ada korpus crash fuzzing yang tersimpan, dan `fuzz_parser` belum
   memeriksa rentang setiap node anak (butuh penelusur AST per-jenis-node).
   Lihat `docs/fuzzing.md`.
@@ -153,8 +158,9 @@ export PATH=/opt/rh/gcc-toolset-12/root/usr/bin:$PATH
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
 cmake --build build/release
 
-# 2. Unit + uji emas
+# 2. Unit + uji emas + uji bahasa
 ctest --test-dir build/release --output-on-failure
+jawa tes tests/tes/
 
 # 3. Sanitizer: ASan + UBSan harus sama-sama hijau
 cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DJAWA_SANITIZER=address -DCMAKE_CXX_COMPILER=g++
@@ -187,9 +193,9 @@ sanitizer + Debug harus memakai `-j 1` (`cmake --build build/ubsan -j 1`);
 dengan paralel penuh, `cc1plus` untuk `stdlib.cpp` dibunuh OOM. Build release
 aman dengan paralel penuh.
 
-Hasil terakhir yang tercatat: **6/6 `ctest` hijau di Release, ASan, UBSan, dan
-mode nilai 16-byte**; 10/10 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih.
+Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
+mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
+contoh acuan ter-parse bersih; 85/85 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

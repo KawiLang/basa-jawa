@@ -65,7 +65,7 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
                 // Method native (Teks/Dhaptar/etc).
                 if (kunci.is_obyek()) {
                     const std::string_view nama = sv(kunci);
-                    Value f = stdlib::cari_metode_builtin(nama, static_cast<std::uint8_t>(cur->h.kind));
+                    Value f = stdlib::cari_metode_builtin(*this, nama, static_cast<std::uint8_t>(cur->h.kind));
                     if (f.is_obyek()) return f;
                 }
                 cur = objek(ob->prototipe);
@@ -88,7 +88,7 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
                     const std::string_view k = sv(kunci);
                     if (!rt::indeks_bulat(k, idx)) {
                         const std::string_view nama = k;
-                        Value f = stdlib::cari_metode_builtin(nama, static_cast<std::uint8_t>(OK::Array));
+                        Value f = stdlib::cari_metode_builtin(*this, nama, static_cast<std::uint8_t>(OK::Array));
                         if (f.is_obyek()) return f;
                         cur = objek(a->prototipe);
                         continue;
@@ -100,7 +100,7 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
             case OK::Teks: {
                 // Method bawaan Teks (dawa, huruf_gedhe, ganti, ...).
                 const std::string_view nama = sv(kunci);
-                const Value f = stdlib::cari_metode_builtin(nama, static_cast<std::uint8_t>(OK::Teks));
+                const Value f = stdlib::cari_metode_builtin(*this, nama, static_cast<std::uint8_t>(OK::Teks));
                 if (f.is_obyek()) return f;
                 // Indeks numerik pada teks memberi satu karakter.
                 std::size_t idx = 0;
@@ -138,7 +138,7 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
             case OK::Janji: {
                 // Method Janji: `then` / `tangkep` (lihat `stdlib::method_janji`).
                 const std::string_view nama_j = sv(kunci);
-                const auto& tabel_j = stdlib::method_janji();
+                const auto& tabel_j = stdlib::method_janji(*this);
                 const auto cari_j = tabel_j.find(std::string(nama_j));
                 if (cari_j != tabel_j.end()) {
                     auto* n = heap_.alokasi<rt::NativeFnObj>();

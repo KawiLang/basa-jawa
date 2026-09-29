@@ -22,6 +22,11 @@ void Compiler::statement(const ast::Node* n) { statement(n, false); }
 
 void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
     if (n == nullptr) return;
+    // Tandai perpindahan baris SEBELUM opcode statement ini diterbitkan, supaya
+    // galat yang terjadi saat ekspresi dievaluasi menunjuk baris yang benar.
+    // Tanpa ini `pos_sumber_` VM tertinggal di baris 1 untuk seluruh program, dan
+    // setiap pesan galat runtime menunjuk baris yang sama.
+    tandai_baris(n->range.mulai.baris);
     switch (n->kind) {
         case NK::EkspresiStmt: {
             ekspresi(static_cast<const ast::EkspresiStmt*>(n)->ekspresi);
@@ -291,10 +296,19 @@ void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
     fn().loop.pop_back();
 
     emit(Op::JUMP, static_cast<std::uint16_t>(mulai));
-    for (std::size_t p : Loop.patch_mandheg) patch(p, fn().chunk->ukuran_kode());
-    for (std::size_t p : Loop.patch_terusna) patch(p, mulai);
+    // Jalur keluar normal: `ITER_NEXT` menyisakan nilai `mboh` yang belum
+    // dipakai, jadi masih ada 3 nilai di stack: nilai, indeks, iterable.
     patch(keluar, fn().chunk->ukuran_kode());
-    emit(Op::POP);  // nilai sisa saat keluar loop
+    emit(Op::POP);  // nilai sisa
+    const std::size_t keluar_bersih = fn().chunk->ukuran_kode();
+    // Jalur `mandheg`: nilai iterasi SUDAH dikuras `DEF_LOCAL`/`SET_LOCAL`
+    // sebelum body, jadi stack-nya hanya 2 nilai (indeks + iterable). Kalau
+    // `mandheg` melompat ke titik yang sama dengan jalur keluar normal, ada
+    // satu `POP` terlalu banyak -- dan `POP` berikutnya memakan nilai milik
+    // frame pemanggil. Gejalanya: program dilanjutkan dengan stack rusak, dan
+    // loop berhenti setelah iterasi pertama.
+    for (std::size_t p : Loop.patch_mandheg) patch(p, keluar_bersih);
+    for (std::size_t p : Loop.patch_terusna) patch(p, mulai);
     emit(Op::POP);  // indeks
     emit(Op::POP);  // iterable
 }
@@ -312,12 +326,14 @@ void Compiler::stmt_pilih(const ast::PilihStmt* n) {
     // ...
     // L_akhir:
     //
-    // Dua hal penting di sini:
+    // Tiga hal penting di sini:
     // 1. `Op::EQ` adalah perbandingan BIASA (mendorong boolean), bukan lompatan
     //    bersyarat -- harus diikuti `JUMP_IF_FALSE` eksplisit.
     // 2. Lompatan bersyarat hanya MEMBATAS nilai (peek), jadi kedua jalur harus
-    //    membuang boolean-nya. `cocog` melakukan hal yang sama;bedanya di sini
-    //    `pilih` adalah statement, jadi tidak ada nilai hasil yang harus disimpan.
+    //    membuang boolean-nya. `cocog` melakukan hal yang sama; bedanya di sini
+    //    `pilih` adalah statement, jadi tidak ada nilai hasil yang disimpan.
+    // 3. `mandheg`/`terusna` di dalam badan kasus melompat ke titik yang SUDAH
+    //    membuang boolean, jadi keduanya melompati `POP` di `L_gagal_i`.
     //
     // Subjek disimpan di slot supaya tiap kasus bisa membacanya ulang.
     ekspresi(n->subjek);
