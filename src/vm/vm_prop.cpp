@@ -153,6 +153,17 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
                 cur = objek(inst->prototipe);
                 continue;
             }
+            // Objek regex & tanggal: method built-in-nya dipasang lewat tabel
+            // yang sama dengan Dhaptar/Teks, jadi hanya perlu dicari.
+            case OK::Regex:
+            case OK::Tanggal: {
+                if (kunci.is_obyek()) {
+                    const Value f = stdlib::cari_metode_builtin(*this, sv(kunci),
+                                                                  static_cast<std::uint8_t>(cur->h.kind));
+                    if (f.is_obyek()) return f;
+                }
+                return Value::mboh();
+            }
             case OK::Janji: {
                 // Method Janji: `then` / `tangkep` (lihat `stdlib::method_janji`).
                 const std::string_view nama_j = sv(kunci);
@@ -265,6 +276,11 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
                 const std::string_view nama = sv(kunci);
                 if (nama == "nama") return Value::obyek(rt::buat_teks(heap_, n->nama));
                 if (nama == "dawa") return Value::number(static_cast<double>(n->jumlah_param));
+                // Properti yang ditempel pada fungsi native-nya sendiri --
+                // method statis konstruktor (`Tanggal.dari`, `Tanggal.sekarang`).
+                for (const auto& kv : n->sifat) {
+                    if (rt::nilai_sama(kv.first, kunci)) return kv.second;
+                }
                 cur = objek(n->prototipe);
                 continue;
             }

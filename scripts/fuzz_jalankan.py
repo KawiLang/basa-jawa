@@ -26,7 +26,7 @@ import sys
 import time
 
 AKAR = pathlib.Path(__file__).resolve().parent.parent
-TARGET_BAWAAN = ["fuzz_lexer", "fuzz_parser", "fuzz_kompilasi", "fuzz_vm", "fuzz_modul"]
+TARGET_BAWAAN = ["fuzz_lexer", "fuzz_parser", "fuzz_kompilasi", "fuzz_vm", "fuzz_modul", "fuzz_regex"]
 
 # `fuzz_lexer      5000 kasus | lex 2006 gagal | ...`
 # Kolom diberi lebar rata (`%8zu`), jadi semua pemisah harus `\s+`, bukan

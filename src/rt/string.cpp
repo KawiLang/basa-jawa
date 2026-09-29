@@ -1,5 +1,6 @@
 #include "gc/heap.h"
 #include "rt/object.h"
+#include "rt/tanggal.h"
 #include "rt/string.h"
 
 #include <algorithm>
@@ -141,11 +142,10 @@ std::string nilai_ke_teks(VM& vm, Value v) {
                 return std::string(k->jeneng) + ": " + k->pesan;
             }
             case OK::Golongan: return "function " + std::string(static_cast<const ClassObj*>(o)->nama) + "() { [class] }";
-            case OK::Tanggal: {
-                char buf[64];
-                std::snprintf(buf, sizeof(buf), "Tanggal(%lld)", static_cast<long long>(static_cast<const TanggalObj*>(o)->milidetik));
-                return buf;
-            }
+            case OK::Tanggal:
+                // ISO-8601 jauh lebih berguna daripada angka milidetik: nilai ini
+                // biasanya dipakai untuk dicetak atau dibandingkan dengan teks.
+                return Tanggal(static_cast<const TanggalObj*>(o)->milidetik).ke_teks();
             case OK::Simbol: return "Simbol(" + static_cast<const SimbolObj*>(o)->deskripsi + ")";
             default: return "[objek]";
         }

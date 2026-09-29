@@ -42,3 +42,30 @@ gawe penghitung() {
 }
 wajib_lempar(total_melempar, "satu kali lagi");
 pratelas(penghitung()(5), 15);
+
+// --- galat dari native tidak boleh meruntuhkan frame pemanggil --------------
+//
+// `wajib_lempar` memanggil balik ke bytecode dari kode native, jadi galat terjadi
+// di loop BERSARANG. `unwind_galat` mencari handler `coba`; kalau tidak ada, ia
+// mem-pop frame sampai habis. Kalau lantai unwind tidak dipasang, frame modul
+// ikut runtuh -- dan program berhenti di tengah jalan, tepat setelah assertion
+// yang memanggil native. Semua assertion setelah `wajib_lempar` di bawah ini
+// akan GAGAL kalau invariant ini bocor.
+gawe melempar_selalu() { bali "" + 1; }
+wajib_lempar(melempar_selalu, "pertama");
+wajib_lempar(melempar_selalu, "kedua");
+wajib_lempar(melempar_selalu, "ketiga");
+pratelas(1 + 1, 2);
+pratelas("masih hidup", "masih hidup");
+
+// Galat di dalam loop (bukan dari native) juga harus tidak merusak apa pun.
+gawe melempar_di_tengah_loop() {
+    ana hasil = 0;
+    kanggo (ana i = 0; i < 3; i = i + 1) {
+        hasil = hasil + 1;
+        uncal "di tengah";
+    }
+    bali hasil;
+}
+wajib_lempar(melempar_di_tengah_loop, "galat di dalam loop");
+pratelas(2 * 3, 6);

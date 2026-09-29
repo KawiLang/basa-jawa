@@ -300,6 +300,32 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
 
             // ---------------------------------------------------------- objek
             case Op::MAKE_OBJECT: dorong(Value::obyek(buat_obyek())); break;
+            // `MAKE_REGEX`: dua konstanta teks (pola, flag) di stack ->
+            // objek RegexObj. Pola salah adalah galat runtime biasa, supaya
+            // bisa ditangkap `coba`/`tangkep` -- bukan crash.
+            case Op::MAKE_REGEX: {
+                const Value flag_v = ambil();
+                const Value pola_v = ambil();
+                const std::string_view pola = sv(pola_v);
+                const std::string_view flag = sv(flag_v);
+                std::string pesan;
+                auto program = rt::RegexProgram::kompilasi(pola, flag, pesan);
+                if (program == nullptr) {
+                    const Value k =
+                        buat_kleru("KleruRegex", "Pola regex ora sah: " + pesan);
+                    if (unwind_galat(k)) break;
+                    return Status::Galat;
+                }
+                dorong(buat_regex(std::move(program), pola, flag));
+                break;
+            }
+            // `MAKE_TANGGAL`: teks ISO-8601 -> objek Tanggal. Teks yang tidak
+            // bisa diparse menghasilkan `mboh`, mengikuti `Teks("x")` -> NaN.
+            case Op::MAKE_TANGGAL: {
+                const Value v = ambil();
+                dorong(buat_tanggal_dari_teks(sv(v)));
+                break;
+            }
             case Op::MAKE_ARRAY_SPREAD: {
                 const std::size_t dasar = spread_base_.empty() ? stack_.size() : spread_base_.front();
                 if (!spread_base_.empty()) spread_base_.clear();
@@ -710,7 +736,17 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 const Value callee = ambil();
                 const Value this_val = ambil();
                 panggil_objek(callee, this_val, args);
-                if (galat_.ada) return Status::Galat;
+                if (galat_.ada) {
+                    // Galat dari kode native (mis. pola regex terlalu rumit, atau
+                    // divide by zero di dalam fungsi bawaan) harus bisa ditangkap
+                    // `coba`/`tangkep` di pemanggil, sama seperti `THROW`. Tanpa
+                    // `unwind_galat` di sini, galat apa pun yang dilempar native
+                    // langsung keluar dari program.
+                    const Value v = galat_.nilai;
+                    galat_.ada = false;
+                    if (unwind_galat(v)) break;
+                    return Status::Galat;
+                }
                 break;
             }
             case Op::NEW: {

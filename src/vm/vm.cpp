@@ -3,10 +3,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
 
 #include "compile/compiler.h"
 #include "rt/number.h"
+#include "rt/regexp.h"
+#include "rt/tanggal.h"
 #include "rt/object.h"
 #include "rt/string.h"
 #include "stdlib/stdlib.h"
@@ -78,6 +81,13 @@ VM::VM(const VMOptions& opt) : opt_(opt), heap_(opt.gc_stress, opt.maks_memori_m
             if (m.entri != nullptr) rv.rooted(Value::obyek(m.entri));
             rv.rooted(m.ekspor);
             for (const auto& kv : m.global) rv.rooted(kv.second);
+        }
+        // Properti yang ditempel pada fungsi native (method statis konstruktor
+        // `Tanggal.dari` & friends). Tanpa ini, `Tanggal.dari(...)` bisa
+        // membaca fungsi yang sudah tersapu.
+        for (const auto& [kunci, nilai] : native_sifat_root_) {
+            rv.rooted(kunci);
+            rv.rooted(nilai);
         }
         // Antrean async: Janji yang menunggu, nilai hasil, handler, dan Janji
         // turunan. Tanpa ini, Janji pada `Wektu.tundha` bisa tersapu sebelum
@@ -156,6 +166,88 @@ ObyekObj* VM::buat_obyek() {
 
 TeksObj* VM::buat_teks(std::string_view s) { return rt::buat_teks(heap_, s); }
 
+Value VM::buat_regex(std::shared_ptr<rt::RegexProgram> program, std::string_view pola, std::string_view flag) {
+    auto* r = heap_.alokasi<rt::RegexObj>();
+    r->h.kind = OK::Regex;
+    r->pola = std::string(pola);
+    r->flag = std::string(flag);
+    r->program = std::move(program);
+    r->global = r->program->global();
+    r->abaikan_besar_kecil = r->program->abaikan_besar_kecil();
+    r->multibaris = r->program->multibaris();
+    r->titik_semu = r->program->titik_semu();
+    r->lengket = r->program->lengket();
+    return Value::obyek(r);
+}
+
+namespace {
+
+/// Baca bilangan bulat dari `s` mulai `i` (tanpa tanda). Mengembalikan -1 kalau
+/// tidak ada digit.
+int64_t baca_angka(std::string_view s, std::size_t& i, int minimal, int maksimal) {
+    const std::size_t mulai = i;
+    int64_t v = 0;
+    while (i < s.size() && s[i] >= '0' && s[i] <= '9' && i - mulai < static_cast<std::size_t>(maksimal)) {
+        v = v * 10 + (s[i] - '0');
+        ++i;
+    }
+    if (i - mulai < static_cast<std::size_t>(minimal)) return -1;
+    return v;
+}
+
+}  // namespace
+
+Value VM::buat_tanggal_dari_teks(std::string_view teks) {
+    // `YYYY-MM-DD` atau `YYYY-MM-DDTHH:MM[:SS[.sss]][Z]`.
+    std::size_t i = 0;
+    int64_t tahun = baca_angka(teks, i, 4, 6);
+    if (tahun < 0 || i >= teks.size() || teks[i] != '-') return Value::mboh();
+    ++i;
+    const int64_t bulan = baca_angka(teks, i, 1, 2);
+    // Bulan & hari dibatasi di sini, bukan nanti: `Tanggal.dari` sengaja
+    // melakukan rollover (31 Februari -> 3 Maret), tapi teks ISO-8601 yang
+    // salah bulan harus ditolak, bukan diam-diam digeser.
+    if (bulan < 1 || bulan > 12 || i >= teks.size() || teks[i] != '-') return Value::mboh();
+    ++i;
+    const int64_t hari = baca_angka(teks, i, 1, 2);
+    if (hari < 1 || hari > 31) return Value::mboh();
+    int jam = 0;
+    int menit = 0;
+    double detik = 0.0;
+    if (i < teks.size() && (teks[i] == 'T' || teks[i] == ' ')) {
+        ++i;
+        jam = static_cast<int>(baca_angka(teks, i, 1, 2));
+        if (jam < 0 || jam > 23 || i >= teks.size() || teks[i] != ':') return Value::mboh();
+        ++i;
+        menit = static_cast<int>(baca_angka(teks, i, 2, 2));
+        if (menit < 0 || menit > 59) return Value::mboh();
+        if (i < teks.size() && teks[i] == ':') {
+            ++i;
+            const int64_t d = baca_angka(teks, i, 1, 2);
+            if (d < 0 || d > 59) return Value::mboh();
+            detik = static_cast<double>(d);
+            if (i < teks.size() && teks[i] == '.') {
+                ++i;
+                const std::size_t mulai = i;
+                const int64_t ms = baca_angka(teks, i, 1, 3);
+                if (ms < 0) return Value::mboh();
+                // `.5` = 500 ms, `.05` = 50 ms, `.005` = 5 ms.
+                int skala = static_cast<int>(i - mulai);
+                detik += static_cast<double>(ms) / std::pow(10.0, skala);
+            }
+        }
+    }
+    // Zona waktu: `Z` atau `+HH:MM` diterima; yang lain ditolak.
+    if (i < teks.size() && (teks[i] == 'Z' || teks[i] == 'z')) ++i;
+    if (i != teks.size()) return Value::mboh();
+    const rt::Tanggal t =
+        rt::Tanggal::dari(tahun, static_cast<int>(bulan), static_cast<int>(hari), jam, menit, detik);
+    auto* o = heap_.alokasi<rt::TanggalObj>();
+    o->h.kind = OK::Tanggal;
+    o->milidetik = t.milidetik();
+    return Value::obyek(o);
+}
+
 ObyekObj* VM::prototipe_dasar() {
     if (proto_dasar_.is_obyek() && proto_dasar_.pointer() != nullptr) {
         return static_cast<ObyekObj*>(proto_dasar_.mutable_pointer());
@@ -223,6 +315,12 @@ void VM::lempar(Value v) {
     galat_.ada = true;
 }
 
+void VM::lempar_kleru(std::string_view jeneng, std::string pesan) {
+    if (galat_.ada) return;  // galat pertama yang menang
+    galat_.nilai = buat_kleru(jeneng, std::move(pesan));
+    galat_.ada = true;
+}
+
 rt::Value VM::buat_kleru(std::string_view jeneng, std::string pesan) {
     auto* k = heap_.alokasi<rt::KleruObj>();
     k->h.kind = rt::OK::Kleru;
@@ -282,6 +380,10 @@ Value VM::panggil(Value callee, Value this_val, const std::vector<Value>& args) 
     // fungsi yang SALAH. Inilah yang merusak state VM saat native memanggil
     // balik -- misalnya assertion `wajib_lempar` pada `jawa tes`.
     const std::size_t frame_simpan = frames_.size();
+    // Lantai unwind: galat dari loop bersarang tidak boleh meruntuhkan frame
+    // pemanggil (dan modul di bawahnya) -- lihat `VM::batas_unwind_`.
+    const std::size_t batas_lama = batas_unwind_;
+    batas_unwind_ = frame_simpan;
     std::vector<Value> salinan(args);
     if (Obj* o = objek(callee); o != nullptr && o->h.kind == OK::Closure) {
         // Reentrancy native -> JS: kita masuk ke loop yang sama, tapi dengan
@@ -291,6 +393,7 @@ Value VM::panggil(Value callee, Value this_val, const std::vector<Value>& args) 
     } else {
         panggil_objek(callee, this_val, salinan);
     }
+    batas_unwind_ = batas_lama;
     --reentrancy_;
     const Value hasil = stack_.empty() ? Value::mboh() : stack_.back();
     if (frames_.size() > frame_simpan) {
@@ -424,7 +527,7 @@ void VM::mulai_frame(ClosureObj* fn, Value this_val, std::vector<Value>& args,
 }
 
 bool VM::unwind_galat(Value v) {
-    while (!frames_.empty()) {
+    while (frames_.size() > batas_unwind_) {
         const std::size_t indeks = frames_.size() - 1;
         Frame& cf = frames_[indeks];
         if (!cf.handlers.empty()) {

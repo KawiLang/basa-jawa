@@ -41,6 +41,8 @@ set(JAWA_SOURCES
     src/rt/number.cpp
     src/rt/object.cpp
     src/rt/string.cpp
+    src/rt/regexp.cpp
+    src/rt/tanggal.cpp
     src/gc/heap.cpp
     src/vm/chunk.cpp
     src/vm/vm.cpp
@@ -230,7 +232,7 @@ if(JAWA_BUILD_FUZZ)
     file(GLOB JAWA_FUZZ_FILES ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_*.cpp)
     list(LENGTH JAWA_FUZZ_FILES JAWA_FUZZ_COUNT)
     if(JAWA_FUZZ_COUNT LESS 5)
-        message(FATAL_ERROR "spesifikasi meminta 5 target fuzz; ditemukan ${JAWA_FUZZ_COUNT}")
+        message(FATAL_ERROR "spesifikasi meminta 6 target fuzz; ditemukan ${JAWA_FUZZ_COUNT}")
     endif()
     foreach(ff ${JAWA_FUZZ_FILES})
         get_filename_component(fname ${ff} NAME_WE)
@@ -257,7 +259,7 @@ if(JAWA_BUILD_FUZZ)
             # Preset `fuzz` mematikan `JAWA_BUILD_TESTS`, jadi `enable_testing()`
             # belum dipanggil di titik ini.
             enable_testing()
-            foreach(fname fuzz_lexer fuzz_parser fuzz_kompilasi fuzz_vm fuzz_modul)
+            foreach(fname fuzz_lexer fuzz_parser fuzz_kompilasi fuzz_vm fuzz_modul fuzz_regex)
                 add_test(NAME fuzz.${fname}
                          COMMAND ${Python3_EXECUTABLE}
                                  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/fuzz_jalankan.py

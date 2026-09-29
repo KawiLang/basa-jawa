@@ -160,12 +160,53 @@ selesai, jadi `tulis(f())` mencetak Janji yang masih `nunggu`, bukan hasilnya.
 Pakai `tulis(enteni f())` untuk nilai akhir. Penjelasan lengkap di
 [`async.md`](async.md).
 
+## Regex (method bawaan pada objek `/pola/flag`)
+
+Dokumentasi lengkap ada di [`regex.md`](regex.md); ringkasannya:
+
+| Method | Hasil |
+|---|---|
+| `cocog(teks)` | `bener` kalau ada kecocokan di mana saja |
+| `kabeh(teks)` | `bener` kalau SELURUH teks cocok |
+| `ganti(teks, pengganti)` | teks baru; semua kecocokan diganti (`$&`, `$0`..`$9`) |
+| `pecah(teks)` | dhaptar; tiap elemen `[seluruh, grup1, ...]` |
+| `nilai(teks)` | dhaptar kelompok dari kecocokan pertama |
+| `grup(teks, kelompok)` | teks satu kelompok (nomor atau nama) |
+| `pola()` / `flag()` | teks pola / flag |
+
+Pola yang terlalu patologis (`(a+)+b`) melempar `KleruRegex` yang bisa
+ditangkap `coba`/`tangkep` — bukan menggantung, dan bukan diam-diam "tidak
+cocok".
+
+## `Tanggal`
+
+Dokumentasi lengkap ada di [`tanggal.md`](tanggal.md); ringkasannya:
+
+```jawa
+Tanggal()                       // sekarang (UTC)
+Tanggal.dari(tahun, bulan, hari, jam, menit, detik)
+Tanggal.ms(milidetik)           // dari milidetik sejak epoch
+Tanggal("2026-09-29T14:03:07Z") // dari teks ISO-8601; `mboh` kalau tak dikenal
+```
+
+Method instans: `ke_teks`, `ke_tanggal`, `ke_waktu`, `tahun`, `bulan`, `hari`,
+`jam`, `menit`, `detik`, `milidetik`, `hari_dalam_minggu`, `nama_hari`,
+`nama_bulan`, `ms`, `tambah_ms`, `tambah_hari`, `selisih`, `sebelum`, `sesudah`,
+`sama_dengan`.
+
+**Tidak ada zona waktu.** Hanya UTC, dan alasannya tertulis di `docs/tanggal.md`.
+
 ## Yang belum ada
 
 Sebutkan eksplisit agar tidak disalahpahami sebagai "hilang":
 
 - Modul bawaan `Matematika`, `Object`, `Dhaptar`, `Teks` versi lengkap.
-- `Date` / `Tanggal`, `RegExp` runtime, `Map`/`Peta` komprehensif, `Set`/`Himpunan`.
+- `Map`/`Peta` komprehensif, `Set`/`Himpunan`.
+- Zona waktu lokal & daylight saving; kalender selain Gregorian (Rejrah/Saka,
+  Hijriah); format tanggal bebas selain ISO-8601.
+- Regex: lookahead/lookbehind, backreference, kuantifier possessif, `\p{...}`,
+  mode `n`, dan pencocokan berbasis titik kode (`u` belum berarti apa-apa --
+  mesinnya byte-oriented).
 - Akses berkas, proses, jaringan. Semua I/O masih blocking dan sinkron.
 - Agregator Janji: `Janji.all`, `Janji.race`, `Janji.anySelesai`, `Janji.bungkus`.
 - Jam nyata: `Wektu.tundha` hanya mengurutkan, tidak menunggu.

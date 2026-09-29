@@ -33,7 +33,7 @@ tanpa UB, tanpa `abort()` senyap, tanpa menandai fase selesai bila ada test mera
 | 5 | GC: mark–sweep presisi, handle scope, intern lemah, `--gc-stress` | **selesai** (generasi incremental belum) |
 | 6 | Galat & pengecualian: hirarki `Kleru`, unwinder, stack trace, batas | **sebagian** (hirarki & batas selesai; jejak stack sumber belum) |
 | 7 | Fiber, generator, `Janji`, `mengko`/`enteni`, event loop, modul ES | **selesai tanpa fiber** (D-023/D-028) |
-| 8 | Pustaka standar: `Teks`, `Angka`, `Matematika`, `JSON`, `Regex`, `Tanggal`, berkas, izin | belum |
+| 8 | Pustaka standar: `Teks`, `Angka`, `Matematika`, `JSON`, `Regex`, `Tanggal`, berkas, izin | sebagian — `Regex` & `Tanggal` selesai; berkas & izin belum |
 | 9 | Fitur expert: `cocog`, pipeline, tipe bertahap, optimizer, superinstruction | belum |
 | 10 | Tooling: REPL, `fmt`, `ubah`, `tes`, `bench`, embedding API, native C ABI, aksara/pasaran | belum |
 | 11 | Pengerasan: GC inkremental + write barrier, tuning, fuzz penuh, dokumentasi | belum |
@@ -149,7 +149,12 @@ Belum: TDZ, `pilih` dengan pola, hidden class (inline cache). Lihat
 - [ ] `Janji.all` / `race` / `anySelesai`
 
 ### Fase 8 — Pustaka standar
-- [ ] `Teks`, `Angka`, `Matematika`, `JSON`, `Regex`, `Tanggal`, `Peta`, `Himpunan`
+- [x] Regex runtime: `/pola/flag`, backtracking, kelompok tangkap & bernama,
+      anggaran langkah anti-ReDoS (`docs/regex.md`)
+- [x] `Tanggal`: kalender proleptis Gregorian UTC, ISO-8601, aritmetika
+      (`docs/tanggal.md`) — tanpa zona waktu, dengan alasannya tertulis
+- [ ] `Teks`, `Angka`, `Matematika`, `JSON`, `Peta`, `Himpunan` (versi minimum
+      sudah ada, belum komprehensif)
 - [ ] `konsol`, `kleru`, `proses`, `std:berkas`, `std:path`, `std:tes`, ...
 - [ ] Model izin
 
@@ -170,7 +175,8 @@ Belum: TDZ, `pilih` dengan pola, hidden class (inline cache). Lihat
 ### Fase 11 — Pengerasan
 - [ ] GC inkremental + write barrier
 - [ ] Tuning, benchmark terdokumentasi
-- [ ] Fuzz penuh
+- [x] Fuzz penuh — 6 target (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`,
+      `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) + `docs/fuzzing.md`
 - [ ] Dokumentasi final + `CHANGELOG.md` + `v1.0.0`
 
 ---

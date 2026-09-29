@@ -5,25 +5,25 @@ yang belum. Tanggal: 29 September 2026.
 
 Ringkas: front-end **dan** runtime sudah berjalan. **12 dari 12** contoh acuan
 Bagian 11 menghasilkan keluaran yang persis, termasuk `asinkron.jw`
-(`async`/`await`), `modul/*.jw` (ES module), dan `generator.jw`. Yang belum:
-hidden class, *live binding* modul, pustaka standar lengkap, dan tooling
-(REPL, `fmt`, `bench`).
+(`async`/`await`), `modul/*.jw` (ES module, dengan *live binding*), dan
+`generator.jw`. Yang belum: hidden class, kalender non-Gregorian, zona waktu
+lokal, pustaka standar lengkap, dan tooling (REPL, `fmt`, `bench`).
 
 ## Angka
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 20.032 |
-| Opcode bytecode | 123 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT` baru) |
-| Target fuzz | 5 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`) |
+| Baris kode C++ (`src/` + `tests/`) | 21.260 |
+| Opcode bytecode | 124 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL` baru) |
+| Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
-| Pesan diagnostik | 106 |
+| Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 3 berkas, 152 cek, 81 test |
-| Uji bahasa (`jawa tes`) | 3 berkas, 93 assertion (termasuk live binding modul) |
+| Uji bahasa (`jawa tes`) | 5 berkas, 250 assertion (regex, `Tanggal`, live binding modul, ...) |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
-| Build | Release, ASan, UBSan, TSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di kelimanya; preset `fuzz` — 5/5 `ctest` hijau |
-| Campaign fuzz terakhir | 20.000 kasus x 5 target (100.000) + ASan 14.000 kasus — 0 crash |
-| Dokumentasi | 11 berkas `docs/` + 4 berkas akar |
+| Build | Release, ASan, UBSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di ketiganya; preset `fuzz` — 6/6 `ctest` hijau |
+| Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
+| Dokumentasi | 13 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -37,7 +37,7 @@ hidden class, *live binding* modul, pustaka standar lengkap, dan tooling
 | 5 | Modul ES, zona mati-temporal, `super` penuh | modul ES (live binding) + TDZ + `pilih` pola selesai; `super` penuh belum |
 | 6 | Event loop, Promise | **selesai** (loop acara deterministik; tanpa jam nyata) |
 | 7 | Fiber, generator suspend, `metokake` non-eager | **generator selesai tanpa fiber** (D-028; `FIBER_*` tidak pernah dipakai) |
-| 8 | Pustaka standar lengkap, `Tanggal`, regex, berkas | sebagian |
+| 8 | Pustaka standar lengkap, `Tanggal`, regex, berkas | `Tanggal` (UTC) + regex (backtracking, anggaran langkah) selesai; sisanya sebagian |
 | 9 | FFI, JIT, threading | belum |
 | 10 | Incremental/generational GC | belum |
 | 11 | Pustaka pihak ketiga, audit keamanan | belum |
@@ -72,8 +72,16 @@ Bahasa yang berjalan penuh, termasuk:
   `wajib_salah`, `wajib_lempar`) dipasang sebagai global, seluruh kegagalan di
   satu berkas dilaporkan sekaligus, laporan menyebut nomor baris. Lihat
   `docs/testing.md`.
-- Fuzzing 5 target (`preset fuzz`) dengan driver deterministik yang bisa jalan
-  tanpa libFuzzer; sudah menemukan 6 bug nyata, lihat `docs/fuzzing.md`.
+- **Regex runtime**: `/pola/flag` jadi nilai, bukan `mboh`. Mesin backtracking
+  dengan kelompok tangkap, kelompok bernama, kelas karakter, shorthand, flag
+  `g i m s y u`, dan **anggaran langkah** yang melaporkan pola patologis
+  (`(a+)+b`) sebagai galat yang bisa ditangkap, bukan menggantung dan bukan
+  diam-diam menjawab "tidak cocok". Lihat `docs/regex.md`.
+- **`Tanggal`**: kalender proleptis Gregorian **UTC saja** (tanpa zona waktu --
+  alasannya di `docs/tanggal.md`), konversi ke/dari teks ISO-8601, komponen
+  kalender, dan aritmetika `tambah_ms`/`tambah_hari`/`selisih`.
+- Fuzzing 6 target (`preset fuzz`) dengan driver deterministik yang bisa jalan
+  tanpa libFuzzer; sudah menemukan 7 bug nyata, lihat `docs/fuzzing.md`.
 - Modul ES: `impor` (nama / alias / namespace / `baku` / tanpa pengikat) dan
   `ekspor` (deklarasi / `baku` / daftar nama / re-export), termasuk impor
   siklik antar-modul dan **live binding** (variabel yang diekspor dibagi lewat
@@ -107,14 +115,27 @@ di semua pengimpor (termasuk lewat rantai re-export). Yang belum:
 - Belum ada modul bawaan (`std:...`); tidak ada bundling, tidak ada peta
   alias nama berkas.
 
-### 3. Pustaka standar minimum
+### 3. Pustaka standar: regex & `Tanggal` sudah, sisanya belum
 
 Ada: `tulis`, `Teks`, `Angka`, `Boole`, `jenis`, `Matematika`, `Dhaptar`
 (9 method), `Teks` (8 method), `StdAksara`, `JSON.gawe_teks` (stub),
-`Wektu` (`tundha`, `teka`), dan method Janji (`then`, `tangkep`, `jenis`, `hasil`).
-Belum: `Tanggal`, regex runtime, `Peta`/`Himpunan` komprehensif, berkas, proses,
-`Janji.all`/`race`/`anySelesai`, dan I/O async.
-Lihat `docs/stdlib.md` dan `docs/async.md`.
+`Wektu` (`tundha`, `teka`), method Janji (`then`, `tangkep`, `jenis`, `hasil`),
+regex runtime (8 method, lihat `docs/regex.md`), dan `Tanggal` (konstruktor + 3
+method statis + 19 method instans, lihat `docs/tanggal.md`).
+
+Yang **hanya ada sebagian**, dan sebaiknya dibaca sebagai batasan nyata:
+
+- **Regex byte-oriented.** `.` dan kelas karakter mencocokkan byte, bukan titik
+  kode, jadi `/^.$/` tidak cocok `"é"`. Flag `u` diterima dan disimpan tapi belum
+  mengubah apa pun. Lookahead/lookbehind, backreference, dan kuantifier
+  possessif ditolak eksplisit. Tidak ada mode `n` dan tidak ada `\p{...}`.
+- **`Tanggal` tanpa zona waktu.** Tidak ada konversi ke/from waktu lokal, tidak
+  ada daylight saving, tidak ada kalender selain Gregorian (Rejrah/Saka dan
+  Hijriah tidak ada).
+
+Belum: `Peta`/`Himpunan` komprehensif, berkas, proses, `Janji.all`/`race`/
+`anySelesai`, I/O async, dan format tanggal bebas selain ISO-8601.
+Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
 
 ### 4. Bagian lain yang belum
 
@@ -140,11 +161,21 @@ Lihat `docs/stdlib.md` dan `docs/async.md`.
 - Tidak ada korpus crash fuzzing yang tersimpan, dan `fuzz_parser` belum
   memeriksa rentang setiap node anak (butuh penelusur AST per-jenis-node).
   Lihat `docs/fuzzing.md`.
+- **Field kelas dengan inisialisasi, field publik, dan `nampa` masih rusak.**
+  Ditemukan tak sengaja saat menulis contoh `Tanggal` (dibawah 0.11.0, bukan
+  regresi dari perubahan mana pun -- sudah diperiksa pada `165cae9`):
+  - `golongan A { #x = 1; wiwit() { iki.#x = 2; } }` ->
+    `Ora bisa nulis properti "x" saka nilai undefined` (`iki` belum ada).
+  - `golongan B { y; ... }` (field publik) -> *stack overflow*
+    (`KleruRentang [R003]`, 10.000 frame).  Ini yang paling serius: bukan pesan
+    galat, tapi proses mati.
+  - `nampa x() { ... }` -> `Ora bisa nelep nilai: dudu fungsi`; accessor
+    getter sama sekali tidak terdaftar sebagai method pada instans.
+  Yang bekerja: field privat **tanpa** inisialisasi (`#jeneng;`), seperti pada
+  `examples/golongan.jw`.
 - Parameter default memakai `JUMP_IF_NOT_NULLISH`, jadi argumen yang sengaja
   dilewatkan sebagai `mboh` juga akan digantikan nilai default. Membedakan
   keduanya butuh opcode baru yang membaca `Frame::n_argumen`.
-- Regex hanya ada sebagai token; sebagai nilai runtime belum (Fase 8).
-- `kasus <Kelas>:` untuk pencocokan tipe di `pilih` belum ada.
 - Skor cakupan belum diukur (preset `coverage` ada, tapi belum ada ambang
   90% yang dijaga).
 

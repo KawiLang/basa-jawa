@@ -2,6 +2,102 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/) + semver.
 
+## [0.11.0] — Regex runtime & `Tanggal`
+
+### Ditambahkan
+- **Regex jadi nilai runtime.** `/pola/flag` tidak lagi `mboh`: polanya
+  dikompilasi jadi program dan dicocokkan dengan mesin backtracking. Regex
+  adalah nilai biasa — bisa masuk dhaptar, jadi properti, jadi argumen.
+
+  ```
+  tulis(/[0-9]+/g.ganti("a1b22c333", "#"));         // "a#b#c#"
+  tulis(/(\d+)-(\d+)/.nilai("10-20"));              // ["10", "20"]
+  tulis(/(?<tahun>\d{4})/.grup("2026", "tahun"));   // "2026"
+  tulis(/^\w+@\w+$/.kabeh("budi@sari"));            // true
+  ```
+
+  Delapan method: `cocog`, `kabeh`, `ganti`, `pecah`, `nilai`, `grup`, `pola`,
+  `flag`. Grup bisa diambil dengan nomor atau nama. `ganti` mendukung `$&`,
+  `$0`..`$9`.
+
+- **Anggaran langkah regex, dilaporkan sebagai galat.** Backtracking bersifat
+  eksponensial dalam *waktu*: `(a+)+b` terhadap 40 huruf `a` punya 2^40 cabang,
+  sementara kedalaman rekursinya cuma ~80 — jadi penjaga kedalaman tidak berguna.
+  Mesin menghitung pemanggilan `match` dan menghentikan pencarian setelah
+  200.000 langkah.Yang terjadi setelah itu adalah `KleruRegex` yang bisa
+  ditangkap `coba`/`tangkep`, **bukan** jawaban "tidak cocok" yang diam-diam:
+  jawaban yang salah lebih buruk daripada menggantung.
+
+- **`Tanggal`** — nilai waktu, kalender proleptis Gregorian, **UTC saja**.
+  Tanpa zona waktu, dengan alasan yang ditulis di `docs/tanggal.md`: tanpa basis
+  data zona waktu yang andal, "jam berapa di sini" lebih sering salah daripada
+  tidak dijawab.
+
+  ```
+  ana t = Tanggal.dari(2026, 9, 29, 14, 3, 7);
+  tulis(t.ke_teks());          // "2026-09-29T14:03:07.000Z"
+  tulis(t.nama_hari());        // "Selasa"
+  tulis(t.selisih(t.tambah_hari(1)));  // 86400000
+  ```
+
+  Konstruktor global `Tanggal()` / `Tanggal(angka)` / `Tanggal("ISO")`, method
+  statis `Tanggal.dari`, `Tanggal.ms`, `Tanggal.sekarang`, dan 19 method
+  instans (`ke_teks`, komponen kalender, `nama_hari`, `nama_bulan`, aritmetika,
+  perbandingan).
+
+- Opcode baru: `MAKE_REGEX`, `MAKE_TANGGAL`.
+- `rt::RegexProgram`, `rt::HasilRegex` (`src/rt/regexp.{h,cpp}`), `rt::Tanggal`
+  (`src/rt/tanggal.{h,cpp}`).
+- `VM::lempar_kleru` — galat dari kode native bisa sekarang ditangkap
+  `coba`/`tangkep` seperti galat biasa.
+- `NativeFnObj::sifat` — properti pada fungsi native, supaya konstruktor
+  `Tanggal` punya method statis (`Tanggal.dari`).
+- **Target fuzz `fuzz_regex`** (target ke-6): kompilasi pola dari input acak +
+  pencocokan dengan invarian rentang hasil dan batas anggaran langkah. 330.000
+  kasus lintas 11 benih, 0 crash.
+- `tests/tes/regex.tes.jw` (88 assertion) dan `tests/tes/tanggal.tes.jw`
+  (63 assertion).
+- `docs/regex.md` dan `docs/tanggal.md`.
+
+### Diperbaiki (bug nyata)
+- **ReDoS tidak tertangani.** `(a+)+b` terhadap 40 huruf `a` menggantung
+  selamanya. Penyebabnya dua: penghitung langkah hanya ada di wrapper `cocok`
+  sedangkan rekursi memanggil `match` langsung (jadi tidak pernah bertambah),
+  dan anggarannya di-*reset* untuk tiap posisi mulai — sehingga pola yang sama
+  bisa menghabiskan anggaran berulang kali tanpa pernah habis.
+- **Loop tak berujung pada `]`.** `atom()` mengembalikan node kosong untuk `]`
+  **tanpa memakai karakternya**, sementara loop `sequentially()` hanya berhenti di
+  `)` dan `|`. Pola seperti `x {1,2x]` (baca penghitung gagal, jadi `{` dianggap
+  harf, lalu `]` nyasar) membuat parser menambah node tanpa henti sampai kehabisan
+  memori. Ditemukan `fuzz_regex`; `]` sekarang harf biasa sesuai ECMAScript, dan
+  `sequentially()` punya jaring pengaman yang menolak pola yang tidak maju.
+- **Kelas karakter ternegosi terbalik.** `dalam_kelas()` mengembalikan `true`
+  begitu rentang ditemukan, tanpa memperhitungkan negasi — jadi `[^abc]` cocok
+  dengan `a`.
+- **Grup 0 tidak pernah diisi.** `HasilRegex::awal[0]`/`akhir[0]` dibiarkan
+  `npos`, sehingga `ganti()` menghitung panjang yang astronomical
+  (`std::bad_alloc`).
+- **Nama kelompok tangkap tidak pernah dikumpulkan.** Penyimpanannya ditulis ke
+  vektor yang salah, jadi `grup(teks, "nama")` selalu mengembalikan seluruh
+  pencocokan.
+- **Flag `i` diabaikan.** `Kompilator` tidak menerima flag sama sekali, jadi
+  `[a-c]/i` tidak pernah cocok dengan huruf besar.
+- **Pembulatan pada komponen tanggal.** `detik_dalam_hari()` memakai
+  `floor(x + 0.5)`; untuk milidetik negatif itu menghasilkan jam 24
+  (`1969-12-31T24:00:00.999Z`) dan `detik()` yang meleset satu.
+- **Teks ISO-8601 salah bulan diterima.** `Tanggal("2026-13-01")` menghasilkan
+  tanggal (karena `Tanggal.dari` sengaja melakukan rollover) alih-alih `mboh`.
+- **Galat native keluar dari program.** `Op::CALL` memakai `Status::Galat`
+  langsung, bukan `unwind_galat`, jadi galat yang dilempar kode native
+  (`vm.lempar_kleru`) tidak bisa ditangkap `coba`/`tangkep` — keluar dari
+  program.
+- **`unwind_galat` meruntuhkan frame pemanggil.** Dipanggil dari loop bytecode
+  bersarang (native → balik ke kode Basa Jawa), `unwind_galat` mem-pop frame
+  sampai habis, termasuk frame modul milik pemanggil. Akibatnya program berhenti
+  di tengah jalan tepat setelah native gagal. Sekarang `VM::panggil` memasang
+  lantai unwind (`VM::batas_unwind_`) selama pemanggilan.
+- `nilai_ke_teks` untuk `Tanggal` menghasilkan `Tanggal(0)`; sekarang ISO-8601.
+
 ## [0.10.0] — Live binding modul ES
 
 ### Ditambahkan

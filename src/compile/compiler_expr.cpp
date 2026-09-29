@@ -156,9 +156,15 @@ void Compiler::ekspresi(const ast::Node* n) {
             return;
         }
         case NK::RegexLit: {
+            // `/pola/flag` -> objek regex runtime. Pola & flag disimpan sebagai
+            // konstanta berurutan; `MAKE_REGEX` membungkusnya (dan memvalidasi
+            // polanya -- pola salah jadi galat runtime yang bisa ditangkap).
             const auto* r = static_cast<const ast::RegexLit*>(n);
-            emit(Op::KONSTAN, static_cast<std::uint16_t>(tambah_konstanta(Value::mboh())));
-            (void)r;
+            const std::size_t pola = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, r->pola)));
+            const std::size_t flag = tambah_konstanta(Value::obyek(rt::buat_teks(heap_, r->flag)));
+            emit(Op::KONSTAN, static_cast<std::uint16_t>(pola));
+            emit(Op::KONSTAN, static_cast<std::uint16_t>(flag));
+            emit(Op::MAKE_REGEX, static_cast<std::uint16_t>(0));
             return;
         }
         case NK::TemplateLit: eks_template(static_cast<const ast::TemplateLit*>(n)); return;

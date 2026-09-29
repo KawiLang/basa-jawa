@@ -1,0 +1,102 @@
+// `Tanggal` — nilai waktu.
+//
+// Menyimpan milidetik sejak epoch UTC. Waktu lokal TIDAK dipakai: tanpa basis
+// zona waktu yang andal, "jam berapa di sini" lebih sering salah daripada tidak
+// dijawab. Yang tersedia adalah kalender proleptis Gregorian (UTC).
+//
+// Lihat `docs/tanggal.md`.
+
+// --- konstruksi -----------------------------------------------------------
+// Epoch: 1970-01-01T00:00:00Z.
+ana epoch = Tanggal.ms(0);
+pratelas(epoch.ke_teks(), "1970-01-01T00:00:00.000Z");
+pratelas(epoch.tahun(), 1970);
+pratelas(epoch.bulan(), 1);
+pratelas(epoch.hari(), 1);
+pratelas(epoch.jam(), 0);
+pratelas(epoch.menit(), 0);
+pratelas(epoch.detik(), 0);
+pratelas(epoch.milidetik(), 0);
+pratelas(epoch.ms(), 0);
+// 1970-01-01 adalah Kamis.
+pratelas(epoch.hari_dalam_minggu(), 4);
+pratelas(epoch.nama_hari(), "Kamis");
+pratelas(epoch.nama_bulan(), "Januari");
+
+// --- komponen kalender ----------------------------------------------------
+ana t = Tanggal.dari(2026, 9, 29, 14, 3, 7);
+pratelas(t.ke_teks(), "2026-09-29T14:03:07.000Z");
+pratelas(t.ke_tanggal(), "2026-09-29");
+pratelas(t.ke_waktu(), "14:03:07.000Z");
+pratelas(t.tahun(), 2026);
+pratelas(t.bulan(), 9);
+pratelas(t.hari(), 29);
+pratelas(t.jam(), 14);
+pratelas(t.menit(), 3);
+pratelas(t.detik(), 7);
+pratelas(t.nama_bulan(), "September");
+// 2026-09-29 adalah Selasa.
+pratelas(t.hari_dalam_minggu(), 2);
+pratelas(t.nama_hari(), "Selasa");
+
+// Milidetik.
+pratelas(Tanggal.dari(2026, 1, 1, 0, 0, 0.5).milidetik(), 500);
+pratelas(Tanggal.ms(1500).detik(), 1);
+pratelas(Tanggal.ms(1500).milidetik(), 500);
+
+// --- teks ISO-8601 ---------------------------------------------------------
+pratelas(Tanggal("2026-09-29").ke_tanggal(), "2026-09-29");
+pratelas(Tanggal("2026-09-29T14:03:07Z").jam(), 14);
+pratelas(Tanggal("2026-09-29T14:03:07.250Z").milidetik(), 250);
+pratelas(Tanggal("2026-09-29T14:03:07.25Z").milidetik(), 250);
+pratelas(Tanggal("2026-09-29T14:03:07.025Z").milidetik(), 25);
+// Teks yang tidak bisa diparse -> `mboh` (seperti `Teks("x")` -> NaN).
+pratelas(jenis(Tanggal("bukan tanggal")), "mboh");
+pratelas(jenis(Tanggal("2026-13-01")), "mboh");
+pratelas(jenis(Tanggal("2026-09")), "mboh");
+
+// --- sebelum epoch (tahun negatif & rollover) ------------------------------
+ana sebelum = Tanggal.ms(-1);
+pratelas(sebelum.ke_teks(), "1969-12-31T23:59:59.999Z");
+pratelas(sebelum.tahun(), 1969);
+pratelas(sebelum.bulan(), 12);
+pratelas(sebelum.hari(), 31);
+pratelas(sebelum.jam(), 23);
+pratelas(sebelum.milidetik(), 999);
+pratelas(Tanggal.dari(1969, 12, 31, 23, 59, 59.999).ms(), -1);
+
+// Tahun kabisat (kalender proleptis Gregorian: aturan 100/400).
+pratelas(Tanggal.dari(2000, 2, 29).hari(), 29);
+pratelas(Tanggal.dari(1900, 2, 28).hari(), 28);
+pratelas(Tanggal.dari(2024, 2, 29).hari(), 29);
+pratelas(Tanggal.dari(2023, 2, 28).hari(), 28);
+
+// Rollover: hari di luar rentang bulan digeser, seperti `Date` ECMAScript.
+pratelas(Tanggal.dari(2026, 2, 30).bulan(), 3);
+pratelas(Tanggal.dari(2026, 13, 1).tahun(), 2027);
+pratelas(Tanggal.dari(2026, 0, 1).tahun(), 2025);
+pratelas(Tanggal.dari(2026, 1, 32).bulan(), 2);
+
+// --- aritmetika ------------------------------------------------------------
+ana a = Tanggal.dari(2026, 1, 1);
+ana b = Tanggal.dari(2026, 1, 2);
+pratelas(a.selisih(b), 86400000);
+pratelas(b.selisih(a), 0 - 86400000);
+pratelas(a.tambah_ms(1000).detik(), 1);
+pratelas(a.tambah_hari(1).hari(), 2);
+pratelas(a.tambah_hari(1).sama_dengan(b), bener);
+wajib_bener(a.sebelum(b));
+wajib_bener(b.sesudah(a));
+wajib_salah(a.sesudah(a));
+wajib_salah(a.sama_dengan(b));
+
+// Tanggal bisa jadi key dhaptar & disimpan di obyek.
+ana peta = {tanggal: a};
+pratelas(peta.tanggal.ke_tanggal(), "2026-01-01");
+pratelas([a, b].panjang, 2);
+
+// `Tanggal()` tanpa argumen = sekarang. Yang bisa diuji tanpa jam: hasilnya
+// angka yang masuk akal dan berdiferensi kecil dengan jam sistem.
+ana sekarang = Tanggal();
+wajib_bener(jenis(sekarang) == "tanggal");
+wajib_bener(sekarang.ms() > 1600000000000);

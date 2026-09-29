@@ -32,6 +32,8 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | Generator lazy (`gawe*` + `metokake`) | selesai — tanpa fiber, tak berhingga bisa dipakai (`docs/generator.md`) |
 | async/await + loop acara | selesai (deterministik, tanpa fiber — `docs/async.md`) |
 | `jawa tes` | selesai — kerangka uji level bahasa (`docs/testing.md`) |
+| Regex `/pola/flag` | selesai — backtracking, kelompok tangkap & bernama, anggaran langkah anti-ReDoS (`docs/regex.md`) |
+| `Tanggal` | selesai — kalender proleptis Gregorian, UTC saja, tanpa zona waktu (`docs/tanggal.md`) |
 | Regex runtime, `Tanggal`, berkas, proses | belum |
 
 ## Membangun
@@ -142,7 +144,8 @@ src/rt/         Value (NaN-boxing), objek, shape, number
 src/gc/         Heap mark-and-sweep, Handle/HandleScope
 src/stdlib/     Pustaka standar (native functions)
 src/cli/        CLI `jawa`
-docs/           grammar, bytecode, object model, GC, stdlib, async, modules, generator
+docs/           grammar, bytecode, object model, GC, stdlib, async, modules, generator,
+               regex, tanggal, testing, fuzzing, control-flow
 tests/          unit + golden
 ```
 
@@ -158,6 +161,11 @@ tests/          unit + golden
 | [`docs/async.md`](docs/async.md) | Janji, `enteni`, loop acara (tanpa fiber) |
 | [`docs/modules.md`](docs/modules.md) | linker modul ES, hoisting, impor siklik |
 | [`docs/generator.md`](docs/generator.md) | generator lazy, continuation, penggeseran stack |
+| [`docs/regex.md`](docs/regex.md) | pola `/pola/flag`, kelas, kelompok, flag, anggaran langkah |
+| [`docs/tanggal.md`](docs/tanggal.md) | kalender UTC, ISO-8601, komponen, aritmetika, batasannya |
+| [`docs/testing.md`](docs/testing.md) | kerangka `jawa tes` |
+| [`docs/control-flow.md`](docs/control-flow.md) | `yen`/`nalika`/`kanggo`/`pilih`/`coba` |
+| [`docs/fuzzing.md`](docs/fuzzing.md) | target fuzz, cara menjalankan, bug yang ditemukan |
 | [`DECISIONS.md`](DECISIONS.md) | keputusan desain & penyimpangan dari spesifikasi |
 | [`CHANGELOG.md`](CHANGELOG.md) | riwayat perubahan |
 | [`STATUS.md`](STATUS.md) | status jujur: selesai / belum / cara verifikasi |

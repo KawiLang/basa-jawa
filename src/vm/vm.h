@@ -22,6 +22,7 @@
 
 #include "gc/heap.h"
 #include "rt/object.h"
+#include "rt/regexp.h"
 #include "rt/value.h"
 #include "support/arena.h"
 #include "support/source_map.h"
@@ -287,6 +288,11 @@ public:
     bool cari_getter(rt::Value obj, rt::Value kunci, rt::Value& keluar);
     /// Cari handler `coba` terdekat; `true` bila galat tertangani.
     bool unwind_galat(rt::Value v);
+    /// Bikin galat dari kode native. Loop bytecodeesting akan melihat
+    /// `galat_` pada instruksi berikutnya dan meneruskannya ke handler
+    /// `coba`/`tangkep` terdekat, jadi galat yang dilempar dari native pun
+    /// bisa ditangkap.
+    void lempar_kleru(std::string_view jeneng, std::string pesan);
     /// Buat objek kleru (`jeneng` + `pesan`) untuk dilempar lewat `uncal`.
     rt::Value buat_kleru(std::string_view jeneng, std::string pesan);
 
@@ -296,6 +302,12 @@ public:
     TeksObj* buat_teks(std::string_view s);
     ObyekObj* prototipe_dasar();
     ArrayObj* prototipe_dhaptar();
+    /// Parse teks ISO-8601 (`YYYY-MM-DD`, opsional `THH:MM:SS[.sss]Z`) menjadi
+    /// objek `Tanggal`. Mengembalikan `mboh` kalau formatnya tidak dikenali.
+    Value buat_tanggal_dari_teks(std::string_view teks);
+    /// Objek `RegexObj` dari program yang sudah dikompilasi.
+    Value buat_regex(std::shared_ptr<rt::RegexProgram> program, std::string_view pola,
+                     std::string_view flag);
 
     // --------------------------------------------------------------- modul
     void daftarkan_modul(std::string_view nama, std::string_view path, std::string_view sumber);
@@ -330,6 +342,16 @@ public:
     void registrasikan_root_visitor(std::function<void(gc::RootVisitor&)> fn);
 
 public:
+    /// Jumlah frame minimum yang TIDAK boleh diruntuhkan `unwind_galat`.
+    ///
+    /// `VM::panggil` menjalankan loop bytecode BERSARANG saat native memanggil
+    /// balik ke kode Basa Jawa. Galat di dalam loop itu akan mencari handler
+    /// `coba`; kalau tidak ada, `unwind_galat` akan mem-pop frame sampai habis --
+    /// termasuk frame pemanggil, yang bukan miliknya. Akibatnya program berhenti
+    /// di tengah jalan setelah native gagal. `panggil` memasang lantai ini
+    /// selama pemanggilan, jadi overrun tidak melewati frame pemanggil.
+    std::size_t batas_unwind_ = 0;
+
     /// Status galat terakhir (dipakai loop eksekusi & kode native).
     GalatRuntime galat_;
 
@@ -447,9 +469,14 @@ public:
     /// nilainya menunjuk heap VM ini, jadi dua VM tidak boleh berbagi.
     /// Akses lewat `VM::tabel_stdlib()`.
     std::unique_ptr<stdlib::State> stdlib_;
+    std::vector<std::pair<Value, Value>> native_sifat_root_;
 
     /// Tabel global & method pustaka standar milik VM ini.
     [[nodiscard]] stdlib::State& tabel_stdlib() noexcept { return *stdlib_; }
+
+    /// Kunci & nilai `NativeFnObj::sifat` yang sudah didaftarkan, supaya GC
+    /// menandainya. Dipakai `vm::stdlib` lewat `daftarkan_sifat_native`.
+    std::vector<std::pair<Value, Value>>& native_sifat_root() noexcept { return native_sifat_root_; }
 
     /// Posisi sumber frame teratas (dipakai `jawa tes` untuk melaporAssertion
     /// dengan nomor baris).

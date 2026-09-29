@@ -160,6 +160,13 @@ JAWA_OP(SEL_ALIAS,  1, "s - > ", "modul")
 JAWA_OP(GET_CELL,   1, "- > v", "variabel")
 JAWA_OP(SET_CELL,   1, "v - > v", "variabel")
 JAWA_OP(SEL_BUAT,   0, "v - > s", "modul")
+// --- nilai runtime yang butuh konstruksi ---
+// `MAKE_REGEX k` / `MAKE_TANGGAL k` membentuk objek dari konstanta teks (pola &
+// flag regex, atau ISO-8601). Opcode terpisah karena keduanya bisa gagal
+// (pola regex salah, teks tanggal tidak bisa diparse) -- dan kegagalannya harus
+// jadi galat runtime yang bisa ditangkap `coba`, bukan crash.
+JAWA_OP(MAKE_REGEX,  1, "- > r", "objek")
+JAWA_OP(MAKE_TANGGAL,1, "- > d", "objek")
 JAWA_OP(YIELD,      0, "v - r", "fiber")
 JAWA_OP(AWAIT,      0, "v - r", "fiber")
 JAWA_OP(DEBUGGER,   0, "- > ", "lain")

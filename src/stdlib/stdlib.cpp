@@ -15,6 +15,8 @@
 
 #include "gc/heap.h"
 #include "rt/number.h"
+#include "rt/regexp.h"
+#include "rt/tanggal.h"
 #include "rt/object.h"
 #include "rt/string.h"
 #include "vm/vm.h"
@@ -56,6 +58,24 @@ void daftarkan(VM& vm, std::string_view nama, std::size_t n_param, bool variadic
 
 /// Daftarkan nilai konstan sebagai global.
 void daftarkan_nilai(VM& vm, std::string_view nama, Value v) { global(vm).tabel[std::string(nama)] = v; }
+
+/// Tempel properti pada fungsi native (method statis konstruktor).
+void sifat(VM& vm, NativeFnObj* f, std::string_view nama, Value v) {
+    const std::pair<Value, Value> kv(Value::obyek(rt::buat_teks(vm.heap(), nama)), v);
+    f->sifat.push_back(kv);
+    // GC tidak menelusuri `NativeFnObj::sifat`, jadi daftarkan terpisah.
+    vm.native_sifat_root().push_back(kv);
+}
+
+/// Buat fungsi native biasa (dipakai untuk method statis pada konstruktor).
+Value native_baru(VM& vm, std::string_view nama, std::size_t n_param, rt::NativeFn fn) {
+    auto* n = vm.heap().alokasi<NativeFnObj>();
+    n->h.kind = OK::Native;
+    n->fn = fn;
+    n->nama = nama;
+    n->jumlah_param = static_cast<std::uint8_t>(n_param);
+    return Value::obyek(n);
+}
 
 /// Bantu: objek dengan properti native (namespace `Math`, `JSON`, ...).
 ObyekObj* buat_namespace(VM& vm, std::string_view nama) {
@@ -579,6 +599,338 @@ Value panggil_native(VM& vm, NativeFnObj* native, Value this_val, std::vector<Va
 }
 
 // ===========================================================================
+// Native: regex runtime
+// ===========================================================================
+//
+// Pola `/pola/flag` sudah jadi objek `RegexObj` oleh opcode `MAKE_REGEX`. Yang
+// dikembalikan di sini adalah hasil pencocokan sebagai nilai biasa: boolean
+// untuk `cocog`/`kabeh`, teks untuk `ganti`, dhaptar untuk `pecah`.
+
+namespace {
+
+/// `RegexObj` pada `this_val`, atau `nullptr` kalau bukan regex.
+rt::RegexObj* obj_regex(Value v) {
+    if (!v.is_obyek() || v.pointer() == nullptr) return nullptr;
+    auto* o = const_cast<rt::Obj*>(static_cast<const rt::Obj*>(v.pointer()));
+    if (o->h.kind != OK::Regex) return nullptr;
+    return static_cast<rt::RegexObj*>(o);
+}
+
+/// `TanggalObj` pada `this_val`, atau `nullptr`.
+rt::TanggalObj* obj_tanggal(Value v) {
+    if (!v.is_obyek() || v.pointer() == nullptr) return nullptr;
+    auto* o = const_cast<rt::Obj*>(static_cast<const rt::Obj*>(v.pointer()));
+    if (o->h.kind != OK::Tanggal) return nullptr;
+    return static_cast<rt::TanggalObj*>(o);
+}
+
+/// Teks dari sebuah nilai: `TeksObj` dipinjam langsung (tanpa alokasi), nilai
+/// lain dikonversi lewat `nilai_ke_teks` lalu disimpan di buffer thread-local.
+std::string_view arg_teks_bersih(Value v) {
+    if (v.is_obyek() && v.pointer() != nullptr) {
+        const auto* o = static_cast<const rt::Obj*>(v.pointer());
+        if (o->h.kind == OK::Teks) return static_cast<const rt::TeksObj*>(o)->str();
+    }
+    static thread_local std::string buf;
+    buf = rt::nilai_ke_teks_inspect_dummy(v);
+    return buf;
+}
+
+/// Teks argumen ke-`i`, atau string kosong.
+std::string_view arg_teks(const std::vector<Value>& args, std::size_t i) {
+    if (i >= args.size()) return {};
+    return arg_teks_bersih(args[i]);
+}
+
+/// Lempar galat kalau pencarian regex dihentikan anggaran langkah.
+///
+/// Ini PENTING: pola patologis seperti `(a+)+b` membuat backtracking eksponensial
+/// dalam waktu. Tanpa anggaran langkah, program bisa menggantung selamanya; tapi
+/// jawaban "tidak cocok" yang salah sama buruknya dengan menggantung -- pemanggil
+/// akan menyimpulkan tidak ada kecocokan padahal mesinnya menyerah. Jadi anggaran
+/// habis dilaporkan sebagai galat yang bisa ditangkap `coba`/`tangkep`.
+bool cek_anggaran(VM& vm, const rt::RegexObj* r) {
+    if (r == nullptr || r->program == nullptr || !r->program->batas_terlampaui()) return false;
+    vm.lempar_kleru("KleruRegex",
+                    "Pola regex /" + r->pola + "/ terlalu rumit: mesinnya menyerah setelah " +
+                        std::to_string(r->program->anggaran_langkah()) +
+                        " langkah. Pola semacam (a+)+b bisa czasnya berlipat ganda; "
+                        "tulis ulang polanya supaya tidak ada kuantifier bersarang di atas "
+                        "kelompok yang bisa diulang.");
+    return true;
+}
+
+ArrayObj* dhaptar_baru(VM& vm, std::size_t n) {
+    auto* a = vm.buat_dhaptar(n);
+    a->panjang = n;
+    for (std::size_t i = 0; i < n; ++i) a->elemen[i] = Value::mboh();
+    return a;
+}
+
+
+}  // namespace
+
+/// `/pola/.cocog(teks)` -- true kalau ada kecocokan di mana saja.
+Value native_regex_cocog(VM& vm, Value this_val, std::vector<Value>& args) {
+    rt::RegexObj* r = obj_regex(this_val);
+    if (r == nullptr || r->program == nullptr) return Value::boolean(false);
+    rt::HasilRegex h;
+    const bool cocok = r->program->cari(arg_teks(args, 0), 0, h) && h.cocok;
+    if (cek_anggaran(vm, r)) return Value::mboh();
+    return Value::boolean(cocok);
+}
+
+/// `/pola/.kabeh(teks)` -- true kalau teks SELURUH-nya cocok (anchor dua ujung).
+Value native_regex_kabeh(VM& vm, Value this_val, std::vector<Value>& args) {
+    rt::RegexObj* r = obj_regex(this_val);
+    if (r == nullptr || r->program == nullptr) return Value::boolean(false);
+    rt::HasilRegex h;
+    const bool cocok = r->program->kabeh(arg_teks(args, 0), h) && h.cocok;
+    if (cek_anggaran(vm, r)) return Value::mboh();
+    return Value::boolean(cocok);
+}
+
+/// `/pola/.ganti(teks, pengganti)` -- ganti semua kecocokan. `$&` = seluruh
+/// kecocokan, `$1`..`$9` = kelompok tangkap.
+Value native_regex_ganti(VM& vm, Value this_val, std::vector<Value>& args) {
+    rt::RegexObj* r = obj_regex(this_val);
+    if (r == nullptr || r->program == nullptr) return native_teks_objek(vm, "");
+    const std::string hasil = r->program->ganti(arg_teks(args, 0), arg_teks(args, 1));
+    if (cek_anggaran(vm, r)) return Value::mboh();
+    return native_teks_objek(vm, hasil);
+}
+
+/// `/pola/.pecah(teks)` -- dhaptar; tiap elemen adalah dhaptar
+/// `[seluruh_cocokan, kelompok1, kelompok2, ...]`.
+Value native_regex_pecah(VM& vm, Value this_val, std::vector<Value>& args) {
+    rt::RegexObj* r = obj_regex(this_val);
+    auto* luar = dhaptar_baru(vm, 0);
+    if (r == nullptr || r->program == nullptr) return Value::obyek(luar);
+    const std::string_view subjek = arg_teks(args, 0);
+    const auto hasil = r->program->semua(subjek);
+    if (cek_anggaran(vm, r)) return Value::mboh();
+    for (const rt::HasilRegex& h : hasil) {
+        const std::size_t n = h.awal.size();
+        auto* baris = dhaptar_baru(vm, n);
+        for (std::size_t i = 0; i < n; ++i) {
+            baris->elemen[i] = native_teks_objek(vm, std::string(h.kelompok(subjek, i)));
+        }
+        luar->dorong(Value::obyek(baris), &vm.heap());
+    }
+    return Value::obyek(luar);
+}
+
+/// `/pola/.nilai(teks)` -- dhaptar kelompok tangkap dari kecocokan PERTAMA
+/// saja (tanpa kelompok 0). Kalau tidak ada kecocokan: dhaptar kosong.
+Value native_regex_nilai(VM& vm, Value this_val, std::vector<Value>& args) {
+    rt::RegexObj* r = obj_regex(this_val);
+    // Tanpa kecocokan: dhaptar KOSONG, bukan dhaptar berisi `mboh`. Pemanggil
+    //_then/sedang menghitung panjangnya akan lebih mudah begitu.
+    auto* luar = dhaptar_baru(vm, 0);
+    if (r == nullptr || r->program == nullptr) return Value::obyek(luar);
+    const std::string_view subjek = arg_teks(args, 0);
+    rt::HasilRegex h;
+    if (!r->program->cari(subjek, 0, h) || !h.cocok) {
+        if (cek_anggaran(vm, r)) return Value::mboh();
+        return Value::obyek(luar);
+    }
+    const std::size_t ngrup = r->program->jumlah_kelompok();
+    auto* isi = dhaptar_baru(vm, ngrup);
+    for (std::size_t i = 1; i <= ngrup; ++i) {
+        isi->elemen[i - 1] = native_teks_objek(vm, std::string(h.kelompok(subjek, i)));
+    }
+    return Value::obyek(isi);
+}
+
+/// `/pola/.grup(teks, kelompok)` -- teks kelompok tangkap. `kelompok` boleh
+/// nomor (1-based; 0 = seluruh pencocokan) ATAU nama untuk kelompok bernama.
+/// Kelompok yang tidak ikut cocok menghasilkan teks kosong.
+Value native_regex_grup(VM& vm, Value this_val, std::vector<Value>& args) {
+    rt::RegexObj* r = obj_regex(this_val);
+    if (r == nullptr || r->program == nullptr) return native_teks_objek(vm, "");
+    const std::string_view subjek = arg_teks(args, 0);
+    rt::HasilRegex h;
+    if (!r->program->cari(subjek, 0, h) || !h.cocok) {
+        if (cek_anggaran(vm, r)) return Value::mboh();
+        return native_teks_objek(vm, "");
+    }
+    std::size_t nomor = 0;
+    if (args.size() > 1) {
+        if (args[1].is_angka()) {
+            nomor = static_cast<std::size_t>(args[1].as_number());
+        } else {
+            const std::string_view nama = arg_teks(args, 1);
+            // `nama_kelompok_` sejajar dengan nomor kelompok tangkap.
+            const auto& daftar = r->program->nama_kelompok();
+            for (std::size_t i = 0; i < daftar.size(); ++i) {
+                if (daftar[i] == nama) {
+                    nomor = i + 1;
+                    break;
+                }
+            }
+        }
+    }
+    return native_teks_objek(vm, std::string(h.kelompok(subjek, nomor)));
+}
+
+Value native_regex_pola(VM& vm, Value this_val, std::vector<Value>&) {
+    rt::RegexObj* r = obj_regex(this_val);
+    return native_teks_objek(vm, r != nullptr ? r->pola : std::string());
+}
+
+Value native_regex_flag(VM& vm, Value this_val, std::vector<Value>&) {
+    rt::RegexObj* r = obj_regex(this_val);
+    return native_teks_objek(vm, r != nullptr ? r->flag : std::string());
+}
+
+// ===========================================================================
+// Native: `Tanggal`
+// ===========================================================================
+//
+// Nilai `Tanggal` menyimpan milidetik sejak epoch UTC. Waktu lokal tidak
+// dipakai: tanpa basis zona waktu yang andal, "jam berapa di sini" lebih
+// sering salah daripada tidak dijawab. Yang tersedia adalah kalender UTC.
+
+/// `Tanggal()` = sekarang, `Tanggal(angka)` = dari ms sejak epoch,
+/// `Tanggal("ISO")` = dari teks `YYYY-MM-DD[THH:MM[:SS[.sss]][Z]]`.
+/// Teks yang tidak bisa diparse menghasilkan `mboh` (seperti `Teks("x")`).
+Value native_tanggal_buat(VM& vm, Value, std::vector<Value>& args) {
+    if (args.empty()) {
+        const rt::Tanggal sekarang = rt::Tanggal::sekarang();
+        auto* o = vm.heap().alokasi<rt::TanggalObj>();
+        o->h.kind = OK::Tanggal;
+        o->milidetik = sekarang.milidetik();
+        return Value::obyek(o);
+    }
+    if (args[0].is_angka()) {
+        auto* o = vm.heap().alokasi<rt::TanggalObj>();
+        o->h.kind = OK::Tanggal;
+        o->milidetik = args[0].as_number();
+        return Value::obyek(o);
+    }
+    return vm.buat_tanggal_dari_teks(arg_teks_bersih(args[0]));
+}
+
+/// `Tanggal.dari(tahun, bulan, hari, jam, menit, detik)` -- dari komponen
+/// kalender UTC. Bulan 1..12; hari di luar rentang bulan di-rollover.
+Value native_tanggal_dari(VM& vm, Value, std::vector<Value>& args) {
+    if (args.size() < 3 || !args[0].is_angka() || !args[1].is_angka() || !args[2].is_angka()) {
+        return Value::mboh();
+    }
+    const int jam = args.size() > 3 && args[3].is_angka() ? static_cast<int>(args[3].as_number()) : 0;
+    const int menit = args.size() > 4 && args[4].is_angka() ? static_cast<int>(args[4].as_number()) : 0;
+    const double detik = args.size() > 5 && args[5].is_angka() ? args[5].as_number() : 0.0;
+    const rt::Tanggal t = rt::Tanggal::dari(static_cast<std::int64_t>(args[0].as_number()),
+                                             static_cast<int>(args[1].as_number()),
+                                             static_cast<int>(args[2].as_number()), jam, menit, detik);
+    auto* o = vm.heap().alokasi<rt::TanggalObj>();
+    o->h.kind = OK::Tanggal;
+    o->milidetik = t.milidetik();
+    return Value::obyek(o);
+}
+
+/// `Tanggal.ms(n)` -- dari milidetik sejak epoch.
+Value native_tanggal_ms(VM& vm, Value, std::vector<Value>& args) {
+    if (args.empty() || !args[0].is_angka()) return Value::mboh();
+    auto* o = vm.heap().alokasi<rt::TanggalObj>();
+    o->h.kind = OK::Tanggal;
+    o->milidetik = args[0].as_number();
+    return Value::obyek(o);
+}
+
+/// `Tanggal.sekarang()` -- waktu sekarang.
+Value native_tanggal_sekarang(VM& vm, Value, std::vector<Value>&) {
+    const rt::Tanggal t = rt::Tanggal::sekarang();
+    auto* o = vm.heap().alokasi<rt::TanggalObj>();
+    o->h.kind = OK::Tanggal;
+    o->milidetik = t.milidetik();
+    return Value::obyek(o);
+}
+
+/// Bangun objek `Tanggal` dari milidetik (helper internal).
+Value tanggal_dari_ms(VM& vm, double ms) {
+    auto* o = vm.heap().alokasi<rt::TanggalObj>();
+    o->h.kind = OK::Tanggal;
+    o->milidetik = ms;
+    return Value::obyek(o);
+}
+
+/// `this_val` sebagai `rt::Tanggal`, atau epoch kalau bukan objek tanggal.
+rt::Tanggal tang(Value this_val) {
+    const rt::TanggalObj* o = obj_tanggal(this_val);
+    return o != nullptr ? rt::Tanggal(o->milidetik) : rt::Tanggal(0.0);
+}
+
+Value native_tanggal_ke_teks(VM& vm, Value this_val, std::vector<Value>&) {
+    return native_teks_objek(vm, tang(this_val).ke_teks());
+}
+Value native_tanggal_ke_tanggal(VM& vm, Value this_val, std::vector<Value>&) {
+    return native_teks_objek(vm, tang(this_val).ke_tanggal());
+}
+Value native_tanggal_ke_waktu(VM& vm, Value this_val, std::vector<Value>&) {
+    return native_teks_objek(vm, tang(this_val).ke_waktu());
+}
+Value native_tanggal_tahun(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).tahun()));
+}
+Value native_tanggal_bulan(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).bulan()));
+}
+Value native_tanggal_hari(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).hari()));
+}
+Value native_tanggal_jam(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).jam()));
+}
+Value native_tanggal_menit(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).menit()));
+}
+Value native_tanggal_detik(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).detik_dalam_menit()));
+}
+Value native_tanggal_milidetik(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).milidetik_dalam_detik()));
+}
+Value native_tanggal_hari_dalam_minggu(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(static_cast<double>(tang(this_val).hari_dalam_minggu()));
+}
+Value native_tanggal_nama_hari(VM& vm, Value this_val, std::vector<Value>&) {
+    return native_teks_objek(vm, std::string(rt::Tanggal::nama_hari(tang(this_val).hari_dalam_minggu())));
+}
+Value native_tanggal_nama_bulan(VM& vm, Value this_val, std::vector<Value>&) {
+    return native_teks_objek(vm, std::string(rt::Tanggal::nama_bulan(tang(this_val).bulan())));
+}
+Value native_tanggal_ms_inst(VM&, Value this_val, std::vector<Value>&) {
+    return Value::number(tang(this_val).milidetik());
+}
+Value native_tanggal_tambah_ms(VM& vm, Value this_val, std::vector<Value>& args) {
+    if (args.empty() || !args[0].is_angka()) return Value::mboh();
+    return tanggal_dari_ms(vm, tang(this_val).milidetik() + args[0].as_number());
+}
+Value native_tanggal_tambah_hari(VM& vm, Value this_val, std::vector<Value>& args) {
+    if (args.empty() || !args[0].is_angka()) return Value::mboh();
+    return tanggal_dari_ms(vm, tang(this_val).tambah_hari(args[0].as_number()).milidetik());
+}
+/// `t.selisih(lain)` -- selisih dalam milidetik (`lain - t`).
+Value native_tanggal_selisih(VM&, Value this_val, std::vector<Value>& args) {
+    const rt::TanggalObj* o = args.empty() ? nullptr : obj_tanggal(args[0]);
+    if (o == nullptr) return Value::mboh();
+    return Value::number(o->milidetik - tang(this_val).milidetik());
+}
+Value native_tanggal_sebelum(VM&, Value this_val, std::vector<Value>& args) {
+    const rt::TanggalObj* o = args.empty() ? nullptr : obj_tanggal(args[0]);
+    return Value::boolean(o != nullptr && tang(this_val).sebelum(rt::Tanggal(o->milidetik)));
+}
+Value native_tanggal_sesudah(VM&, Value this_val, std::vector<Value>& args) {
+    const rt::TanggalObj* o = args.empty() ? nullptr : obj_tanggal(args[0]);
+    return Value::boolean(o != nullptr && tang(this_val).sesudah(rt::Tanggal(o->milidetik)));
+}
+Value native_tanggal_sama(VM&, Value this_val, std::vector<Value>& args) {
+    const rt::TanggalObj* o = args.empty() ? nullptr : obj_tanggal(args[0]);
+    return Value::boolean(o != nullptr && tang(this_val).sama_dengan(rt::Tanggal(o->milidetik)));
+}
+
+// ===========================================================================
 // Pasang
 // ===========================================================================
 
@@ -705,6 +1057,53 @@ void pasang_semua(VM& vm) {
     pasang_prototype_metode(vm, TEK, "pecah", 1, native_teks_pecah);
     pasang_prototype_metode(vm, TEK, "termasuk", 1, native_teks_termasuk);
     pasang_prototype_metode(vm, TEK, "mulainya_dengan", 1, native_teks_mulainya_dengan);
+
+    // --- prototype Regex ---
+    const std::uint8_t REG = static_cast<std::uint8_t>(OK::Regex);
+    pasang_prototype_metode(vm, REG, "cocog", 1, native_regex_cocog);
+    pasang_prototype_metode(vm, REG, "kabeh", 1, native_regex_kabeh);
+    pasang_prototype_metode(vm, REG, "ganti", 2, native_regex_ganti);
+    pasang_prototype_metode(vm, REG, "pecah", 1, native_regex_pecah);
+    pasang_prototype_metode(vm, REG, "nilai", 1, native_regex_nilai);
+    pasang_prototype_metode(vm, REG, "grup", 2, native_regex_grup);
+    pasang_prototype_metode(vm, REG, "pola", 0, native_regex_pola);
+    pasang_prototype_metode(vm, REG, "flag", 0, native_regex_flag);
+
+    // --- `Tanggal`: konstruktor global + method statis ---
+    auto* ctor = vm.heap().alokasi<NativeFnObj>();
+    ctor->h.kind = OK::Native;
+    ctor->fn = native_tanggal_buat;
+    ctor->nama = "Tanggal";
+    ctor->jumlah_param = 0;
+    ctor->variadic = true;
+    sifat(vm, ctor, "nama", native_teks_objek(vm, "Tanggal"));
+    sifat(vm, ctor, "dari", native_baru(vm, "dari", 6, native_tanggal_dari));
+    sifat(vm, ctor, "ms", native_baru(vm, "ms", 1, native_tanggal_ms));
+    sifat(vm, ctor, "sekarang", native_baru(vm, "sekarang", 0, native_tanggal_sekarang));
+    daftarkan_nilai(vm, "Tanggal", Value::obyek(ctor));
+
+    // --- prototype Tanggal ---
+    const std::uint8_t TGL = static_cast<std::uint8_t>(OK::Tanggal);
+    pasang_prototype_metode(vm, TGL, "ke_teks", 0, native_tanggal_ke_teks);
+    pasang_prototype_metode(vm, TGL, "ke_tanggal", 0, native_tanggal_ke_tanggal);
+    pasang_prototype_metode(vm, TGL, "ke_waktu", 0, native_tanggal_ke_waktu);
+    pasang_prototype_metode(vm, TGL, "tahun", 0, native_tanggal_tahun);
+    pasang_prototype_metode(vm, TGL, "bulan", 0, native_tanggal_bulan);
+    pasang_prototype_metode(vm, TGL, "hari", 0, native_tanggal_hari);
+    pasang_prototype_metode(vm, TGL, "jam", 0, native_tanggal_jam);
+    pasang_prototype_metode(vm, TGL, "menit", 0, native_tanggal_menit);
+    pasang_prototype_metode(vm, TGL, "detik", 0, native_tanggal_detik);
+    pasang_prototype_metode(vm, TGL, "milidetik", 0, native_tanggal_milidetik);
+    pasang_prototype_metode(vm, TGL, "hari_dalam_minggu", 0, native_tanggal_hari_dalam_minggu);
+    pasang_prototype_metode(vm, TGL, "nama_hari", 0, native_tanggal_nama_hari);
+    pasang_prototype_metode(vm, TGL, "nama_bulan", 0, native_tanggal_nama_bulan);
+    pasang_prototype_metode(vm, TGL, "ms", 0, native_tanggal_ms_inst);
+    pasang_prototype_metode(vm, TGL, "tambah_ms", 1, native_tanggal_tambah_ms);
+    pasang_prototype_metode(vm, TGL, "tambah_hari", 1, native_tanggal_tambah_hari);
+    pasang_prototype_metode(vm, TGL, "selisih", 1, native_tanggal_selisih);
+    pasang_prototype_metode(vm, TGL, "sebelum", 1, native_tanggal_sebelum);
+    pasang_prototype_metode(vm, TGL, "sesudah", 1, native_tanggal_sesudah);
+    pasang_prototype_metode(vm, TGL, "sama_dengan", 1, native_tanggal_sama);
 }
 
 }  // namespace jawa::vm::stdlib

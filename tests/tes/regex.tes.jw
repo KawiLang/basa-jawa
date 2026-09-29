@@ -1,0 +1,160 @@
+// Regex runtime: pola `/pola/flag` jadi objek, dan method-nya.
+//
+// Regex dulu hanya token lexer -- nilainya `mboh`. Sekarang pola dikompilasi
+// jadi program dan dicocokkan dengan backtracking.
+//
+// CATATAN sintaks: `/` setelah identifier selalu dibaca sebagai AWAL regex
+// (aturan ECMAScript), bukan pembagian.lihat `docs/regex.md`.
+
+// --- harf & '.' ------------------------------------------------------------
+pratelas(/abc/.cocog("xxabcyy"), bener);
+pratelas(/abc/.cocog("xxabcyy"), bener);
+pratelas(/^abc$/.cocog("abc"), bener);
+pratelas(/^abc$/.cocog("xabc"), salah);
+wajib_bener(/a.c/.cocog("abc"));
+wajib_salah(/a.c/.cocog("ac"));
+
+// --- kuantifier -----------------------------------------------------------
+wajib_bener(/a*/.cocog("bbb"));
+wajib_bener(/a+/.cocog("baaa"));
+wajib_salah(/^a+/.cocog("bbb"));
+wajib_bener(/^a?b$/.cocog("b"));
+wajib_bener(/^a{3}$/.cocog("aaa"));
+wajib_salah(/^a{3}$/.cocog("aa"));
+wajib_bener(/^a{2,}$/.cocog("aaaaa"));
+wajib_salah(/^a{2,3}$/.cocog("aaaa"));
+
+// --- kelas karakter & escape ----------------------------------------------
+wajib_bener(/[abc]/.cocog("b"));
+wajib_salah(/[abc]/.cocog("d"));
+wajib_bener(/[^abc]/.cocog("d"));
+wajib_salah(/[^abc]/.cocog("a"));
+wajib_bener(/[a-z]+/.cocog("abc"));
+wajib_bener(/[0-9]{3}-[0-9]{4}/.cocog("tel 0812-3456"));
+wajib_bener(/\d/.cocog("a1"));
+wajib_bener(/\D/.cocog("a1"));
+wajib_salah(/\d/.cocog("ab"));
+wajib_bener(/\w+/.cocog("_x9"));
+wajib_bener(/\s/.cocog("a b"));
+wajib_bener(/a\.b/.cocog("a.b"));
+wajib_salah(/^a\.b$/.cocog("axb"));
+wajib_bener(/a\\b/.cocog("a\\b"));
+
+// --- alternasi & grup ------------------------------------------------------
+wajib_bener(/kucing|anjing/.cocog("anjing"));
+wajib_bener(/kucing|anjing/.cocog("kucing"));
+wajib_salah(/kucing|anjing/.cocog("burung"));
+// `|` berikatan LONJAK, jadi `^kucing|anjing$` = `^kucing` ATAU `anjing$` --
+// bukan "kucing di awal ATAU anjing di akhir". Kalau maksudnya yang terakhir,
+// kurung harus ditulis eksplisit.
+wajib_bener(/^kucing|anjing$/.cocog("kucingxyz"));
+wajib_bener(/^(kucing|anjing)$/.cocog("kucing"));
+wajib_salah(/^(kucing|anjing)$/.cocog("kucingxyz"));
+wajib_bener(/(?:ab)+c/.cocog("ababc"));
+
+// --- pengambil -------------------------------------------------------------
+pratelas(/(\d+)-(\d+)/.grup("10-20", 1), "10");
+pratelas(/(\d+)-(\d+)/.grup("10-20", 2), "20");
+pratelas(/(\d+)-(\d+)/.nilai("10-20"), ["10", "20"]);
+pratelas(/(\d+)-(\d+)/.nilai("bukan angka"), []);
+pratelas(/(?<tahun>\d{4})-(?<bulan>\d{2})/.grup("2026-09", "bulan"), "09");
+pratelas(/(?<tahun>\d{4})-(?<bulan>\d{2})/.grup("2026-09", "tahun"), "2026");
+pratelas(/(?<tahun>\d{4})-(?<bulan>\d{2})/.grup("2026-09", 1), "2026");
+
+// --- `kabeh`: anchor di kedua ujung -----------------------------------------
+wajib_bener(/^\d{4}$/.kabeh("2026"));
+wajib_salah(/^\d{4}$/.kabeh("20260"));
+wajib_salah(/^\d{4}$/.kabeh("x2026"));
+
+// --- `ganti` ---------------------------------------------------------------
+pratelas(/[0-9]+/g.ganti("a1b22c333", "#"), "a#b#c#");
+pratelas(/\s+/g.ganti("a   b\tc", " "), "a b c");
+pratelas(/(\w+)@(\w+)/.ganti("budi@sari", "$2 $1"), "sari budi");
+pratelas(/(\w+)@(\w+)/.ganti("budi@sari", "$&"), "budi@sari");
+pratelas(/x/g.ganti("abc", "y"), "abc");
+
+// --- `pecah` ---------------------------------------------------------------
+pratelas(/[0-9]+/.pecah("a1b22c333").panjang, 3);
+pratelas(/[0-9]+/.pecah("a1b22c333")[0], ["1"]);
+pratelas(/(\w)(\d)/.pecah("a1b2")[1], ["b2", "b", "2"]);
+pratelas(/(\w)(\d)/.pecah("a1b2")[0], ["a1", "a", "1"]);
+pratelas(/zzz/.pecah("abc").panjang, 0);
+
+// --- flag ------------------------------------------------------------------
+wajib_bener(/[a-c]+/i.cocog("ABC"));
+wajib_salah(/[a-c]+/.cocog("ABC"));
+pratelas(/abc/.pola(), "abc");
+pratelas(/abc/gi.flag(), "gi");
+
+// --- pola salah -------------------------------------------------------------
+//
+// Pola yang rusak DITANGANI di dua tempat, dan itu disengaja:
+//
+//   * Yang lexer bisa lihat (regex tak ditutup, flag tak dikenal) jadi galat
+//     `KleruToken` waktu kompilasi -- lebih dekat ke sumber, dan program
+//     tidak mungkin jalan dengan pola yang tak bisa dikompilasi.
+//   * Yang baru ketahuan setelah parsing pola (kurung tak seimbang, rentang
+//     terbalik, kuantifier tanpa operand) jadi `KleruRegex` waktu runtime,
+//     sehingga bisa ditangkap `coba`/`tangkep`.
+//
+// Yang runtime:
+wajib_lempar(() => /a**/.cocog("x"), "kuantifier tanpa operand");
+wajib_lempar(() => /(a/.cocog("x"), "kurung tak ditutup");
+wajib_lempar(() => /[z-a]/.cocog("x"), "rentang terbalik");
+wajib_lempar(() => /a)*/.cocog("x"), "kurung tak berpasangan");
+wajib_lempar(() => /(?<a>x)(?<a>y)/.cocog("x"), "nama kelompok dobel");
+
+// --- regex adalah nilai biasa: bisa masuk dhaptar & jadi properti ---------
+ana pola_daftar = [/a/, /b/];
+pratelas(pola_daftar.panjang, 2);
+wajib_bener(pola_daftar[0].cocog("xa"));
+wajib_bener(pola_daftar[1].cocog("yb"));
+pratelas({regex: /x+/}.regex.cocog("axx"), bener);
+
+// --- anggaran langkah (ReDoS) ---------------------------------------------
+//
+// Backtracking bersifat eksponensial dalam WAKTU: pola `(a+)+b` terhadap 40
+// huruf 'a' punya 2^40 cabang. Mesin punya anggaran langkah, dan ketika habis
+// ia melempar galat -- BUKAN diam-diam menjawab "tidak cocok", karena jawaban
+// yang salah lebih buruk daripada menggantung: pemanggil akan menyimpulkan
+// tidak ada kecocokan padahal mesinnya menyerah.
+ana reagent = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";   // 40 huruf 'a'
+wajib_lempar(() => /(a+)+b/.cocog(reagent), "pola ReDoS");
+wajib_lempar(() => /(a|aa)+c/.cocog(reagent), "pola bersarang lain");
+wajib_lempar(() => /(a+)+b/.pecah(reagent), "pecah");
+
+// Galatnya harus bisa ditangkap, bukan keluar dari program.
+ana tertangkap = salah;
+coba { /(a+)+b/.cocog(reagent); } tangkep (galat) { tertangkap = galat; }
+wajib_bener(jenis(tertangkap) == "kleru");
+
+// Pola yang hanya "aman" (tanpa backtracking tak berujung) jalan di bawah
+// anggaran, berapa pun panjangnya teksnya.
+wajib_bener(/^a+b/.cocog(reagent + "b"));
+wajib_salah(/^a+b/.cocog(reagent));
+wajib_bener(/^(a+)$/.cocog(reagent));
+wajib_bener(/a*$/.cocog(reagent));
+wajib_bener(/[ab]+/.cocog(reagent));
+
+// --- `]` yang tidak menutup kelas adalah harf biasa -------------------------
+//
+// Bug nyata yang ditemukan fuzz target: `atom()` mengembalikan node kosong
+// untuk `]` TANPA memakai karakternya, sementara loop `sequentially()` hanya
+// berhenti di `)` dan `|`. Pola seperti `x {1,2x]` (baca penghitung gagal, jadi
+// `{` dianggap harf, lalu `]` nyasar) membuat loop berjalan tanpa maju -- vektor
+// node tumbuh terus sampai OOM. Perilaku yang benar menurut ECMAScript: `]`
+// nyasar adalah harf biasa.
+pratelas(/]/.kabeh("]"), bener);
+pratelas(/a]b/.kabeh("a]b"), bener);
+pratelas(/[]]/.kabeh("]"), bener);
+pratelas(/[^]]/.kabeh("a"), bener);
+wajib_salah(/[^]]/.kabeh("]"));
+// Tapi `{n}` yang BENAR-BENAR valid tetap penghitung, bukan harf: `a{2}b`
+// mencocoki "aab", bukan "a{2}b".
+wajib_salah(/a{2}b/.kabeh("a{2}b"));
+pratelas(/a{2}b/.kabeh("aab"), bener);
+// `{` yang tidak membentuk penghitung valid (`{,2}`, `{1,2x]`, `{ }`) adalah
+// harf biasa, bukan galat -- aturan yang sama seperti `]`.
+pratelas(/a{,2}b/.kabeh("a{,2}b"), bener);
+pratelas(/a{ }b/.kabeh("a{ }b"), bener);
+pratelas(/x {1,2x]/.kabeh("x {1,2x]"), bener);

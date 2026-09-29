@@ -218,11 +218,28 @@ terhadap `Frame::slot_base`; slot 0 selalu `this`.
 | 115 | `NOP_LINE` | 1 | `- > ` | Alias `NOP`. |
 | 116 | `UNDEF_LINE` | 1 | `- > ` | Alias `MBOH`. |
 
+## Sel & live binding  (`variabel` / `modul`)
+
+| # | Opcode | Operand | Tumpukan | Keterangan |
+|---:|---|---:|---|---|
+| 158 | `GET_IMPORT` | 2 | `- > s` | Buat `SelObj` untuk pengikatan impor pada modul & indeks lalu; opcode `0` Remix yang dijalankan. Sel ini nanti diarahkan ke sel modul asal oleh `SEL_ALIAS`. |
+| 159 | `SEL_ALIAS` | 1 | `s - > ` | Arahkan sel di puncak ke sel yang sudah ada, jadi pembacaan & penulisan diteruskan. Rantai alias ditelusuri sampai ke akar. |
+| 160 | `GET_CELL` | 1 | `- > v` | Baca isi sel upvalue (bukan upvalue-nya). |
+| 161 | `SET_CELL` | 1 | `v - > v` | Tulis isi sel upvalue; **harus** lewat `SelObj::tulis()` supaya alias ikut — menulis `nilai` langsung membuat live binding hanya satu arah. |
+| 162 | `SEL_BUAT` | 0 | `v - > s` | Bungkus nilai menjadi `SelObj` baru (variabel modul yang diekspor). |
+
+## Nilai runtime  (`objek`)
+
+| # | Opcode | Operand | Tumpukan | Keterangan |
+|---:|---|---:|---|---|
+| 168 | `MAKE_REGEX` | 1 | `- > r` | Bentuk objek `RegexObj` dari konstanta `pola` & `flag`. Pola rusak → `KleruRegex` (bisa ditangkap `coba`/`tangkep`). Lihat `docs/regex.md`. |
+| 169 | `MAKE_TANGGAL` | 1 | `- > d` | Bentuk objek `Tanggal` dari konstanta ISO-8601. Teks tak dikenal → `mboh`. Lihat `docs/tanggal.md`. |
+
 ## Variabel, lokal, upvalue  (`variabel`, 1 opcode)
 
 | # | Opcode | Operand | Tumpukan | Keterangan |
 |---:|---|---:|---|---|
-| 117 | `GET_GLOBAL_FUNC` | 1 | `- > f` | Alias lawas `GET_GLOBAL`. |
+| 175 | `GET_GLOBAL_FUNC` | 1 | `- > f` | Alias lawas `GET_GLOBAL`. |
 
 ## Opcode belum diimplementasikan
 
@@ -230,11 +247,10 @@ Opcode berikut ada di `.def` agar ruang nama stabil, tapi memicu
 `KleruInternal [I001]` bila bytecode memakainya:
 
 - `BIGINT` (BigInt runtime, Fase 8)
-- `TDZ_CHECK` (zona mati-temporal, Fase 5)
 
 ## BatasanISA sementara
 
-Batas 8 byte per instruksi membuat lompatan jangkauan 32-bit. Untuk program
+Batas 3 byte per instruksi membuat lompatan jangkauan 16-bit. Untuk program
 dengan lebih dari 65535 instruksi per fungsi, byte `uint16_t` tidak cukup.
 Program Basa Jawa realistis belum mencapai batas itu; Nevertheless ini
 disebutkan sebagai penyimpangan dari spesifikasi (lihat `DECISIONS.md`).

@@ -61,6 +61,8 @@ class TeksObj;
 class ObyekOra;
 
 class Shape;
+class RegexProgram;
+class Tanggal;
 
 // ---------------------------------------------------------------------------
 // Header objek
@@ -376,6 +378,13 @@ public:
     std::uint8_t jumlah_param = 0;
     bool variadic = false;
     Value prototipe = Value::mboh();
+    /// Properti yang ditempel pada fungsi native-nya -- misalnya method statis
+    /// pada konstruktor `Tanggal` (`Tanggal.dari`, `Tanggal.sekarang`).
+    ///
+    /// `Value` tidak punya `std::hash`, jadi vektor Pasangan (linear) yang
+    /// dipakai; jumlahnya sedikit dan tidak pernah di-hot loop. Kunci & nilai
+    /// harus di-root GC; `VM::daftarkan_root_visitor` yang melakukannya.
+    std::vector<std::pair<Value, Value>> sifat;
 };
 
 class ClosureObj : public Obj {
@@ -532,7 +541,9 @@ public:
     static constexpr OK kKind = OK::Regex;
     std::string pola;
     std::string flag;
-    std::shared_ptr<void> program;  ///< CompiledRegex* (lihat rt/regexp.h)
+    /// Program regex yang sudah dikompilasi. `shared_ptr` ke tipe buram;
+    /// lihat `rt/regexp.h`.
+    std::shared_ptr<RegexProgram> program;
     std::size_t last_index = 0;
     bool global = false;
     bool abaikan_besar_kecil = false;
