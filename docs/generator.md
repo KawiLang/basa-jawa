@@ -25,7 +25,7 @@ mandheg;   // berhenti kapan saja
 
 ## Tanpa fiber
 
-Dokumen `async.md` menjelaskan bahwa `entani` menunda rantai async dengan
+Dokumen `async.md` menjelaskan bahwa `enteni` menunda rantai async dengan
 **menyalin frame** ke continuation (`struct Lanjutan`). Generator memakai
 mechanism yang **persis sama** (`src/vm/vm_gen.cpp`):
 

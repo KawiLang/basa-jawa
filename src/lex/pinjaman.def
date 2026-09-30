@@ -1,0 +1,97 @@
+// Kata & fungsi dari bahasa lain yang punya padanan di Basa Jawa.
+//
+// SATU SUMBER KEBENARAN untuk diagnosa "kode ini dari bahasa lain". Dipakai
+// `Lexer::periksa_kata_asing` (lihat src/lex/lexer.cpp) supaya:
+//   - `return 1;`  -> `bali 1;`  (bukan diam-diam jadi pengenal)
+//   - `function f(){}` -> `gawe f(){}`.
+//
+// PENTING: kata di sini BUKAN kata kunci Basa Jawa. Semuanya sah sebagai
+// pengenal, jadi efeknya PERINGATAN, bukan galat -- kecuali kalau bentuknya
+// memang tidak mungkin jadi Basa Jawa (lihat aturan L011 di lexer.cpp).
+//
+// Format tiap baris:
+//   JAWA_PINJAMAN("asal", Kunci|Bawaan, "padanan_basa_jawa")
+//
+//   "asal"  : ejaan di bahasa lain, huruf kecil, case-sensitive
+//   jenis   : Kunci  = kata kunci bahasa lain -> padanan kata kunci Basa Jawa
+//             Bawaan = nama fungsi/builtin   -> padanan pustaka Basa Jawa
+//   padanan : yang benar-benar ada di Basa Jawa
+//
+// Aturan:
+//   - Jangan masukkan kata yang sudah jadi kata kunci Basa Jawa (`var`,
+//     `saka`, `tulis` ...) -- lexer tidak akan pernah melihatnya sebagai
+//     pengenal, jadi entri-nya mati.
+//   - Jangan masukkan kata yang dipakai sebagai method Basa Jawa (`then`):
+//     memberi saran "then -> bali" hanya membingungkan.
+//   - Bila tidak ada padanan yang jujur (mis. `void`, `pass`, `package`),
+//     lebih baik tidak ada sarannya daripada suggestion yang ngawur.
+
+// ------------------------------------------------ JavaScript / TypeScript
+JAWA_PINJAMAN("return", Kunci, "bali")
+JAWA_PINJAMAN("function", Kunci, "gawe")
+JAWA_PINJAMAN("const", Kunci, "tetep")
+JAWA_PINJAMAN("let", Kunci, "ana")
+JAWA_PINJAMAN("class", Kunci, "golongan")
+JAWA_PINJAMAN("new", Kunci, "anyar")
+JAWA_PINJAMAN("this", Kunci, "iki")
+JAWA_PINJAMAN("import", Kunci, "impor")
+JAWA_PINJAMAN("exports", Kunci, "ekspor")
+JAWA_PINJAMAN("export", Kunci, "ekspor")
+JAWA_PINJAMAN("require", Kunci, "impor")
+JAWA_PINJAMAN("from", Kunci, "saka")
+JAWA_PINJAMAN("as", Kunci, "minangka")
+JAWA_PINJAMAN("of", Kunci, "saka")
+JAWA_PINJAMAN("case", Kunci, "kasus")
+JAWA_PINJAMAN("default", Kunci, "baku")
+JAWA_PINJAMAN("switch", Kunci, "pilih")
+JAWA_PINJAMAN("try", Kunci, "coba")
+JAWA_PINJAMAN("catch", Kunci, "tangkep")
+JAWA_PINJAMAN("finally", Kunci, "pungkasan")
+JAWA_PINJAMAN("throw", Kunci, "uncal")
+JAWA_PINJAMAN("break", Kunci, "mandheg")
+JAWA_PINJAMAN("continue", Kunci, "terusna")
+JAWA_PINJAMAN("while", Kunci, "nalika")
+JAWA_PINJAMAN("for", Kunci, "kanggo")
+JAWA_PINJAMAN("do", Kunci, "lakoni")
+JAWA_PINJAMAN("if", Kunci, "yen")
+JAWA_PINJAMAN("else", Kunci, "liyane")
+JAWA_PINJAMAN("null", Kunci, "kosong")
+JAWA_PINJAMAN("true", Kunci, "bener")
+JAWA_PINJAMAN("false", Kunci, "salah")
+JAWA_PINJAMAN("undefined", Kunci, "mboh")
+JAWA_PINJAMAN("constructor", Kunci, "wiwit")
+
+// --------------------------------------------------------------- Python
+JAWA_PINJAMAN("def", Kunci, "gawe")
+JAWA_PINJAMAN("elif", Kunci, "liyane yen")
+JAWA_PINJAMAN("None", Kunci, "mboh")
+JAWA_PINJAMAN("True", Kunci, "bener")
+JAWA_PINJAMAN("False", Kunci, "salah")
+JAWA_PINJAMAN("self", Kunci, "iki")
+JAWA_PINJAMAN("lambda", Kunci, "gawe")
+JAWA_PINJAMAN("del", Kunci, "busak")
+JAWA_PINJAMAN("raise", Kunci, "uncal")
+JAWA_PINJAMAN("except", Kunci, "tangkep")
+
+// --------------------------------------------- C / C++ / Java / Kotlin / Rust
+JAWA_PINJAMAN("fun", Kunci, "gawe")
+JAWA_PINJAMAN("fn", Kunci, "gawe")
+JAWA_PINJAMAN("func", Kunci, "gawe")
+JAWA_PINJAMAN("match", Kunci, "cocog")
+JAWA_PINJAMAN("use", Kunci, "impor")
+JAWA_PINJAMAN("val", Kunci, "tetep")
+JAWA_PINJAMAN("int", Bawaan, "angka")
+JAWA_PINJAMAN("float", Bawaan, "angka")
+JAWA_PINJAMAN("str", Bawaan, "teks")
+
+// ------------------------------------------- fungsi & properti bawaan lain
+JAWA_PINJAMAN("print", Bawaan, "tulis")
+JAWA_PINJAMAN("printf", Bawaan, "tulis")
+JAWA_PINJAMAN("puts", Bawaan, "tulis")
+JAWA_PINJAMAN("log", Bawaan, "tulis")
+JAWA_PINJAMAN("assert", Bawaan, "pratelas")
+JAWA_PINJAMAN("len", Bawaan, "dawa")
+JAWA_PINJAMAN("length", Bawaan, "dawa")
+JAWA_PINJAMAN("push", Bawaan, "tambah")
+JAWA_PINJAMAN("type", Bawaan, "jinis")
+JAWA_PINJAMAN("typeof", Bawaan, "jinis")

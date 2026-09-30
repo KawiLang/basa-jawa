@@ -137,4 +137,15 @@ void isi_potongan(Diagnostic& d, std::string_view kode) {
     d.panjang_kolom = static_cast<std::uint32_t>(std::min<std::size_t>(lebar_bita, 40));
 }
 
+void cetak_diagnostik(std::FILE* keluar, const DiagnosticBag& bag) {
+    for (const Diagnostic& d : bag.peringatan()) {
+        const std::string s = d.format();
+        std::fwrite(s.data(), 1, s.size(), keluar);
+    }
+    for (const Diagnostic& d : bag.galat()) {
+        const std::string s = d.format();
+        std::fwrite(s.data(), 1, s.size(), keluar);
+    }
+}
+
 }  // namespace jawa::support

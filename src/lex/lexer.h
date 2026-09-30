@@ -107,7 +107,7 @@ public:
     /// Apakah posisi `offset` memulai baris baru (heuristik untuk ASI & diagnostik).
     [[nodiscard]] bool baris_baru_pada(std::size_t offset) const noexcept;
 
-    /// Peeking: apakah kata kunciNljack (tanpaidents) cocok pada offset (untuk parser).
+    /// Peeking: apakah kata kunci (tanpa spasi) cocok pada offset (untuk parser).
     [[nodiscard]] bool kata_kunci_di(std::size_t offset, Tok k) const noexcept;
 
     /// Ambil baris sumber lengkap untuk diagnostik.
@@ -135,13 +135,17 @@ private:
     // --- primitif ---
     void lewati_spasi(bool& baris_baru);
     [[nodiscard]] bool cocok(std::string_view s) const noexcept;
-    void diagnostik(const char* kode, SourcePos pos, std::string_view tambahan = {});
+    void diagnostik(const char* kode, SourcePos pos, std::string_view tambahan = {},
+                    support::DiagLevel level = support::DiagLevel::Galat,
+                    std::string_view saran = {});
 
     // --- pengenal & kata kunci ---
     void lex_pengenal(Token& t);
     void lex_kata_kunci(Token& t, std::string_view kata);
-    Tok cari_kata_kunci(std::string_view kata) const noexcept;
     void catat_kata_kunci_krama(bool ngoko) noexcept;
+
+    // --- diagnosa "kode ini dari bahasa lain" (lihat src/lex/pinjaman.def) ---
+    void periksa_kata_asing(const TokenList& daftar);
 
     // --- literal ---
     void lex_angka(Token& t);

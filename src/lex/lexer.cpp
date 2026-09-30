@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <utility>
 
 #include "rt/number.h"
 
@@ -117,6 +118,14 @@ public:
 
     [[nodiscard]] std::size_t jumlah() const noexcept { return semua_.size(); }
 
+    /// Semua nama (ngoko + krama), untuk pencarian "paling mirip".
+    [[nodiscard]] std::vector<std::string_view> semua_nama() const {
+        std::vector<std::string_view> hasil;
+        hasil.reserve(semua_.size());
+        for (const Entri& e : semua_) hasil.push_back(e.nama);
+        return hasil;
+    }
+
 private:
     struct Entri {
         std::string_view nama;
@@ -151,6 +160,92 @@ private:
 const KeywordTable& tabel_kata_kunci() {
     static const KeywordTable t;
     return t;
+}
+
+// ---------------------------------------------------------------------------
+// Tabel kata pinjaman: kata dari bahasa lain -> padanan Basa Jawa.
+//
+// Binary search juga: daftar ini dipanggil untuk SETIAP pengenal di awal
+// pernyataan, jadi harus O(log n), bukan O(n).
+// ---------------------------------------------------------------------------
+struct PinjamanEntry {
+    std::string_view asal;
+    std::string_view jawa;
+    bool kunci;  ///< true = kata kunci bahasa lain, false = fungsi/bawaan
+};
+
+class PinjamanTable {
+public:
+    PinjamanTable() {
+#define JAWA_PINJAMAN(asal, jenis, jawa) masukkan(std::string_view(asal), std::string_view(jawa), jenis == Kunci);
+#include "pinjaman.def"
+#undef JAWA_PINJAMAN
+        std::sort(semua_.begin(), semua_.end(),
+                  [](const Entri& a, const Entri& b) { return a.nama < b.nama; });
+    }
+
+    [[nodiscard]] const PinjamanEntry* cari(std::string_view kata) const noexcept {
+        if (kata.empty()) return nullptr;
+        const Entri* e = find(kata);
+        return e != nullptr ? &e->pinjaman : nullptr;
+    }
+
+private:
+    enum Bentuk { Kunci, Bawaan };
+    struct Entri {
+        std::string_view nama;
+        PinjamanEntry pinjaman;
+    };
+
+    void masukkan(std::string_view nama, std::string_view jawa, bool kunci) {
+        semua_.push_back(Entri{nama, PinjamanEntry{nama, jawa, kunci}});
+    }
+
+    [[nodiscard]] const Entri* find(std::string_view nama) const noexcept {
+        std::size_t lo = 0;
+        std::size_t hi = semua_.size();
+        while (lo < hi) {
+            const std::size_t mid = lo + (hi - lo) / 2;
+            if (semua_[mid].nama < nama) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if (lo < semua_.size() && semua_[lo].nama == nama) return &semua_[lo];
+        return nullptr;
+    }
+
+    std::vector<Entri> semua_;
+};
+
+const PinjamanTable& tabel_pinjaman() {
+    static const PinjamanTable t;
+    return t;
+}
+
+/// Jarak Levenshtein, berhenti begitu melebihi `batas`.
+[[nodiscard]] int jarak_edit(std::string_view a, std::string_view b, int batas) noexcept {
+    if (a.empty() || b.empty()) {
+        const int n = static_cast<int>(a.size() + b.size());
+        return n <= batas ? n : batas + 1;
+    }
+    if (a.size() > b.size()) std::swap(a, b);
+    std::vector<int> barsa(b.size() + 1);
+    std::vector<int> saban(b.size() + 1);
+    for (std::size_t j = 0; j <= b.size(); ++j) barsa[j] = static_cast<int>(j);
+    for (std::size_t i = 1; i <= a.size(); ++i) {
+        saban[0] = static_cast<int>(i);
+        int minimum_baris = saban[0];
+        for (std::size_t j = 1; j <= b.size(); ++j) {
+            const int biaya = a[i - 1] == b[j - 1] ? 0 : 1;
+            saban[j] = std::min({barsa[j] + 1, saban[j - 1] + 1, barsa[j - 1] + biaya});
+            if (saban[j] < minimum_baris) minimum_baris = saban[j];
+        }
+        if (minimum_baris > batas) return batas + 1;
+        std::swap(barsa, saban);
+    }
+    return barsa[b.size()];
 }
 
 [[nodiscard]] int nilai_hex(char c) noexcept {
@@ -390,10 +485,11 @@ bool Lexer::kata_kunci_di(std::size_t offset, Tok k) const noexcept {
     return tabel_kata_kunci().cari(src_.substr(mulai, i - mulai), krama) == k;
 }
 
-void Lexer::diagnostik(const char* kode, SourcePos pos, std::string_view tambahan) {
+void Lexer::diagnostik(const char* kode, SourcePos pos, std::string_view tambahan, support::DiagLevel level,
+                       std::string_view saran) {
     support::Diagnostic d;
     d.code = kode;
-    d.level = support::DiagLevel::Galat;
+    d.level = level;
     d.kind = support::DiagKind::Lexer;
     d.berkas = nama_;
     d.pos = pos;
@@ -404,8 +500,96 @@ void Lexer::diagnostik(const char* kode, SourcePos pos, std::string_view tambaha
     } else {
         d.pesan = "galat lexer";
     }
+    if (!saran.empty()) d.saran = std::string(saran);
     support::isi_potongan(d, src_);
-    bag_.add_galat(std::move(d));
+    bag_.add(std::move(d));
+}
+
+void Lexer::periksa_kata_asing(const TokenList& daftar) {
+    // Dua aturan, keduanya cuma jalan di AWAL PERNYATAAN. Batasan itu yang
+    // membuat Diagnosa ini tidak berteriak pada kode yang benar: di tengah
+    // ekspresi, `type`/`push`/nama karangan lain itu sah sebagai pengenal.
+    //
+    // L011 (galat)     pengenal diikuti token yang secara tata bahasa tidak
+    //                  mungkin menyusulnya -> kode itu bukan Basa Jawa.
+    // L012 (peringatan) pengenal yang persis kata dari bahasa lain
+    //                  (`return`, `function`, ...) -> tunjuk padanannya.
+    bool awal_pernyataan = true;
+    for (std::size_t i = 0; i + 1 < daftar.token.size(); ++i) {
+        const Token& t = daftar.token[i];
+        switch (t.jenis) {
+            case Tok::Semi:
+            case Tok::LBrace:
+            case Tok::RBrace:
+                awal_pernyataan = true;
+                continue;
+            case Tok::Colon:
+                // `kasus 1:` memang awal pernyataan, tapi `f(a: angka): angka`
+                // bukan -- `angka` di situ adalah anotasi tipe, Statement
+                // yang dimulai dengan `:` lalu kata. Bedanya token sebelumnya:
+                // di `kasus` itu nilai, di anotasi itu pengenal atau `)`.
+                awal_pernyataan = (i == 0) || (daftar.token[i - 1].jenis != Tok::Ident &&
+                                             daftar.token[i - 1].jenis != Tok::RParen);
+                continue;
+            case Tok::Ident:
+                break;
+            default:
+                awal_pernyataan = false;
+                continue;
+        }
+        if (!awal_pernyataan) continue;
+        awal_pernyataan = false;
+
+        // --- L012: persis kata dari bahasa lain ---
+        if (const PinjamanEntry* p = tabel_pinjaman().cari(t.teks)) {
+            const char* jenis = p->kunci ? "kata kunci" : "fungsi";
+            std::string pesan = "`" + std::string(t.teks) + "` dudu Basa Jawa (";
+            pesan += jenis;
+            pesan += " saka bahasa liya). Ing Basa Jawa: `";
+            pesan += std::string(p->jawa);
+            pesan += "`.";
+            std::string saran = "Ganti karo `";
+            saran += std::string(p->jawa);
+            saran += "`.";
+            diagnostik("L012", t.range.mulai, pesan, support::DiagLevel::Peringatan, saran);
+            continue;
+        }
+
+        // --- L011: bentuk yang mustahil jadi Basa Jawa ---
+        // Baris baru di tengah boleh: `x` lalu `y` sah sebagai dua
+        // pernyataan terpisah. Satu baris tidak boleh.
+        const Token& berikut = daftar.token[i + 1];
+        if (berikut.baris_baru_sebelum) continue;
+        const bool mustahil =
+            berikut.jenis == Tok::Ident || berikut.jenis == Tok::LBrace || berikut.jenis == Tok::Number ||
+            berikut.jenis == Tok::BigInt || berikut.jenis == Tok::Text || berikut.jenis == Tok::TemplateText;
+        if (!mustahil) continue;
+
+        // Saran hanya kalau ada kata kunci yang cukup dekat. Menebak kata
+        // kunci yang beda empat huruf lebih membingungkan daripada diam saja,
+        // dan jarak 2 tanpa syarat huruf pertama akan memunculkan
+        // `foo` -> `ana` -- dua kata yang tidak mirip sama sekali.
+        std::string_view paling_dekat;
+        int jarak_terdekat = 3;  // terima jarak <= 2
+        for (const std::string_view nama : tabel_kata_kunci().semua_nama()) {
+            const int d = jarak_edit(t.teks, nama, 2);
+            if (d >= jarak_terdekat) continue;
+            if (d == 2 && (nama.empty() || nama[0] != t.teks[0])) continue;
+            jarak_terdekat = d;
+            paling_dekat = nama;
+        }
+        std::string pesan = "`" + std::string(t.teks) + "` ora bisa ngasilakeake wong sabda ing kaping iki.";
+        std::string saran;
+        if (!paling_dekat.empty()) {
+            saran = "Muga iki arep nulis `";
+            saran += std::string(paling_dekat);
+            saran += "`?";
+            pesan += " Muga arep nulis `";
+            pesan += std::string(paling_dekat);
+            pesan += "`.";
+        }
+        diagnostik("L011", t.range.mulai, pesan, support::DiagLevel::Galat, saran);
+    }
 }
 
 void Lexer::lex_pengenal(Token& t) {
@@ -1026,6 +1210,8 @@ void Lexer::lex_rentang(std::size_t dari, std::size_t sampai, TokenList& keluar)
     eof_tok.range.mulai = SourcePos{static_cast<std::uint32_t>(pos_), baris_, kolom_};
     eof_tok.range.selesai = eof_tok.range.mulai;
     keluar.token.push_back(eof_tok);
+
+    periksa_kata_asing(keluar);
 
     if (opt_.ketat_krama && saw_krama_ && saw_ngoko_) {
         support::Diagnostic d;

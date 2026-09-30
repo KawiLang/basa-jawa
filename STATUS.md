@@ -13,17 +13,18 @@ lokal, pustaka standar lengkap, dan tooling (`bench`, `ubah`, LSP).
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 24.684 |
+| Baris kode C++ (`src/` + `tests/`) | 26.302 |
 | Opcode bytecode | 132 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN`, `TRY_KLAUSUL`, `INSTAN_DARI`, `COCOK_TIPE` baru) |
 | Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
-| Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
-| Pesan diagnostik | 90 berkode + pesan galat runtime |
-| Uji unit | 4 berkas (termasuk `test_fmt`), 450 cek, 133 test |
+| Kata kunci (baris tabel) | 51 (72 ejaan ngoko+krama) |
+| Kata dari bahasa lain (tabel pinjaman) | 62 (`src/lex/pinjaman.def`) |
+| Pesan diagnostik | 107 berkode + pesan galat runtime |
+| Uji unit | 4 berkas (termasuk `test_fmt`), 552 cek, 142 test |
 | Uji bahasa (`jawa tes`) | 13 berkas, 558 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, skop blok, field class, I/O berkas, ...) |
-| Uji emas | 16 contoh keluaran persis (13 acuan + 3 modul) + 11 front-end + 32 formatter + 12 REPL |
-| Build | Release, ASan, UBSan, dan mode nilai 16-byte — 11/11 `ctest` hijau di keempatnya; preset `fuzz` — 6/6 `ctest` hijau |
-| Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
-| Dokumentasi | 13 berkas `docs/` + 4 berkas akar |
+| Uji emas | 16 contoh keluaran persis (13 acuan + 3 modul) + 11 front-end + 32 formatter + 12 REPL + 32 pemeriksaan kode asing |
+| Build | Release, ASan, UBSan, mode nilai 16-byte, dan coverage — 12/12 `ctest` hijau di kelimanya; preset `fuzz` (6 target, `JAWA_BUILD_TESTS=OFF` jadi tanpa `ctest`) — semua target terbangun & jalan |
+| Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash; tahap 13 menambah 2 x 2.000 kasus x 6 target di atas korpus `examples/`, dijalankan dua kali dengan benih sama (cek determinisme) — 0 crash, hasil identik |
+| Dokumentasi | 15 berkas `docs/` + 4 berkas akar |
 
 ## Fase
 
@@ -47,7 +48,7 @@ lokal, pustaka standar lengkap, dan tooling (`bench`, `ubah`, LSP).
 Bahasa yang berjalan penuh, termasuk:
 
 - Semua bentuk statement: `yen`/`liyane`/`liyane yen`, `nalika`, `lakoni`, `kanggo`
-  (klassik, `saka`, `ing`), `pilih`/`kasus`, `coba`/`tangkep`/`intrigasan`, `uncal`,
+  (klassik, `saka`, `ing`), `pilih`/`kasus`, `coba`/`tangkep`/`pungkasan`, `uncal`,
   `mandheg`, `terusna`, `bali`, `debugger`.
 - Fungsi deklaratif, arrow (`(a, b) => a + b`, `x => x`), parameter default & rest.
 - Closure, upvalue (sel terbuka & tertutup), rekursi, `tindo` tak hingga
@@ -239,6 +240,16 @@ Tiga bug kecil lain ikut tertutup:
   menangkapnya — termasuk dari dalam fungsi yang dipanggil. Sekarang
   membentuk `KleruObj` dulu (D-038). Galat internal VM (instruksi rusak,
   langkah maksimum) sengaja tetap tidak bisa ditangkap.
+- **Diagnosa kata dari bahasa lain SELESAI (tahap 13, D-043).**
+  `return`/`function`/`let`/`class`/`def`/`while`/... di awal
+  pernyataan kini diperingatkan dengan padanan Basa Jawabannya (L012),
+  dan bentuk yang pasti salah tata bahasa (`baili 1;`) jadi galat L011.
+  Daftar di `src/lex/pinjaman.def`, dokumentasi di
+  `docs/diagnostics.md`. Ditemukan karena membongkar tiga kode yang
+  "lulus" tanpa menguji apa pun -- termasuk `examples/kleru.jw` yang
+  menulis `intrigasan` bukan `pungkasan`, dan `upvalue.tes.jw` yang
+  tidak pernah mengeksekusi jalur `tangkep`-nya. Yang **tetap** belum:
+  daftar ini hanya kata kunci, bukan nama fungsi/metode.
 - `Wektu.tundha` hanya mengurutkan timer, tidak menunggu ms sungguhan
   (loop acara deterministik, lihat `docs/async.md`).
 - Pemanggil fungsi `mengko` menunggu sampai fungsi itu selesai; `tulis(f())`
@@ -309,6 +320,9 @@ python3 scripts/cek_contoh.py
 # 6. Kode sumber bebas karakter terlarang
 python3 tools/check_sumber.py
 
+# 7. Tabel data (keyword, kata pinjaman, pesan) invarian
+python3 tools/cek_tabel.py
+
 # Fuzzing (butuh preset `fuzz`)
 cmake --preset fuzz -DCMAKE_CXX_COMPILER=g++
 cmake --build build/fuzz -j 1
@@ -322,7 +336,8 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 16/16 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 558/558 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 558/558 assertion `jawa tes` lulus; 32/32
+berkas `.jw` bebas diagnosa kata asing.
 
 ## Pelajaran rekayasa
 

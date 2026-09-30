@@ -17,6 +17,7 @@ Centang yang benar-benar dijalankan di lingkungan Anda:
 - [ ] `python3 scripts/cek_golden.py` — keluaran contoh persis sama
 - [ ] `python3 scripts/cek_contoh.py` — semua contoh acuan ter-parse bersih
 - [ ] `python3 tools/check_sumber.py` — tidak ada karakter terlarang pada sumber
+- [ ] `python3 tools/cek_tabel.py` — tabel keyword/pinjaman/pesan invarian
 - [ ] Preset `asan` masih hijau
 - [ ] Preset `ubsan` masih hijau
 - [ ] Preset `nonanbox` (mode nilai 16-byte) masih hijau

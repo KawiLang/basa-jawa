@@ -173,8 +173,14 @@ panggil((v) => {
 });
 
 // Arrow dengan `coba`/`tangkep` sebagai statement pertama.
+//
+// BUG (tahap 13, ketahuan oleh diagnosa kata asing): versi sebelumnya menulis
+// `lempar "ora";` di dalam `nalika (salah)`, jadi badan `tangkep` TIDAK
+// PERNAH jalan -- `lempar` bahkan bukan kata kunci Basa Jawa (`uncal` yang
+// benar), dan `salah` membuat seluruh blok mati. Uji ini lulus tanpa
+// menguji apa pun. Sekarang klausa `tangkep` benar-benar dieksekusi.
 panggil((v) => {
-    coba { nalika (salah) { lempar "ora"; } } tangkep (e) { tulis("tertangkap"); }
+    coba { nalika (bener) { uncal "ora"; } } tangkep (e) { tulis("tertangkap"); }
 });
 
 // Arrow tanpa blok (ekspresi tunggal) tetap jalan.

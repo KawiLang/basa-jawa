@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -127,5 +128,12 @@ using DiagResult = Result<void, Diagnostic>;
 
 /// Isi `potongan` (baris sumber) & `panjang_kolom` dari isi berkas mentah.
 void isi_potongan(Diagnostic& d, std::string_view kode);
+
+/// Cetak seluruh diagnostik ke `keluar`: peringatan dulu, lalu galat.
+///
+/// Tanpa ini, peringatan yang dikumpulkan front-end (`Lexer`, `Compiler`) hilang
+/// begitu masuk ke VM -- dan peringatan yang hilang persis yang paling berbahaya,
+/// karena program lalu berjalan dengan kesalahan yang tidak pernah disebut.
+void cetak_diagnostik(std::FILE* keluar, const DiagnosticBag& bag);
 
 }  // namespace jawa::support

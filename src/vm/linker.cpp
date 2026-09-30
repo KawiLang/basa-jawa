@@ -86,32 +86,25 @@ ClosureObj* VM::kompilasi_modul(const std::string_view sumber, const std::string
     lx.lex_semua(token);
     bag.gabung(lx.bag());
     if (bag.ada_galat()) {
-        for (const support::Diagnostic& d : bag.galat()) {
-            const std::string s = d.format();
-            std::fwrite(s.data(), 1, s.size(), stderr);
-        }
+        support::cetak_diagnostik(stderr, bag);
         return nullptr;
     }
 
     parse::Parser parser(token, arena_scratch_, bag, nama_berkas);
     const ast::NodePtr prog = parser.parse_program();
     if (bag.ada_galat()) {
-        for (const support::Diagnostic& d : bag.galat()) {
-            const std::string s = d.format();
-            std::fwrite(s.data(), 1, s.size(), stderr);
-        }
+        support::cetak_diagnostik(stderr, bag);
         return nullptr;
     }
 
     compile::Compiler kompiler(heap_, bag, nama_berkas);
     const compile::HasilKompilasi hasil = kompiler.compile(static_cast<const ast::Program*>(prog));
     if (bag.ada_galat() || hasil.modul == nullptr) {
-        for (const support::Diagnostic& d : bag.galat()) {
-            const std::string s = d.format();
-            std::fwrite(s.data(), 1, s.size(), stderr);
-        }
+        support::cetak_diagnostik(stderr, bag);
         return nullptr;
     }
+    // Tanpa galat, tapi mungkin ada peringatan (lihat `VM::jalankan_sumber`).
+    support::cetak_diagnostik(stderr, bag);
 
     // `FungsiObj::nama` dan `Chunk::nama` adalah `string_view`, jadi nama
     // modul harus punya pemilik yang bertahan. `singsahan_teks_` adalah deque

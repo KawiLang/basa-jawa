@@ -40,6 +40,7 @@ ctest --test-dir build/release --output-on-failure
 python3 scripts/cek_golden.py
 python3 scripts/cek_contoh.py
 python3 tools/check_sumber.py
+python3 tools/cek_tabel.py
 ```
 
 Lalu ulangi dengan `asan`, `ubsan`, dan `nonanbox`:

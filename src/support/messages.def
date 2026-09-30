@@ -95,6 +95,16 @@ JAWA_MSG("L010", DiagKind::Lexer,
          "Bilangan bulat lebih besar dari batas.",
          "Nganggo BasaJawa.BigInt kanggo angka gedhe.")
 
+JAWA_MSG("L011", DiagKind::Lexer,
+         "Pengenal ing kaping iki ora bisa ngasilakeake wong sabda.",
+         "Pengenal di sini tidak bisa diikuti kata lain.",
+         "Apa arep nulis `bali`?")
+
+JAWA_MSG("L012", DiagKind::Lexer,
+         "Iku kata saka bahasa liya, dudu Basa Jawa.",
+         "Itu kata dari bahasa lain, bukan Basa Jawa.",
+         "Cek padanan ing Basa Jawa.")
+
 // --------------------------------------------------------------- Sintaks (S)
 JAWA_MSG("S001", DiagKind::Sintaks,
          "Nemu {0} nanging ngarep-arep ekspresi.",
@@ -370,7 +380,7 @@ JAWA_MSG("R005", DiagKind::Runtime,
          "Priksa signature fungsi.")
 
 JAWA_MSG("R006", DiagKind::Runtime,
-         "Ora bisa konvensi {0} menyawi {1}.",
+         "Ora bisa konvensi {0} dadi {1}.",
          "Tidak bisa mengonversi {0} ke {1}.",
          "")
 

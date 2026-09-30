@@ -3,6 +3,6 @@ coba {
   tulis(o.x);
 } tangkep (e) {
   tulis(e.jeneng, "-", e.pesan);
-} intrigasan {
+} pungkasan {
   tulis("Rampung");
 }

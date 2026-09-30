@@ -27,6 +27,12 @@ compile_commands.json
 
 # --- Uji & alat ---
 Testing/
+
+# Direktori yang dibuat sendiri oleh contoh & uji I/O berkas. Contoh dan
+# tes sudah membersihkannya di akhir, tapi kalau jalannya terputus
+# (timeout, Ctrl-C) sisanya akan membuat `git status` kotor tanpa sebab.
+alat-contoh/
+uji-berkas-coba/
 *.log
 *.traces
 core

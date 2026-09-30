@@ -263,3 +263,145 @@ TEST_CASE("lexer: publik token_name stabil") {
         CHECK(lex::token_name(static_cast<lex::Tok>(i)) != nullptr);
     }
 }
+
+// --- diagnosa "kode ini dari bahasa lain" (L011/L012) -----------------------
+//
+// Dua aturan ini bisa salah menembak pada program yang benar, jadi yang diuji
+// bukan hanya kasus positif tapi juga semua bentuk yang WAJIB diam.
+
+namespace {
+std::size_t n_peringatan(const Hasil& h) { return h.bag.jumlah_peringatan(); }
+std::size_t n_galat(const Hasil& h) { return h.bag.galat().size(); }
+
+bool ada_kode(const Hasil& h, std::string_view kode) {
+    for (const support::Diagnostic& d : h.bag.peringatan()) {
+        if (d.code == kode) return true;
+    }
+    for (const support::Diagnostic& d : h.bag.galat()) {
+        if (d.code == kode) return true;
+    }
+    return false;
+}
+}  // namespace
+
+TEST_CASE("lexer: L012 kata dari bahasa lain, dengan padanan") {
+    struct Kasus {
+        const char* kode;
+        const char* padanan;
+    };
+    const Kasus kasus[] = {
+        {"return 1;", "bali"},     {"function f() {}", "gawe"}, {"let x = 1;", "ana"},
+        {"class F {}", "golongan"}, {"while (a) {}", "nalika"}, {"if (a) {}", "yen"},
+        {"try {} tangkep (e) {}", "coba"}, {"true;", "bener"},    {"false;", "salah"},
+        {"null;", "kosong"},       {"for (;;) {}", "kanggo"},   {"def f() {}", "gawe"},
+        {"import x saka \"y\";", "impor"},
+    };
+    for (const Kasus& k : kasus) {
+        const Hasil h = lex_semua(k.kode);
+        CHECK_MSG(ada_kode(h, "L012"), k.kode);
+        CHECK_MSG(n_peringatan(h) == 1, k.kode);
+        // Pesan harus menyebut padanannya, bukan hanya kode galat.
+        bool ada_padanan = false;
+        for (const support::Diagnostic& d : h.bag.peringatan()) {
+            if (d.pesan.find(k.padanan) != std::string::npos) ada_padanan = true;
+        }
+        CHECK_MSG(ada_padanan, k.kode);
+    }
+}
+
+TEST_CASE("lexer: L012 adalah peringatan, bukan galat") {
+    // `return 1;` TIDAK menghasilkan galat sintaks apa pun -- itu sebabnya
+    // program bisa berjalan dengan hasil yang salah tanpa suara. Kalau L012 jadi
+    // galat, `jawa tes` akan gagal pada program yang tadinya "hanya" salah.
+    const Hasil h = lex_semua("gawe f() { return 1; }");
+    CHECK(n_galat(h) == 0);
+    CHECK(n_peringatan(h) == 1);
+    CHECK(ada_kode(h, "L012"));
+}
+
+TEST_CASE("lexer: L011 pengenal di awal pernyataan diikuti pengenal lain") {
+    // `baili` = salah ketik `bali`. Bentuk `pengenal pengenal` tidak mungkin
+    // jadi Basa Jawa, jadi ini galat (bukan peringatan): bentuknya sudah salah
+    // sebelum maknanya kartu.
+    const Hasil h = lex_semua("gawe f() { baili 1; }");
+    CHECK(ada_kode(h, "L011"));
+    CHECK(n_galat(h) == 1);
+    bool ada_saran = false;
+    for (const support::Diagnostic& d : h.bag.galat()) {
+        if (d.saran.find("bali") != std::string::npos) ada_saran = true;
+    }
+    CHECK(ada_saran);
+}
+
+TEST_CASE("lexer: L011 membidik juga pengenal diikuti literal & kurung kurawal") {
+    for (const char* src : {"foo 1;", "foo \"teks\";", "foo { }"}) {
+        const Hasil h = lex_semua(src);
+        CHECK_MSG(ada_kode(h, "L011"), src);
+    }
+}
+
+TEST_CASE("lexer: diagnosa kata asing diam pada Basa Jawa yang benar") {
+    // Semua bentuk ini pernah memicu L011/L012 kalau aturannya terlalu longgar.
+    // Ini yang menjaga agar diagnosa tidak merusak program yang jalan.
+    const char* bersih[] = {
+        "tulis(1);",                                        // panggilan
+        "tulis(1)\ntulis(2);",                              // dua pernyataan
+        "x\ny;",                                            // pengenal, baris baru
+        "gawe o = { a: 1, b: 2 };",                         // objek: `a` lalu `:`
+        "gawe f(a: angka): angka { bali a; }",              // anotasi tipe
+        "pilih x { kasus 1: tulis(1); }",                   // label kasus
+        "ana a = [1, 2, 3];",                                // daftar
+        "tulis(`halo ${nama} dunia`);",                     // template
+        "var x = 1;",                                       // `var` itu kata kunci
+        "tulis(jenis(1));",                                 // `jenis` itu fungsi
+        "jinis x;",
+        "tulis(1); // return 1;",                            // komentar
+        "tulis(1); /* return */",                           // komentar blok
+        "gawe f() { bali (1 + 2); }",                       // `bali` + kurung
+        "gawe f() { bali; }",                               // `bali` polos
+        "gawe f() { bali x; }",                             // `bali` + pengenal
+        "nama = 1;",                                        // penugasan
+        "iki.x = 1;",
+        "tulis(1) |> |> tulis(2);",
+    };
+    for (const char* src : bersih) {
+        const Hasil h = lex_semua(src);
+        CHECK_MSG(n_galat(h) == 0, src);
+        CHECK_MSG(n_peringatan(h) == 0, src);
+    }
+}
+
+TEST_CASE("lexer: saran L011 tidak menebak kata yang jauh") {
+    // `foo` cuma 3 huruf: jarak edit ke `ana` tepat 3. Menyarankan `ana` untuk
+    // `foo` lebih membingungkan daripada diam, jadi batasnya 2 (dan jarak 2
+    // wajib huruf pertama sama).
+    const Hasil h = lex_semua("foo 1;");
+    CHECK(ada_kode(h, "L011"));
+    for (const support::Diagnostic& d : h.bag.galat()) {
+        CHECK(d.saran.empty());
+    }
+    // `gaweke` -> `gawe`: jarak 2, huruf pertama sama, jadi boleh disarankan.
+    const Hasil h2 = lex_semua("gaweke f() {}");
+    CHECK(ada_kode(h2, "L011"));
+    bool ada = false;
+    for (const support::Diagnostic& d : h2.bag.galat()) {
+        if (d.saran.find("gawe") != std::string::npos) ada = true;
+    }
+    CHECK(ada);
+}
+
+TEST_CASE("lexer: L011 mengabaikan pengenal di tengah ekspresi") {
+    // `push`/`type`/`log` sah sebagai nama variabel, dan `t.push(1)` adalah
+    // penggunaan yang benar. Aturan ini hanya boleh jalan di awal pernyataan.
+    const char* src[] = {
+        "ana type = 1;",
+        "t.push(1);",
+        "t.log = 1;",
+        "gawe f() { bali push(1, 2); }",
+    };
+    for (const char* s : src) {
+        const Hasil h = lex_semua(s);
+        CHECK_MSG(n_peringatan(h) == 0, s);
+        CHECK_MSG(n_galat(h) == 0, s);
+    }
+}

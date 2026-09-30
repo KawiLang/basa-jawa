@@ -31,32 +31,29 @@ Status VM::jalankan_sumber(std::string_view sumber, std::string_view nama_berkas
     lx.lex_semua(token);
     bag.gabung(lx.bag());
     if (bag.ada_galat()) {
-        for (const support::Diagnostic& d : bag.galat()) {
-            const std::string s = d.format();
-            std::fwrite(s.data(), 1, s.size(), stderr);
-        }
+        support::cetak_diagnostik(stderr, bag);
         return Status::Galat;
     }
 
     parse::Parser parser(token, arena_scratch_, bag, nama_berkas);
     const ast::NodePtr prog = parser.parse_program();
     if (bag.ada_galat()) {
-        for (const support::Diagnostic& d : bag.galat()) {
-            const std::string s = d.format();
-            std::fwrite(s.data(), 1, s.size(), stderr);
-        }
+        support::cetak_diagnostik(stderr, bag);
         return Status::Galat;
     }
 
     compile::Compiler kompiler(heap_, bag, nama_berkas);
     const compile::HasilKompilasi hasil = kompiler.compile(static_cast<const ast::Program*>(prog));
     if (bag.ada_galat() || hasil.modul == nullptr) {
-        for (const support::Diagnostic& d : bag.galat()) {
-            const std::string s = d.format();
-            std::fwrite(s.data(), 1, s.size(), stderr);
-        }
+        support::cetak_diagnostik(stderr, bag);
         return Status::Galat;
     }
+
+    // Tidak ada galat, tapi bisa ada peringatan -- terutama diagnosa kata
+    // boring: `return 1;` yang salah ketik TIDAK menghasilkan galat apa pun,
+    // hanya peringatan. Kalau yang di-cetak cuma cabang galat, peringatan itu
+    // hilang tepat di tempat program akan berjalan dengan hasil yang salah.
+    support::cetak_diagnostik(stderr, bag);
 
     return jalankan_modul(hasil.modul, hasil.semua, nama_berkas, sumber);
 }

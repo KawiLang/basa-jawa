@@ -148,9 +148,28 @@ ana nama: teks | kosong = kosong;
 gawe tambah(a: angka, b: angka = 0): angka { bali a + b; }
 gawe petakan<T, U>(xs: dhaptar<T>, f: (T) => U): dhaptar<U> { bali xs; }
 golongan Titik { x: angka; y: angka; wiwit(x: angka, y: angka) { iki.x = x; } }
-jenis Id = angka | teks;
 )");
     CHECK(!h.bag.ada_galat());
+}
+
+// Alias tipe (`jenis Id = angka | teks`) BELUM ada di parser: node
+// `ast::AliasTipe` sudah ada di src/parse/ast.h tapi tidak pernah dibangun.
+// Test lama punya baris `jenis Id = ...` dan tetap lulus karena parser
+// memperlakukannya sebagai dua `EkspresiStmt` terpisah (ASI menyisipkan
+// titik koma) -- artinya tidak ada yang benar-benar diuji. Test ini mengunci
+// keadaan sekarang: `jenis` itu function global, bukan pengenal tipe.
+TEST_CASE("parser: `jenis` itu fungsi global, bukan alias tipe") {
+    const Hasil h = parse_kode(R"(
+tulis(jenis(1));
+)");
+    CHECK(!h.bag.ada_galat());
+    CHECK(h.bag.jumlah_peringatan() == 0);
+}
+
+TEST_CASE("lexer: `jenis Id = ...` ditolak (bukan sintaks Basa Jawa)") {
+    const Hasil h = parse_kode("jenis Id = angka | teks;");
+    CHECK(h.bag.ada_galat());
+    CHECK(h.bag.jumlah_peringatan() == 0);
 }
 
 TEST_CASE("parser: modul") {

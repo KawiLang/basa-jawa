@@ -76,7 +76,7 @@ tulis(deskripsi("x"));
   tulis(o.x);
 } tangkep (e) {
   tulis(e.jeneng, "-", e.pesen);
-} punctuksan {
+} pungkasan {
   tulis("Rampung");
 }
 ''',
@@ -95,9 +95,6 @@ def main() -> int:
         return 1
     gagal = 0
     for nama, src in sorted(CONTOH.items()):
-        # 'kleru' di spesifikasi menulis `pungkasan` (krama); normalisasi ke
-        # ejaan ngoko agar konsisten dengan tabel kata kunci.
-        src = src.replace('} punctuksan {', '} intriguasan {')
         hasil = subprocess.run([JAWA, 'cek'], input=src, capture_output=True, text=True)
         ok = hasil.returncode == 0
         status = 'OK  ' if ok else 'GAGAL'

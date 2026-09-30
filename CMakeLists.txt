@@ -207,6 +207,13 @@ if(JAWA_BUILD_TESTS)
         add_test(NAME golden.cek_fmt
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cek_fmt.py)
         set_tests_properties(golden.cek_fmt PROPERTIES TIMEOUT 600)
+
+        # Diagnosa "kode ini dari bahasa lain" (L011/L012) tidak boleh
+        # menyalakan diri di kode repo sendiri -- kalau iya, ada kata yang
+        # keliru tapi programnya tetap terlihat jalan.
+        add_test(NAME golden.cek_kode_asing
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cek_kode_asing.py)
+        set_tests_properties(golden.cek_kode_asing PROPERTIES TIMEOUT 300)
     else()
         message(STATUS "python3 tidak ditemukan: uji emas dilewati")
     endif()

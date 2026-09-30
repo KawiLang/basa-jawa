@@ -37,6 +37,7 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | Regex `/pola/flag` | selesai — backtracking, kelompok tangkap & bernama, anggaran langkah anti-ReDoS (`docs/regex.md`) |
 | `Tanggal` | selesai — kalender proleptis Gregorian, UTC saja, tanpa zona waktu (`docs/tanggal.md`) |
 | Regex runtime, `Tanggal`, I/O berkas | sudah (`docs/stdlib.md`) |
+| Diagnostik kata dari bahasa lain | selesai -- L011/L012 tunjuk `bali`/`gawe` saat tertulis `return`/`function` (`docs/diagnostics.md`) |
 
 ## Membangun
 
@@ -118,6 +119,7 @@ python3 scripts/cek_golden.py            # uji emas (keluaran)
 python3 scripts/cek_golden.py --gc-stress
 python3 scripts/cek_contoh.py            # parse semua contoh acuan
 python3 tools/check_sumber.py            # karakter terlarang pada sumber
+python3 tools/cek_tabel.py               # invarian tabel keyword/pinjaman/pesan
 ```
 
 ## Contoh
@@ -171,6 +173,7 @@ tests/          unit + golden
 | [`docs/fmt.md`](docs/fmt.md) | `jawa fmt` |
 | [`docs/repl.md`](docs/repl.md) | `jawa repl` |
 | [`docs/control-flow.md`](docs/control-flow.md) | `yen`/`nalika`/`kanggo`/`pilih`/`coba` |
+| [`docs/diagnostics.md`](docs/diagnostics.md) | katalog pesan, kode galat, diagnosa kata dari bahasa lain |
 | [`docs/fuzzing.md`](docs/fuzzing.md) | target fuzz, cara menjalankan, bug yang ditemukan |
 | [`DECISIONS.md`](DECISIONS.md) | keputusan desain & penyimpangan dari spesifikasi |
 | [`CHANGELOG.md`](CHANGELOG.md) | riwayat perubahan |

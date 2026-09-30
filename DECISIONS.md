@@ -1116,3 +1116,68 @@ karena ada berkas uji, bukan karena perlu dijelaskan:
   nama dan logikanya berlawanan, jadi `ada_berkas` keluar terbalik. Tidak ada
   yang menangkapnya karena kedua bentuknya sama-sama "terlihat masuk akal".
   Sekarang namanya `adalah_direktori` dan menyebut apa yang dikembalikan.
+## D-043 -- Diagnosa kata dari bahasa lain, di lexer
+
+**Konteks.** Galat pertama yang berasal dari kode bukan Basa Jawa hampir
+selalu muncul jauh dari penyebabnya, dan kadang tidak muncul sama sekali.
+Contoh nyata sebelum tahap ini:
+
+```jawa
+gawe f() { return 1; }        // `return` jadi pengenal biasa
+tulis(f());                   // -> undefined
+```
+
+Tidak ada satu pun pesan. Program berjalan, keluar dengan kode 0, dan
+menghasilkan nilai yang salah: `return` terbaca sebagai ekspresi pengenal
+yang dievaluasi lalu dibuang, jadi `f()` mengembalikan `undefined` tanpa
+jejak. Kasus kedua, `function ngitip() {}`, menghasilkan R002 "dudu
+fungsi" di kolom 1 -- kalimat yang tidak menjelaskan apa pun soal
+`function`.
+
+**Keputusan.** Dua aturan di lexer, keduanya hanya berlaku di AWAL
+PERNYATAAN. Batasan itu yang membuat diagnosa bisa dipercaya: di tengah
+ekspresi, `type`/`push`/`log` adalah nama variabel yang sah.
+
+| Kode | Tingkat | Aturan | Contoh |
+|---|---|---|---|
+| L011 | Galat | pengenal diikuti pengenal, literal, atau `{` yang tidak mungkin menyusulnya | `baili 1;` -> `bali` |
+| L012 | Peringatan | pengenal yang persis kata kunci bahasa lain | `return 1;` -> `bali` |
+
+Daftar kata pinjaman ada di `src/lex/pinjaman.def` (satu sumber kebenaran),
+62 entri lintas JS/TS, Python, C/C++/Java/Kotlin/Rust, plus fungsi bawaan
+(`print` -> `tulis`). Kata `then` sengaja tidak ada: itu sudah nama method
+Basa Jawa, jadi saran "then -> bali" hanya membingungkan.
+
+**Mengapa L012 peringatan, bukan galat.** `let x = 1;` kebetulan sudah
+"bekerja" (`let` jadi pengenal, lalu `x = 1` menugaskan), dan `var` memang
+kata kunci. Menjadikan ini galat akan merusak program yang tadinya jalan.
+Peringatan cukup: tujuannya memberitahu, bukan melarang. L011 boleh galat
+karena bentuknya sudah pasti salah secara tata bahasa, bukan karena
+maknanya.
+
+**Saran hanya kalau dekat.** Jarak edit dihitung terhadap semua nama kata
+kunci (ngoko + krama), diterima sampai 2, dan jarak 2 wajib huruf pertama
+sama. Tanpa syarat itu `foo` mendapat saran `ana`: dua kata yang tidak
+mirip sama sekali, dan saran yang salah lebih buruk daripada tidak ada.
+
+**Bug yang ditemukan saat pengerjaannya.** Ketiganya kode yang lulus
+sebelum tahap ini:
+
+- `examples/kleru.jw` menulis `} intrigasan {`, bukan `} pungkasan {`.
+  Karena kata itu pengenal sah dan blok `{...}` berikutnya blok biasa,
+  program tetap jalan dan keluar 0. Empat kalimat tidak pernah dieksekusi.
+- `tests/tes/upvalue.tes.jw` menulis `lempar "ora";` di dalam
+  `nalika (salah)`, sehingga jalur `tangkep` tidak pernah dieksekusi.
+  `lempar` bukan kata kunci Basa Jawa; yang benar `uncal`. Test itu
+  terbukti tidak menguji apa pun. L011 menangkapnya.
+- `tests/unit/test_parser.cpp` punya `jenis Id = angka | teks;` yang
+  dianggap alias tipe. Node `ast::AliasTipe` ada di `src/parse/ast.h` tapi
+  tidak pernah dibangun parser; baris itu hanya lolos karena
+  `EkspresiStmt` yang longgar. Test sekarang mengunci keadaan sebenarnya.
+
+**Pentingnya cetak peringatan di jalur tanpa galat.** Awalnya
+`VM::jalankan_sumber` hanya mencetak diagnostik di cabang `if (ada_galat())`.
+Peringatan L012 tidak masuk ke cabang itu, jadi tepat di tempat yang paling
+berbahaya -- program yang akan berjalan dengan hasil salah -- ia hilang.
+`support::cetak_diagnostik` kini dipanggil juga setelah front-end selesai
+tanpa galat.
