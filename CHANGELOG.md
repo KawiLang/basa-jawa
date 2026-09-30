@@ -2,6 +2,159 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/) + semver.
 
+## [0.13.0] — Peta, `cocog` bertipe, `fmt`, `repl`, I/O berkas, diagnosa kata asing
+
+Sembilan tahap. Enam di antaranya menutup bug yang programnya **tidak** error,
+hanya berhenti lebih awal atau menghasilkan nilai yang salah — kelas kesalahan
+yang tidak pernah tertangkap uji lama karena semuanya berada di dalam badan
+fungsi, loop bersarang, atau jalur yang tidak pernah dieksekusi.
+
+### Ditambahkan
+
+- **Pola `cocog` bertipe benar-benar diuji.** `Pola::Jenis::Tipe` meng-emit
+  `TYPEOF` lalu langsung `bener` tanpa perbandingan, jadi `kasus n: teks =>`
+  **selalu** cocok dan klausula bertipe pertama menutup seluruhnya. Opcode baru
+  `COCOK_TIPE` membandingkan `rt::nama_jenis`; nama kapital lewat `INSTAN_DARI`
+  yang sudah menelusuri rantai induk, jadi `n: Kucing` juga menjeret
+  `KucingPriba`. Perluasan: union (`Tipe | U`), opsional (`T?`), `dhaptar<T>`,
+  dan `{ ... }`.
+- **`Peta` & `Himpunan` bisa dibuat dari Basa Jawa.** `PetaObj` & `HimpunanObj`
+  sudah ada sebagai kelas runtime sejak lama tapi tidak ada constructor global,
+  dan `VM::ambil_properti` tidak punya cabang untuk keduanya — jadi `jenis(peta)`
+  pun tidak pernah mengembalikan `"peta"`. Sekarang `Peta` 11 method,
+  `Himpunan` 7.
+- **`Janji.all` / `Janji.race` / `Janji.selesai` / `Janji.tolak`.** Entri `Then`
+  punya mode penggumpalan; semua dihitung di `VM::selesaikan_janji`, jadi urutan
+  penyelesaian bebas.
+- **`jawa fmt`** (`docs/fmt.md`) — pemformat di tingkat TOKEN, bukan AST, jadi
+  komentar tidak dibuang. Prinsipnya: **hanya mengubah jarak**; pemenggalan
+  baris milik penulis. Jaring pengaman di bawah `--tanpa-cek-sintaks`: jumlah
+  token sebelum/sesudah harus sama, dan hasilnya di-parse ulang (cek leksikal
+  saja tidak cukup — `ana x = ;` adalah token stream sah tapi program salah).
+  Opsi `--cek`, `--tulis`, `--lebar N`.
+- **`jawa repl`** (`docs/repl.md`) — lingkup baca-evaluasi-cetak yang bertahan
+  antar baris. Pengikut frame modul dikompilasi jadi global (badan fungsi tetap
+  slot seperti biasa, TDZ tetap berlaku). Masukan beberapa baris: kurung,
+  string, template, atau komentar blok yang belum tertutup mengaktifkan
+  kelanjutan, ditentukan lewat lexer sehingga `{` di dalam teks tidak ikut
+  dihitung. Perintah `:q`, `:bantuan`, `:nilai <nama>`, `:sampah`, `:reset`.
+- **I/O berkas** (`docs/stdlib.md`) — dua lapisan supaya dua kebutuhan tidak
+  saling memaksa. Lapis seluruh-berkas: `baca_berkas`, `tulis_berkas`,
+  `ada_berkas`, `ukuran_berkas`, `hapus_berkas`. Lapis handle untuk berkas yang
+  tidak muat di memori: `anyaar Berkas(path, "baca"|"tulis"|"tambah")` dengan
+  `baca_baris`, `baca(n)`, `tulis`, `tambah`, `tutup`. Plus `ada_direktori`,
+  `dadi_direktori`, `hapus_direktori`. Semua galat bernama `KleruBerkas`
+  supaya `tangkep (e: KleruBerkas)` menangkap seluruh kelas kegagalan I/O.
+- **Diagnosa kata dari bahasa lain** (`docs/diagnostics.md`) — `L011` (galat)
+  dan `L012` (peringatan), keduanya hanya di awal pernyataan. Daftar kata
+  pinjaman di `src/lex/pinjaman.def` (62 entri).
+
+### Diperbaiki (bug nyata)
+
+Semua ini programnya **tidak error** — hanya berhenti lebih awal atau
+menghasilkan nilai yang salah.
+
+- **Opcode penugasan tidak seragam.** `SET_LOCAL` consuming (`v - >`), tapi
+  `SET_CELL`/`SET_UPVAL`/`SET_GLOBAL` menyisakan nilainya (`v - > v`). `POP`
+  hanya ditambahkan untuk `SET_GLOBAL`. Jalur upvalue/sel menumpuk DUA nilai
+  per penugasan, jadi `kanggo (a saka [1,2,3]) { x = a; }` di dalam fungsi
+  hanya mengiterasi SATU kali. `emit_tulis_nama` dijamin efek bersih untuk
+  semua jalur.
+- **Jalur keluar loop membuang nilai milik loop luar.** `ITER_NEXT` mendorong
+  hasil DAN flag, `JUMP_IF_FALSE` hanya mengintip; sisanya menutupi nilai milik
+  loop luar, jadi `a saka [1,2]` x `b saka [1,2]` memberi 2 baris, bukan 4.
+- **`yen`/`nalika` menaruh SATU `POP` di akhir untuk kedua jalur**, jadi nilai
+  kondisinya tetap di stack sepanjang badan. `mandheg`/`terusna` melompatinya
+  dan `POP` di jalur keluar loop memakan nilai yang salah.
+- **Arrow dengan badan blok praktis tidak bisa dipakai.** `makan(Tok::LBrace)`
+  sudah mengonsumsi `{`, lalu `parse_blok()` memanggil `aspek_ke_close(LBrace)`
+  yang juga mengonsumsi — statement pertama selalu gagal. Diperbaiki di 4 tempat.
+- **Skop blok.** Slot kompilator dulu fungsi-wide, jadi dua pengikut dengan nama
+  sama di dua blok berbeda saling berebut slot. Kode yang wajar ditulis -- dua
+  `kanggo (ana i = 0; ...)` berturut-turut -- tidak bisa dikompilasi, dan tiap
+  berkas uji harus memakai nama pengikut unik sepanjang file. Tiga bagian:
+  tumpukan skop, slot tidak pernah dipakai ulang (closure yang menangkap pengikut
+  skop itu menunjuk slot yang sama selamanya), dan sel per-iterasi untuk
+  pengikut di dalam loop. Deklarasi ganda di skop yang sama dulu ditoleransi
+  pelan-pelan dan slot kedua tidak pernah dibaca — variabelnya membeku di nilai
+  deklarasi pertama; kini jadi galat `S401`.
+- **Nama field class yang menggantung.** `InstanceObj::nama_slot` dan
+  `ClassObj::nama_statis`/`nama_field` menyimpan `std::string_view`, tapi ada
+  jalur yang mengisinya dari `std::string` yang BARU dibuat — objek sementara
+  yang musnah di akhir statement, jadi view-nya menunjuk ke memori bebas dan
+  setiap pembacaan berikutnya membandingkan nama dengan isi memori itu (hasilnya
+  selalu `mboh`). Field yang punya deklarasi eksplisit tidak pernah
+  terpengaruh, karena namanya datang dari pool konstanta chunk; itu sebabnya
+  bug ini bertahan lama — jalur yang rusak justru `iki.x = 1` pada class yang
+  tidak mendeklarasikan field, sedangkan kelas uji hampir selalu mendeklarasikan
+  field-nya.
+- **`anyaar` pada fungsi native menghasilkan `mboh`.** Opcode `NEW` hanya
+  menangani `Golongan`, jadi `anyaar Tanggal(0)` tidak pernah bikin `Tanggal`.
+- **Janji turunan bisa tersapu GC.** `Then::asli` tidak di-root setelah
+  `then_daftar` dikosongkan, dan `panggil` di dalamnya bisa memicu koleksi
+  (ASan: `heap-use-after-free`, hanya di bawah `--gc-stress`).
+- **Peringatan hilang tepat di tempat paling berbahaya.** `jalankan_sumber` &
+  `kompilasi_modul` hanya mencetak `bag.galat()`, jadi peringatan tidak pernah
+  muncul di jalur program yang akan berjalan dengan hasil salah.
+- **`kasus _:` pada `pilih`** dibaca sebagai perbandingan dengan variabel `_`,
+  bukan wildcard, jadi `pilih` diam-diam tidak menjalankan body apa pun.
+
+### Perubahan desain
+
+- **L011 boleh galat, L012 hanya peringatan.** `let x = 1;` kebetulan sudah
+  "bekerja" di Basa Jawa, jadi menjadikannya galat akan merusak program yang
+  tadinya jalan. L011 boleh galat karena bentuknya sudah pasti salah secara tata
+  bahasa. Saran kata kunci diterima sampai jarak edit 2, dan jarak 2 wajib huruf
+  pertama sama — tanpa syarat itu `foo` mendapat saran `ana`, dan saran yang
+  salah lebih buruk daripada tidak ada saran.
+- **Formatter hanya mengubah jarak.** Formatter yang mengubah bentuk program
+  adalah formatter yang harus dipercaya buta.
+- **Nilai REPL dicetak di kompilator**, bukan dengan membungkus sumber jadi
+  `tulis(<ekspresi>)`: pembungkusan butuh daftar kata kunci untuk membedakan
+  statement dari ekspresi, dan daftar itu selalu tertinggal satu kata — `anyaar`
+  sempat terlewat, lalu `anyaar Kucing("Budi").speak()` ikut dibungkus dan gagal
+  diurai.
+- **Tiga batasan I/O yang disengaja**: teks saja (tanpa konversi encoding, tanpa
+  mode biner); tidak ada `tutup()` otomatis (GC tidak tahu kapan gagang sudah
+  tidak dirujuk, dan menutup saat GC bisa membuat program yang masih memegang
+  `f` gagal tanpa jejak — `coba`/`pungkasan` jadi idiom utama); path relatif ke
+  direktori kerja proses, bukan ke lokasi skrip.
+
+### Pengaman
+
+- `scripts/cek_kode_asing.py` — 32 berkas `.jw` di repo harus bebas L011/L012.
+- `tools/cek_tabel.py` — invarian `keywords.def` / `pinjaman.def` /
+  `messages.def`: kode pesan unik, awalan kode cocok `DiagKind`, placeholder
+  simetris dwibahasa, entri pinjaman tidak menabrak kata kunci, padanan
+  benar-benar ada di Basa Jawa. Tujuh kelas pelanggaran diuji.
+- `scripts/cek_fmt.py` — 32 berkas: format, idempoten, `--cek`, dan `jawa run`
+  keluarannya sama persis sebelum/sesudah format.
+- `scripts/cek_repl.py` — 12 kasus, tiap kasus menjalankan `jawa repl` dengan
+  masukan terkontrol dan membandingkan stdout persis.
+
+### Kode yang "lulus" sebelum 0.13.0
+
+Tiga di antaranya ditemukan oleh diagnosa kata asing, dan ketiganya adalah
+kode yang sebelumnya hijau di semua uji:
+
+- `examples/kleru.jw` menulis `intrigasan` bukan `pungkasan`. Kata itu pengenal
+  sah dan blok berikutnya blok biasa, jadi program tetap jalan dan keluar 0 —
+  empat kalimat tidak pernah dieksekusi.
+- `tests/tes/upvalue.tes.jw` menulis `lempar "ora";` di dalam `nalika (salah)`,
+  sehingga jalur `tangkep` tidak pernah dieksekusi. `lempar` bukan kata kunci
+  Basa Jawa (`uncal` yang benar). Uji itu terbukti tidak menguji apa pun.
+- `tests/unit/test_parser.cpp` punya `jenis Id = angka | teks;` yang dianggap
+  alias tipe. Node `ast::AliasTipe` ada di `src/parse/ast.h` tapi tidak pernah
+  dibangun parser; baris itu hanya lolos karena `EkspresiStmt` yang longgar.
+  Alias tipe **belum** jadi fitur.
+
+### Verifikasi
+
+12/12 `ctest` hijau di `release`, `asan`, `ubsan`, `nonanbox`, dan `coverage`;
+6 target `fuzz` terbangun dan 2 x 2.000 kasus x 6 target dijalankan dua kali
+dengan benih sama (determinisme) — 0 crash, hasil identik. 16/16 contoh emas
+termasuk `--gc-stress`; 558/558 assertion `jawa tes`; 552 cek unit di 4 berkas.
+
 ## [0.12.0] — Field kelas, `tangkep` bertipe, kasus tipe `pilih`
 
 Empat perbaikan yang menutup celah yang tercatat di `STATUS.md` sejak
