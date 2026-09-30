@@ -1,4 +1,7 @@
-# `jawa tes` — menguji program Basa Jawa
+# Menguji program Basa Jawa
+
+Ada dua alat: `jawa tes` untuk program, dan `jawa fmt --cek` untuk basis kode
+(diterangkan di [`fmt.md`](fmt.md)).
 
 `jawa tes` menjalankan berkas uji `.jw` dan melaporkan assertion yang gagal.
 Tidak perlu framework dari luar: assertion adalah fungsi bawaan yang dipasang

@@ -66,6 +66,7 @@ set(JAWA_SOURCES
     src/parse/ast_print.cpp
     src/cli/main.cpp
     src/cli/tes.cpp
+    src/cli/fmt.cpp
 )
 
 add_library(jawa STATIC ${JAWA_SOURCES})
@@ -192,6 +193,13 @@ if(JAWA_BUILD_TESTS)
         add_test(NAME golden.cek_contoh
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cek_contoh.py)
         set_tests_properties(golden.cek_contoh PROPERTIES TIMEOUT 300)
+
+        # `jawa fmt` harus idempoten dan tidak mengubah perilaku. Idempoten
+        # adalah syarat `--tulis` berguna: kalau tidak, setiap commit
+        # menghasilkan diff baru.
+        add_test(NAME golden.cek_fmt
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cek_fmt.py)
+        set_tests_properties(golden.cek_fmt PROPERTIES TIMEOUT 600)
     else()
         message(STATUS "python3 tidak ditemukan: uji emas dilewati")
     endif()

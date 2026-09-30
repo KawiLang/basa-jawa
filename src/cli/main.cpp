@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cli/cli.h"
+#include "cli/fmt.h"
 #include "cli/tes.h"
 #include "lex/lexer.h"
 #include "parse/ast.h"
@@ -110,6 +111,7 @@ void cetak_bantuan() {
         "  jawa token berkas.jw              Cetak daftar token\n"
         "  jawa ast   berkas.jw              Cetak AST\n"
         "  jawa tes   berkas|dir            Jalankan berkas uji (.tes.jw)\n"
+        "  jawa fmt   berkas.jw             Rapi indentasi & jarak (--cek utawa --tulis)\n"
         "  jawa versi                        Cetak versi\n"
         "  jawa bantuan                      Cetak bantuan ini\n"
         "\n"
@@ -273,6 +275,91 @@ void cetak_chunk(const vm::Chunk& c, int kedalaman, const std::vector<vm::ChunkP
 }
 
 /// Cetak bytecode hasil kompilasi (untuk debug & dokumentasi `docs/bytecode.md`).
+// ---------------------------------------------------------------------------
+// `jawa fmt`
+// ---------------------------------------------------------------------------
+//
+// Mengembalikan kode apa adanya ke stdout. `--cek` tidak menulis; keluar dengan
+// kode bukan nol kalau ada berkas yang perlu diformat (buat CI). `--tulis`
+// menimpa berkasnya. Tanpa `--cek`/`--tulis`, kalau `stdin` dipakai, hasilnya
+// dicetak ke stdout.
+int perintah_fmt(const std::vector<std::string>& args, bool warna) {
+    FormatOptions fo;
+    bool cek = false;
+    bool tulis_di_berkas = false;
+    std::vector<std::string> berkas;
+
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (a == "--cek") {
+            cek = true;
+        } else if (a == "--tulis") {
+            tulis_di_berkas = true;
+        } else if (a == "--tanpa-cek-sintaks") {
+            fo.cek_sintaks = false;
+        } else if (a == "--lebar" && i + 1 < args.size()) {
+            const long n = std::strtol(args[++i].c_str(), nullptr, 10);
+            if (n >= 0 && n <= 16) fo.lebar_indent = static_cast<std::size_t>(n);
+        } else if (a == "-h" || a == "--bantuan") {
+            std::printf(
+                "Penggunaan: jawa fmt [opsi] berkas.jw...\n"
+                "  --cek                |report saja; kode keluar 1 bila perlu diformat\n"
+                "  --tulis               timpa berkasnya\n"
+                "  --lebar N             spasi per tingkat indent (bawaan 4)\n"
+                "  --tanpa-cek-sintaks   jangan parse ulang hasilnya\n");
+            return Sukses;
+        } else if (!a.empty() && a[0] == '-') {
+            std::fprintf(stderr, "KleruCLI [C010] Opsi ora weruh: %s\n", a.c_str());
+            return SalahPakai;
+        } else {
+            berkas.push_back(a);
+        }
+    }
+    (void)warna;
+
+    if (berkas.empty()) {
+        std::fputs("KleruCLI [C011] `jawa fmt` butuh minimal sawetara nama berkas .jw.\n", stderr);
+        return SalahPakai;
+    }
+
+    int rc = Sukses;
+    std::size_t perlu = 0;
+    for (const std::string& nama : berkas) {
+        std::string kode;
+        int rcbaca = Sukses;
+        if (!baca_berkas(nama, kode, rcbaca)) return rcbaca;
+
+        HasilFormat hasil;
+        if (!format_sumber(kode, nama, fo, hasil)) {
+            std::fprintf(stderr, "%s:%u: %s\n", nama.c_str(), hasil.baris, hasil.pesan.c_str());
+            rc = GalatProgram;
+            continue;
+        }
+        if (cek) {
+            if (hasil.berubah) {
+                ++perlu;
+                std::printf("%s: perlu diformat\n", nama.c_str());
+            }
+            continue;
+        }
+        if (tulis_di_berkas) {
+            if (!hasil.berubah) continue;
+            std::ofstream keluar(nama, std::ios::binary | std::ios::trunc);
+            if (!keluar) {
+                std::fprintf(stderr, "KleruCLI [C012] Ora bisa nulis: %s\n", nama.c_str());
+                rc = GalatProgram;
+                continue;
+            }
+            keluar << hasil.teks;
+            std::printf("%s: ditulis\n", nama.c_str());
+            continue;
+        }
+        std::fwrite(hasil.teks.data(), 1, hasil.teks.size(), stdout);
+    }
+    if (cek && perlu != 0) rc = GalatProgram;
+    return rc;
+}
+
 int perintah_bytecode(const std::string& kode, bool warna) {
     HasilParse h;
     parse_kode(kode, "<stdin>", h);
@@ -366,8 +453,31 @@ int jalankan(int argc, char** argv) {
     // Opsi runtime (lihat `vm::VMOptions`).
     jawa::vm::VMOptions opsi;
 
+    // Sub-perintah yang opsi-nya milik dirinya sendiri. Begitu nama salah satu
+    // dari ini muncul, pemindaian opsi global berhenti -- kalau tidak, opsi
+    // seperti `jawa fmt --cek f.jw` ditelan sebagai "opsi lain" dan hilang.
+    static const char* kSubPerintah[] = {"fmt", "tes", "cek",   "token", "ast",
+                                         "bytecode", "repl", "lsp", "ubah", "bench"};
+    bool berhenti_pakai_opsi = false;
+
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
+        if (berhenti_pakai_opsi) {
+            posisial.push_back(a);
+            continue;
+        }
+        bool ini_sub = false;
+        for (const char* nama : kSubPerintah) {
+            if (a == nama) {
+                ini_sub = true;
+                break;
+            }
+        }
+        if (ini_sub) {
+            berhenti_pakai_opsi = true;
+            perintah = a;
+            continue;
+        }
         if (a == "--tanpa-warna") {
             warna = false;
         } else if (a == "--bantuan" || a == "-h" || a == "--help") {
@@ -462,6 +572,9 @@ int jalankan(int argc, char** argv) {
     }
     if (perintah == "tes") {
         return perintah_tes(posisial, opsi, warna);
+    }
+    if (perintah == "fmt") {
+        return perintah_fmt(posisial, warna);
     }
     if (perintah == "run") {
         if (ada_e) {

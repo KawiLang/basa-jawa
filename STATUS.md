@@ -7,21 +7,21 @@ Ringkas: front-end **dan** runtime sudah berjalan. **12 dari 12** contoh acuan
 Bagian 11 menghasilkan keluaran yang persis, termasuk `asinkron.jw`
 (`async`/`await`), `modul/*.jw` (ES module, dengan *live binding*), dan
 `generator.jw`. Yang belum: hidden class, kalender non-Gregorian, zona waktu
-lokal, pustaka standar lengkap, dan tooling (REPL, `fmt`, `bench`).
+lokal, pustaka standar lengkap, dan tooling (REPL, `bench`, `ubah`).
 
 ## Angka
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 21.260 |
+| Baris kode C++ (`src/` + `tests/`) | 24.320 |
 | Opcode bytecode | 132 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN`, `TRY_KLAUSUL`, `INSTAN_DARI`, `COCOK_TIPE` baru) |
 | Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
-| Uji unit | 3 berkas, 152 cek, 81 test |
+| Uji unit | 4 berkas (termasuk `test_fmt`), 450 cek, 133 test |
 | Uji bahasa (`jawa tes`) | 10 berkas, 438 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, ...) |
-| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
-| Build | Release, ASan, UBSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di ketiganya; preset `fuzz` — 6/6 `ctest` hijau |
+| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 28 formatter |
+| Build | Release, ASan, UBSan, dan mode nilai 16-byte — 10/10 `ctest` hijau di keempatnya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
 | Dokumentasi | 13 berkas `docs/` + 4 berkas akar |
 
@@ -237,10 +237,11 @@ Tiga bug kecil lain ikut tertutup:
 - `AksesProperti` pada `Instance` mencari field secara linear.
 - Error runtime tidak membawa jejak stack sumber (hanya nama fungsi).
 - Batas instruksi 16-bit: fungsi dengan > 65535 instruksi tidak didukung.
-- Tanpa debugger, tanpa REPL, tanpa LSP, tanpa formatter, tanpa `jawa fmt` /
-  `jawa ubah`, tanpa `jawa bench`, tanpa embedding API (`include/` belum ada --
+- Tanpa debugger, tanpa REPL, tanpa LSP, tanpa `jawa ubah` (refactor), tanpa
+  `jawa bench`, tanpa embedding API (`include/` belum ada --
   `CMakeLists.txt` sudah menyiapkan `install(DIRECTORY include/)` tapi
-  direktorinya belum dibuat). `jawa tes` **sudah ada** (`docs/testing.md`).
+  direktorinya belum dibuat). `jawa tes` dan `jawa fmt` **sudah ada**
+  (`docs/testing.md`, `docs/fmt.md`).
 - Tidak ada korpus crash fuzzing yang tersimpan, dan `fuzz_parser` belum
   memeriksa rentang setiap node anak (butuh penelusur AST per-jenis-node).
   Lihat `docs/fuzzing.md`.
