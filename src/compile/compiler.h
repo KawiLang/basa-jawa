@@ -42,8 +42,22 @@ struct FungsiInfo {
     std::string_view getter_nama;
     std::string_view setter_nama;
     std::vector<std::string_view> nama_param;
-    /// Upvalue yang diambil dari fungsi induk: (indeks di induk, nama).
-    std::vector<std::pair<std::size_t, std::string_view>> ambil_upvalue;
+    /// Satu upvalue yang diambil fungsi ini dari induknya.
+    struct AmbilUpvalue {
+        /// Slot di fungsi induk yang sudah diketahui SAAT rujukan ditulis.
+        /// `>= 0` berarti pasti benar; `-1` berarti belum bisa dipastikan dan
+        /// harus dicari lewat nama saat perakitan akhir.
+        ///
+        /// Kenapa slot harus ikut dicatat: dengan skop blok, satu nama bisa
+        /// punya banyak slot dalam satu fungsi (satu per blok). Closure yang
+        /// menangkap `i` di blok pertama harus dapat slot blok pertama, bukan
+        /// whichever yang ditemukan terakhir. Resolusi per-nama saja salah
+        ///begitu dua blok sibling memakai nama sama.
+        std::int32_t slot_induk = -1;
+        std::string_view nama;
+    };
+    /// Upvalue yang diambil dari fungsi induk.
+    std::vector<AmbilUpvalue> ambil_upvalue;
     FungsiInfo* induk = nullptr;
 };
 
@@ -71,10 +85,23 @@ public:
     void daftarkan_global(const std::string& nama, Value v) { builtin_global_[nama] = v; }
 
 private:
+    /// Satu tingkat skop leksikal: pengikat yang diperkenalkan di satu blok.
+    struct Skop {
+        /// Pengikat milik skop ini: nama -> slot.
+        std::unordered_map<std::string, std::size_t> nama_slot;
+    };
+
     struct FungsiKonteks {
         vm::ChunkPtr chunk;
         FungsiInfo info;
-        std::unordered_map<std::string, std::size_t> lokal;   ///< nama -> slot
+        /// Tumpukan skop. Indeks 0 = skop fungsi (parameter + pengikat terluar);
+        /// selebihnya = blok statement yang sedang dikompilasi. Pencarian nama
+        /// berjalan dari yang paling dalam ke luar.
+        std::vector<Skop> skop;
+        /// Peta datar nama -> slot, HANYA untuk resolusi upvalue cadangan saat
+        /// perakitan akhir. Tidak dipakai untuk mencari nama (itu lewat
+        /// `cari_slot`), karena pada skop blok satu nama punya banyak slot.
+        std::unordered_map<std::string, std::size_t> lokal;
         std::unordered_map<std::string, std::size_t> upvalue; ///< nama -> indeks upvalue
         std::size_t n_slot_terpakai = 0;
         std::size_t n_slot_maks = 0;
@@ -82,13 +109,54 @@ private:
         /// yang deklarasinya belum terkompilasi. Setelah deklarasi selesai
         /// entrinya dihapus, jadi pembacaan sesudahnya tidak butuh `TDZ_CHECK`.
         std::unordered_map<std::size_t, std::size_t> tdz_menunggu;
-        /// Nama yang slotnya berisi `SelObj` (live binding modul ATAU pengikat
+        /// Slot yang sudah dialokasikan `pradaftar_tdz`, per nama, dalam urutan
+        /// kemunculannya di sumber.
+        ///
+        /// Pra-walk mendorong skop lalu popping-nya lagi, jadi slot yang
+        /// didaftarkan di dalam skop itu hilang sebelum kompilasi sungguhan
+        /// berjalan. Antrean ini bertahan: deklarasi yang benar-benar
+        /// dikompilasi mengambil slot berikutnya dari antrean, sehingga nomor
+        /// slot sama dengan yang dipakai pra-walk. Tanpa itu, `TDZ_CHECK`
+        /// diarahkan ke entri `tdz_daftar` milik slot lain dan TDZ di dalam
+        /// fungsi diam-diam berhenti berlaku.
+        std::unordered_map<std::string, std::deque<std::size_t>> tdz_antre;
+
+        /// Bentuk skop hasil pra-walk, disimpan RATA (bukan sebagai tumpukan) dan
+        /// tidak pernah dibuang.
+        ///
+        /// Pra-walk menghitung slot untuk seluruh pengikut leksikal lebih dulu
+        /// supaya rujukan ke deklarasi yang belum terkompilasi bisa diarahkan ke
+        /// zona mati-temporal. Kalau hasil pra-walk disimpan sebagai tumpukan
+        /// yang ikut popping seperti skop sungguhan, tidak ada yang tersisa saat
+        /// kompilasi berjalan -- dan rujukan ke depan di dalam satu blok ikut
+        /// hilang, membuat `ana y = 1; ...; y;` terbaca sebagai global.
+        ///
+        /// `induk` menyimpan indeks skop terluar yang membungkusnya, supaya
+        /// pencarian dari dalam ke luar tetap bisa dilakukan.
+        struct SkopPradaftar {
+            std::unordered_map<std::string, std::size_t> nama_slot;
+            std::size_t induk = 0;
+        };
+        std::vector<SkopPradaftar> pradaftar;
+        /// Indeks skop pradaftar yang sedang aktif; selalu sinkron dengan
+        /// posisi skop di `skop`.
+        std::size_t skop_kursor = 0;
+        /// Tumpukan indeks skop pradaftar, dipakai HANYA selama `pradaftar_tdz`
+        /// berjalan.
+        std::vector<std::size_t> tumpukan_pradaftar;
+        /// Nama yang slotnya berisi `SelObj` (live binding modul ATAU pengikut
         /// per-iterasi `kanggo`). Pembacaan & penulisan keduanya lewat
         /// `GET_CELL`/`SET_CELL` -- lihat `Compiler::adalah_sel`.
         std::unordered_set<std::string> sel_nama;
-        /// Nama pengikat leksikal -> slot yang dipra-daftarkan. Diisi
-        /// `pradaftar_tdz` sebelum statement apa pun dikompilasi.
-        std::unordered_map<std::string_view, std::size_t> tdz_slot;
+        /// Slot yang isinya `SelObj` karena pengikutnya BERADA DI DALAM loop.
+        ///
+        /// Beda dari `sel_nama`: yang ini harus per-SLOT, bukan per-nama. Satu
+        /// nama bisa punya banyak slot dalam satu fungsi (satu per blok), dan
+        /// hanya blok yang di dalam loop yang butuh sel per-iterasi. Kalau
+        /// dicek per-nama, blok dengan nama yang sama di luar loop ikut
+        /// diperlakukan sebagai sel -- dan bentuk bytecode-nya jadi berbeda
+        /// antara dua tempat yang namanya sama.
+        std::unordered_set<std::size_t> sel_skop_slot;
         bool dalam_fungsi = false;
         /// Baris sumber terakhir yang sudah diberi `NOP_LINE` (lihat
         /// `Compiler::tandai_baris`). `0` = belum ada.
@@ -99,6 +167,14 @@ private:
             std::size_t terusna_tujuan = 0;   ///< ip awal iterasi berikutnya
             std::vector<std::size_t> patch_mandheg;
             std::vector<std::size_t> patch_terusna;
+            /// Slot sel-per-iterasi milik loop INI yang harus disalin di akhir
+            /// tiap iterasi (`SEL_SALIN`).
+            ///
+            /// Tanpa ini, closure yang dibuat di dalam blok dalam loop
+            /// membaca sel yang sama di semua iterasi -- jadi semuanya
+            /// melihat nilai iterasi terakhir. Bandingkan `SEL_SALIN` untuk
+            /// variabel loop itu sendiri (D-037).
+            std::vector<std::size_t> sel_salinan;
             /// Jumlah nilai kondisi yang masih tertunda di stack.
             ///
             /// `yen`/`nalika` menaruh SATU `POP` di akhir yang dipakai kedua
@@ -216,7 +292,33 @@ private:
     void susun_pola_stack(const ast::Pola* p, std::vector<std::size_t>& lompat_gagal);
     /// Slot untuk nama pola: pakai yang ada kalau sudah pernah dialingokasikan.
     std::size_t slot_pola(std::string_view nama);
+    // --- skop leksikal ---------------------------------------------------
+    /// Buka skop baru (blok statement, badan loop, klausa `kasus`).
+    void skop_buka();
+    /// Tutup skop. Slot TIDAK dikembalikan ke kumpulan: closure yang menangkap
+    /// pengikat skop ini akan tetap menunjuk slot yang sama selamanya, jadi
+    /// memakai ulang nomor slot untuk skop berikutnya akan membuat closure itu
+    /// membaca variabel yang salah. Konsekuensinya: satu slot per (nama, blok),
+    /// yang dibatasi ukuran sumber.
+    void skop_tutup();
+    /// Alokasi slot untuk `nama` di skop paling dalam.
+    std::size_t slot_skop(std::string_view nama);
+    /// Daftarkan `nama -> slot` di skop paling dalam tanpa mengalokasikan slot
+    /// baru. Dipakai `slot_baru_tdz_skop` untuk memasang kembali pengikut yang
+    /// nomor slotnya sudah ditentukan pra-walk.
+    void daftar_skop(std::string_view nama, std::size_t slot);
+    /// Nomor slot berikutnya. Tidak mendaftarkan nama ke mana pun.
+    std::size_t alokasi_slot();
+    /// Alokasi slot + entri TDZ di skop paling dalam.
+    std::size_t slot_baru_tdz_skop(std::string_view nama);
+    /// Cari slot `nama` di skop paling dalam sampai terluar.
+    [[nodiscard]] std::size_t cari_slot_skop(std::string_view nama) const;
     void eks_destructur(const ast::Node* target, const ast::Node* nilai, bool deklarasi);
+    /// Resolusi upvalue untuk `ctx` (Lox) dan penulisan `upvalue_sumber` ke
+    /// chunk-nya. Dipakai oleh `eks_fungsi` dan `eks_kelas` -- keduanya punya
+    /// algoritma yang sama persis, dan salinannya dulu sudah pernah melenceng
+    /// (satu versi lupa mendaftarkan upvalue ke nenek moyang).
+    void selesaikan_upvalue(FungsiKonteks& ctx);
     /// Baca nama: lokal -> upvalue -> global (satu helper, konsisten di semua
     /// konteks sehingga rekursi & closure memakai jalur yang sama).
     void emit_baca_nama(std::string_view nama);
@@ -283,6 +385,14 @@ private:
     /// Apakah `nama` disimpan sebagai sel (live binding modul, atau pengikat
     /// per-iterasi `kanggo`) sehingga aksesnya harus lewat `GET_CELL`/`SET_CELL`.
     [[nodiscard]] bool adalah_sel(std::string_view nama) const;
+    /// Apakah `nama` pada `slot` diakses lewat `SelObj`.
+    ///
+    /// `slot == npos` berarti pemanggil belum tahu slotnya (jalur ekspor/impor
+    /// modul); penentuannya lalu cukup dari nama.
+    [[nodiscard]] bool adalah_sel(std::string_view nama, std::size_t slot) const;
+    /// Tandai `slot` sebagai sel per-iterasi kalau pengikutnya ada di dalam
+    /// loop yang sedang dikompilasi.
+    void tandai_sel_iterasi(std::size_t slot);
 };
 
 }  // namespace jawa::compile

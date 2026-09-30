@@ -66,7 +66,7 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
             } else {
                 const std::size_t s = slot_baru_tdz(d->jeneng);
                 tdz_baru.push_back(s);
-                if (adalah_sel(d->jeneng)) {
+                if (adalah_sel(d->jeneng, s)) {
                     // Variabel modul yang diekspor: slotnya berisi `SelObj`,
                     // bukan nilai. Sel dibuat lebih dulu lalu diisi -- itulah
                     // yang membuat `ekspor` menjadi live binding (importer
@@ -168,7 +168,12 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
 
 void Compiler::stmt_blok(const ast::BlokStmt* n) {
     if (n == nullptr) return;
+    // Satu blok = satu skop. Inilah yang membuat dua blok sibling boleh memakai
+    // nama yang sama tanpa saling berebut slot -- dulu pemenggalan ini tidak
+    // ada, jadi dua `ana x` di dua blok memicu `KleruCakupan [S401]`.
+    skop_buka();
     for (const ast::Node* s : n->body) statement(s);
+    skop_tutup();
 }
 
 void Compiler::stmt_awak(const ast::Node* n) {
@@ -219,6 +224,10 @@ void Compiler::stmt_nalika(const ast::NalikaStmt* n) {
     for (std::size_t i = 0; i + 1 < fn().loop.size(); ++i) --fn().loop[i].kondisi_tertunda;
     const FungsiKonteks::Loop Loop = fn().loop.back();
     fn().loop.pop_back();
+    // Sel pengikut blok di dalam loop ini disalin di akhir tiap iterasi.
+    for (std::size_t s : Loop.sel_salinan) {
+        emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s));
+    }
     emit(Op::JUMP, static_cast<std::uint16_t>(mulai));
     for (std::size_t p : Loop.patch_mandheg) patch(p, fn().chunk->ukuran_kode());
     // Lompatan `terusna` menunjuk ke `mulai` (uji kondisi lagi).
@@ -235,6 +244,9 @@ void Compiler::stmt_lakoni(const ast::LakoniStmt* n) {
     stmt_awak(n->awak);
     const FungsiKonteks::Loop Loop = fn().loop.back();
     fn().loop.pop_back();
+    for (std::size_t s : Loop.sel_salinan) {
+        emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s));
+    }
     if (n->kondisi != nullptr) {
         ekspresi(n->kondisi);
         const std::size_t lompat = emit(Op::JUMP_IF_TRUE, 0);
@@ -266,6 +278,14 @@ std::size_t Compiler::slot_iterasi(const ast::Node* target) {
 
 void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
     if (n == nullptr) return;
+    // Variabel loop punya skop sendiri: `kanggo (ana i = 0; ...)` lalu
+    // `kanggo (ana i = 0; ...)` di fungsi yang sama tidak lagi bentrok, dan
+    // pengikat di dalam badan blok bisa bernama sama dengan variabel loop.
+    skop_buka();
+    struct Penutup {
+        Compiler* c;
+        ~Penutup() { c->skop_tutup(); }
+    } penutup{this};
     // Inisialisasi (dijalankan sekali).
     std::size_t s_iterasi = std::string::npos;
     if (n->inisialisasi != nullptr) {
@@ -304,6 +324,9 @@ void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
         const std::size_t keluar = emit(Op::JUMP_IF_FALSE, 0);
         emit(Op::POP);
         fn().loop.back().terusna_tujuan = fn().chunk->ukuran_kode();
+        // Sel pengikut blok di dalam loop ini: dicatat sekarang, disalin di
+        // akhir tiap iterasi (lihat `tandai_sel_iterasi`).
+        std::vector<std::size_t> selis_blok = fn().loop.back().sel_salinan;
         stmt_awak(n->awak);
         // Sel BARU tiap akhir iterasi, sebelum bagian pembaruan -- urutan yang
         // sama dengan `CreatePerIterationEnvironment` ECMAScript: closure di
@@ -320,6 +343,9 @@ void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
         if (s_iterasi != std::string::npos) {
             emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s_iterasi));
         }
+        for (std::size_t s : selis_blok) {
+            emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s));
+        }
         if (n->pembaruan != nullptr) {
             ekspresi(n->pembaruan);
             emit(Op::POP);
@@ -334,10 +360,14 @@ void Compiler::stmt_kanggo(const ast::KanggoStmt* n) {
     }
 
     fn().loop.back().terusna_tujuan = mulai;
+    std::vector<std::size_t> selis_blok = fn().loop.back().sel_salinan;
     stmt_awak(n->awak);
     const std::size_t ip_terusna = fn().chunk->ukuran_kode();
     if (s_iterasi != std::string::npos) {
         emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s_iterasi));
+    }
+    for (std::size_t s : selis_blok) {
+        emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s));
     }
     if (n->pembaruan != nullptr) {
         ekspresi(n->pembaruan);
@@ -358,6 +388,11 @@ void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
     //    <target = nilai> ; <body> ; JUMP L
     // L1: POP POP                     -> [iter, i]
     //    POP POP                      -> []
+    skop_buka();
+    struct PenutupOf {
+        Compiler* c;
+        ~PenutupOf() { c->skop_tutup(); }
+    } penutup_of{this};
     ekspresi(n->iterable);
     emit(Op::ITER_INIT, 0);
 
@@ -409,6 +444,10 @@ void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
     stmt_awak(n->awak);
     const FungsiKonteks::Loop Loop = fn().loop.back();
     fn().loop.pop_back();
+    // Sel pengikut blok di dalam loop ini disalin di akhir tiap iterasi.
+    for (std::size_t s : Loop.sel_salinan) {
+        emit(Op::SEL_SALIN, static_cast<std::uint16_t>(s));
+    }
 
     emit(Op::JUMP, static_cast<std::uint16_t>(mulai));
     // Jalur keluar normal. `ITER_NEXT` mendorong DUA nilai (hasil + flag) dan
@@ -491,7 +530,11 @@ void Compiler::stmt_pilih(const ast::PilihStmt* n) {
             gagal_kasus = emit(Op::JUMP_IF_FALSE, 0);
             emit(Op::POP);
         }
+        // Tiap kasus punya skop sendiri: dua kasus boleh mendeklarasikan
+        // pengikutan dengan nama yang sama tanpa saling berdesakan.
+        skop_buka();
         for (const ast::Node* st : k->body) statement(st);
+        skop_tutup();
         lompat_akhir.push_back(emit(Op::JUMP, 0));
         if (ada_uji) {
             // Titik gagal kasus ini = awal kasus berikutnya.
@@ -578,6 +621,7 @@ void Compiler::stmt_coba(const ast::CobaStmt* n) {
         if (kn == nullptr) continue;
         const auto* k = static_cast<const ast::TangkepKlausul*>(kn);
         patch_b(patch_klausul[i], fn().chunk->ukuran_kode());
+        skop_buka();
         if (k->ada_binding && !k->binding.empty()) {
             const std::size_t s = slot_baru(k->binding);
             emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(s));
@@ -585,6 +629,7 @@ void Compiler::stmt_coba(const ast::CobaStmt* n) {
             emit(Op::POP);
         }
         stmt_awak(k->body);
+        skop_tutup();
         lompat_intrigusan_klausul.push_back(emit(Op::JUMP, 0));
     }
 
@@ -708,6 +753,10 @@ void Compiler::eks_inisial_field(const std::vector<const ast::FieldKelas*>& fiel
     f.n_slot_terpakai = 1;  // hanya `this`
     f.n_slot_maks = 1;
     f.info.arity = 0;
+    // Skop pradaftar selalu dimulai dengan satu skop fungsi (indeks 0),
+    // lalu `pradaftar_tdz` menambahkan skop blok di atasnya.
+    f.pradaftar.push_back(FungsiKonteks::SkopPradaftar{});
+    f.tumpukan_pradaftar.push_back(0);
     fungsi_stack_.push_back(std::move(f));
     FungsiKonteks& ctx = fn();
     for (const ast::FieldKelas* fk : field) {
@@ -728,33 +777,7 @@ void Compiler::eks_inisial_field(const std::vector<const ast::FieldKelas*>& fiel
     ctx.chunk->generator = false;
     ctx.chunk->peta_baris.finalize();
 
-    // Resolusi upvalue — salinan ringkas dari `eks_fungsi` (Lox).
-    constexpr std::int32_t kSentinelGlobal = -0x40000000;
-    std::function<std::int32_t(std::size_t, std::string_view)> petakan_upvalue;
-    petakan_upvalue = [&](std::size_t idx, std::string_view nama) -> std::int32_t {
-        if (idx == 0) return kSentinelGlobal;
-        FungsiKonteks& induk = fungsi_stack_[idx - 1];
-        const auto it = induk.lokal.find(std::string(nama));
-        if (it != induk.lokal.end() && it->second != 0) {
-            return static_cast<std::int32_t>(it->second);
-        }
-        for (std::size_t k = 0; k < induk.info.ambil_upvalue.size(); ++k) {
-            if (induk.info.ambil_upvalue[k].second == nama) {
-                return -static_cast<std::int32_t>(k) - 1;
-            }
-        }
-        petakan_upvalue(idx - 1, nama);
-        induk.info.ambil_upvalue.emplace_back(0, nama);
-        return -static_cast<std::int32_t>(induk.info.ambil_upvalue.size());
-    };
-    std::vector<std::int32_t> sumber;
-    const std::size_t ini = fungsi_stack_.size() - 1;
-    for (const auto& up : ctx.info.ambil_upvalue) {
-        sumber.push_back(petakan_upvalue(ini, up.second));
-    }
-    for (const auto& up : ctx.info.ambil_upvalue) ctx.chunk->tambah_nama_upvalue(up.second);
-    ctx.chunk->jumlah_upvalue = static_cast<std::uint8_t>(sumber.size());
-    ctx.chunk->upvalue_sumber = sumber;
+    selesaikan_upvalue(ctx);
 
     vm::ChunkPtr anak = ctx.chunk;
     semua_chunk_.push_back(anak);

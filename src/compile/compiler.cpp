@@ -98,35 +98,144 @@ void Compiler::diagnosa_di(const char* kode, std::string pesan, std::string sara
 // Slot & upvalue
 // ===========================================================================
 
-std::size_t Compiler::slot_baru(const std::string_view nama) {
+void Compiler::skop_buka() {
     FungsiKonteks& f = fn();
-    if (f.lokal.find(std::string(nama)) != f.lokal.end()) {
-        diagnosa_di("S401", "Jeneng \"" + std::string(nama) + "\" wis kinandal ing iki tanpa var utawa tetep.",
-                    "Ganti jeneng utawa watesi ing scope liya.");
+    f.skop.emplace_back();
+    // Skop pradaftar untuk blok ini SUDAH dibuat `pradaftar_tdz` (yang berjalan
+    // lebih dulu untuk seluruh fungsi), jadi kursor hanya BERGESER. Membuat
+    // skop baru di sini akan melompat ke luar jangkauan -- kursor berakhir di
+    // luar seluruh blok, dan setiap deklarasi setelahnya terlihat "di luar
+    // skop mana pun" sehingga TDZ-nya tidak pernah ditutup.
+    if (f.skop_kursor + 1 < f.pradaftar.size()) {
+        ++f.skop_kursor;
+    } else {
+        // Tidak ada skop pradaftar untuk blok ini (pradaftar_tdz tidak
+        // dijalankan, atau bentuk statement yang tidak dipindainya): buat yang
+        // kosong supaya blok tetap punya pengikut sendiri.
+        f.skop_kursor = f.pradaftar.size();
+        f.pradaftar.push_back(FungsiKonteks::SkopPradaftar{{}, f.skop_kursor});
     }
+}
+
+void Compiler::skop_tutup() {
+    FungsiKonteks& f = fn();
+    if (!f.skop.empty()) f.skop.pop_back();
+    if (f.skop_kursor < f.pradaftar.size()) f.skop_kursor = f.pradaftar[f.skop_kursor].induk;
+}
+
+std::size_t Compiler::cari_slot_skop(std::string_view nama) const {
+    const FungsiKonteks& f = fn();
+    // (1) Pengikat yang sudah benar-benar terkompilasi. Slot hasil pra-walk
+    //     tidak di sini karena skopnya sudah dibuang -- lihat `pradaftar`.
+    for (std::size_t i = f.skop.size(); i-- > 0;) {
+        const auto it = f.skop[i].nama_slot.find(std::string(nama));
+        if (it != f.skop[i].nama_slot.end()) return it->second;
+    }
+    // (2) Pengikat yang deklarasinya belum terkompilasi, di skop yang sedang
+    //     aktif atau skop luarnya. Tanpa ini, rujukan ke depan di dalam satu
+    //     blok (`tulis(y); tetep y = 1;`) tidak menemukan apa pun dan jatuh ke
+    //     upvalue atau global -- TDZ pun tidak pernah dicek.
+    for (std::size_t i = f.skop_kursor + 1; i-- > 0;) {
+        const auto& sk = f.pradaftar[i];
+        const auto it = sk.nama_slot.find(std::string(nama));
+        if (it != sk.nama_slot.end()) return it->second;
+    }
+    return std::string::npos;
+}
+
+std::size_t Compiler::slot_skop(const std::string_view nama) {
+    FungsiKonteks& f = fn();
+    if (f.skop.empty()) f.skop.emplace_back();  // jaring pengaman
+    Skop& dalam = f.skop.back();
+    // Pengikutan ulang di skop yang sama tetap galat: itu bug program, bukan
+    // hal yang bisa dibiarkan. Yang sah adalah pengikutan ulang di skop anak.
+    if (dalam.nama_slot.find(std::string(nama)) != dalam.nama_slot.end()) {
+        diagnosa_di("S401", "Jeneng \"" + std::string(nama) +
+                                "\" wis kinandal ing iki tanpa var utawa tetep.",
+                    "Ganti jeneng, utawa watesi ing scope liya (contone: paddup karo kurung kurawal).");
+    }
+    daftar_skop(nama, alokasi_slot());
+    return cari_slot_skop(nama);
+}
+
+std::size_t Compiler::alokasi_slot() {
+    FungsiKonteks& f = fn();
     const std::size_t s = f.n_slot_terpakai++;
     if (f.n_slot_terpakai > f.n_slot_maks) f.n_slot_maks = f.n_slot_terpakai;
-    f.lokal[std::string(nama)] = s;
     return s;
 }
 
-std::size_t Compiler::slot_baru_tdz(const std::string_view nama) {
+void Compiler::daftar_skop(const std::string_view nama, std::size_t slot) {
     FungsiKonteks& f = fn();
-    // Pakai slot yang sudah dipra-daftarkan kalau ada, supaya pra-walk dan
-    // statement deklarasi menunjuk slot yang sama.
+    if (f.skop.empty()) f.skop.emplace_back();
+    f.skop.back().nama_slot.emplace(std::string(nama), slot);
+    // Peta datar dipakai HANYA untuk resolusi upvalue cadangan saat perakitan
+    // akhir (lihat `FungsiInfo::AmbilUpvalue`). Pengikutan pertama menang,
+    // supaya pencatatannya tidak bergantung pada urutan kompilasi blok.
+    f.lokal.emplace(std::string(nama), slot);
+}
+
+std::size_t Compiler::slot_baru_tdz_skop(const std::string_view nama) {
+    FungsiKonteks& f = fn();
+    if (f.skop.empty()) f.skop.emplace_back();
+    // Pakai slot yang sudah dialokasikan `pradaftar_tdz` untuk kemunculan BERIKUTNYA
+    // nama ini di sumber, supaya pra-walk dan kompilasi sungguhan menunjuk slot
+    // yang sama. Kalau tidak, `TDZ_CHECK` diarahkan ke entri `tdz_daftar` milik
+    // slot lain.
     std::size_t s;
-    const auto it = f.tdz_slot.find(nama);
-    if (it != f.tdz_slot.end()) {
-        s = it->second;
+    auto antre = f.tdz_antre.find(std::string(nama));
+    if (antre != f.tdz_antre.end() && !antre->second.empty()) {
+        s = antre->second.front();
+        antre->second.pop_front();
+        // Pengikat harus didaftarkan ulang di skop yang SEDANG dikompilasi: skop
+        // hasil pra-walk sudah dibuang, jadi tanpa ini `cari_slot` tidak
+        // menemukan namanya dan rujukan jatuh ke upvalue atau global.
+        //
+        // Pengikutan ganda di skop yang sama tetap harus galat. `emplace` di
+        // `daftar_skop` diam-diam mempertahankan pengikat yang lama, sehingga
+        // deklarasi kedua menulis ke slot yang tidak pernah dibaca -- dan
+        // programnya terlihat jalan padahal variabelnya membeku di nilai lama.
+        if (f.skop.back().nama_slot.find(std::string(nama)) != f.skop.back().nama_slot.end()) {
+            diagnosa_di("S401", "Jeneng \"" + std::string(nama) +
+                                    "\" wis kinandal ing iki tanpa var utawa tetep.",
+                        "Ganti jeneng, utawa watesi ing scope liya (contone: kebungkus karo kurung kurawal).");
+        }
+        daftar_skop(nama, s);
     } else {
-        s = slot_baru(nama);
+        s = slot_skop(nama);
     }
+    // Penandaan sel per-iterasi harus dilakukan SEBELUM jalur kembali lebih
+    // awal: pada deklarasi yang sudah dipra-daftarkan (kasus biasa), entri
+    // `tdz_menunggu`-nya sudah ada, jadi return lebih awal akan melewatkan
+    // penandaan sama sekali.
+    tandai_sel_iterasi(s);
     if (f.tdz_menunggu.count(s) != 0) return s;  // sudah dipra-daftarkan
     const std::size_t pos = f.chunk->tdz_daftar.size();
     f.chunk->tdz_daftar.push_back(0);  // diisi setelah statement deklarasi selesai
     f.tdz_menunggu[s] = pos;
     return s;
 }
+
+void Compiler::tandai_sel_iterasi(std::size_t slot) {
+    // Pengikut yang deklarasinya berada di dalam loop harus punya sel sendiri
+    // tiap iterasi, persis seperti variabel loop itu sendiri (D-037). Tanpa
+    // ini, closure yang dibuat di dalam loop membaca satu sel yang sama di
+    // semua iterasi, jadi semuanya melihat nilai iterasi terakhir.
+    //
+    // Syaratnya: ada loop yang sedang dikompilasi, dan pengikut ini bukan
+    // skop fungsi (slot 0/slot parameter). Pengikut di level fungsi tidak perlu
+    // -- hanya ada satu, dibuat sekali saat fungsi dipanggil.
+    FungsiKonteks& f = fn();
+    if (f.loop.empty() || f.skop.size() < 2) return;
+    f.sel_skop_slot.insert(slot);
+    f.loop.back().sel_salinan.push_back(slot);
+}
+
+// Alias lama: seluruh pemanggil sebelumnya berada di skop terluar atau skop
+// yang sedang dikompilasi, jadi semantikanya sama persis.
+std::size_t Compiler::slot_baru(const std::string_view nama) { return slot_skop(nama); }
+
+std::size_t Compiler::slot_baru_tdz(const std::string_view nama) { return slot_baru_tdz_skop(nama); }
 
 namespace {
 
@@ -177,7 +286,26 @@ std::vector<const ast::Node*> anak_stmt(const ast::Node* n) {
             }
             break;
         }
-        case NK::CobaStmt: out.push_back(static_cast<const ast::CobaStmt*>(n)->blok); break;
+        case NK::CobaStmt: {
+            // Selain blok, badan tiap klausa `tangkep` dan `pungkasan` juga
+            // punya skop sendiri -- kalau tidak, pengikutan di dalam klausa
+            // akan berebut slot dengan pengikutan di blok `coba`.
+            const auto* c = static_cast<const ast::CobaStmt*>(n);
+            out.push_back(c->blok);
+            for (const ast::Node* k : c->tangkep) out.push_back(k);
+            if (c->pungkasan != nullptr) {
+                out.push_back(static_cast<const ast::PungkasanKlausul*>(c->pungkasan)->body);
+            }
+            break;
+        }
+        case NK::KasusKlap:
+            for (const ast::Node* x : static_cast<const ast::KasusKlap*>(n)->body) out.push_back(x);
+            break;
+        case NK::TangkepKlausul: {
+            const auto* t = static_cast<const ast::TangkepKlausul*>(n);
+            if (t->body != nullptr) out.push_back(t->body);
+            break;
+        }
         case NK::KanggoInStmt: {
             const auto* k = static_cast<const ast::KanggoInStmt*>(n);
             out.push_back(k->target);
@@ -207,12 +335,43 @@ std::vector<const ast::Node*> anak_stmt(const ast::Node* n) {
 
 }  // namespace
 
+namespace {
+
+/// Apakah statement `n` memperkenalkan skop baru untuk pradaftar_tdz?
+///
+/// Harus sama persis dengan skop yang dibuka kompilator saat benar-benar merangkai
+/// kodenya; kalau tidak, pra-walk dan kompilasi memberi slot yang berbeda dan TDZ
+/// mengecek slot yang salah.
+bool node_buka_skop(ast::NK k) {
+    switch (k) {
+        // Hanya yang MEMBAWA pengikat sendiri. `yen`/`nalika`/`lakoni`/
+        // `coba` sengaja tidak ada di sini: badan mereka sudah punya skop
+        // sendiri kalau ditulis dengan kurung kurawal, dan kalau tidak
+        // kurung kurawal tidak ada blok yang perlu dibatasi -- persis seperti
+        // ECMAScript, di mana `if (x) let y = 1;` tidak punya skop baru.
+        case ast::NK::Blok:              // stmt_blok
+        case ast::NK::KanggoStmt:        // variabel loop di skop miliknya
+        case ast::NK::KanggoOfStmt:      // target `kanggo (x saka ...)`
+        case ast::NK::KasusKlap:         // badan tiap kasus `pilih`
+        case ast::NK::TangkepKlausul:    // badan tiap klausa `tangkep`
+            return true;
+        default:
+            return false;
+    }
+}
+
+}  // namespace
+
 void Compiler::pradaftar_tdz(const ast::Node* n, int kedalaman) {
     if (n == nullptr) return;
+    if (kedalaman > 64) return;  // pengaman untuk AST tak wajar
     // Fungsi anak punya badan sendiri; jangan rekursi ke dalamnya.
     if (n->kind == NK::FungsiDeklarasi) return;
-    if (kedalaman > 64) return;  // pengaman untuk AST tak wajar
     FungsiKonteks& f = fn();
+    // Tumpukan lokal: skop pradaftar yang sedang aktif. Tumpukan `f.skop` TIDAK
+    // dipakai di sini -- yang dibangun di sini adalah bentuk akhir yang harus
+    // bertahan sampai kompilasi sungguhan berjalan.
+    std::vector<std::size_t>& tumpukan = fn().tumpukan_pradaftar;
     if (n->kind == NK::DeklarasiVar) {
         const auto* d = static_cast<const ast::DeklarasiVarStmt*>(n);
         std::vector<const ast::Node*> deklarator{d};
@@ -220,28 +379,56 @@ void Compiler::pradaftar_tdz(const ast::Node* n, int kedalaman) {
         for (const ast::Node* dek : deklarator) {
             const auto* dv = static_cast<const ast::DeklarasiVarStmt*>(dek);
             if (dv->jeneng.empty()) continue;
-            if (f.tdz_slot.count(dv->jeneng) != 0) continue;
-            const std::size_t s = slot_baru(dv->jeneng);
-            f.tdz_slot[dv->jeneng] = s;
+            const std::size_t s = alokasi_slot();
+            f.pradaftar[tumpukan.back()].nama_slot.emplace(std::string(dv->jeneng), s);
+            f.tdz_antre[std::string(dv->jeneng)].push_back(s);
+            // Peta datar dipakai sebagai cadangan resolusi upvalue saat
+            // perakitan akhir. Harus diisi DI SINI, bukan hanya saat deklarasi
+            // benar-benar dikompilasi: deklarasi fungsi di-hoist, jadi badannya
+            // dirangkai sebelum statement deklarasinya dieksekusi. Tanpa
+            // penulisan di sini, rujukan ke variabel modul dari dalam fungsi
+            // yang ditulis mendahului deklarasinya tidak pernah ketemu dan
+            // diam-diam menjadi global (hasilnya `mboh`).
+            f.lokal.emplace(std::string(dv->jeneng), s);
             const std::size_t pos = f.chunk->tdz_daftar.size();
             f.chunk->tdz_daftar.push_back(0);
             f.tdz_menunggu[s] = pos;
         }
     }
+    if (node_buka_skop(n->kind)) {
+        const std::size_t baru = f.pradaftar.size();
+        f.pradaftar.push_back(FungsiKonteks::SkopPradaftar{{}, tumpukan.back()});
+        tumpukan.push_back(baru);
+    }
     for (const ast::Node* anak : anak_stmt(n)) pradaftar_tdz(anak, kedalaman + 1);
+    if (node_buka_skop(n->kind)) tumpukan.pop_back();
 }
 
 std::size_t Compiler::cari_slot(const std::string_view nama) const {
-    auto it = fn().lokal.find(std::string(nama));
-    return it == fn().lokal.end() ? static_cast<std::size_t>(-1) : it->second;
+    return cari_slot_skop(nama);
 }
 
 std::size_t Compiler::cari_upvalue(const std::string_view nama) {
     FungsiKonteks& f = fn();
+    // Slot yang sedang terlihat di induk dicatat sekarang, bukan nanti. Induk
+    // masih dalam tahap kompilasi, jadi rantai skop-nya utuh; yang terlihat
+    // sekarang adalah tepat variabel yang dirujuk kode ini. Dicari ulang
+    // per-nama saat perakitan akhir akan bisa memilih slot blok lain yang
+    // kebetulan bernama sama.
+    std::int32_t slot_induk = -1;
+    if (fungsi_stack_.size() >= 2) {
+        const FungsiKonteks& induk = fungsi_stack_[fungsi_stack_.size() - 2];
+        for (std::size_t i = induk.skop.size(); i-- > 0;) {
+            const auto it = induk.skop[i].nama_slot.find(std::string(nama));
+            if (it == induk.skop[i].nama_slot.end()) continue;
+            if (it->second != 0) slot_induk = static_cast<std::int32_t>(it->second);
+            break;
+        }
+    }
     auto it = f.upvalue.find(std::string(nama));
     if (it != f.upvalue.end()) return it->second;
     const std::size_t idx = f.info.ambil_upvalue.size();
-    f.info.ambil_upvalue.emplace_back(0, nama);
+    f.info.ambil_upvalue.emplace_back(FungsiInfo::AmbilUpvalue{slot_induk, nama});
     f.upvalue[std::string(nama)] = idx;
     return idx;
 }
@@ -253,6 +440,12 @@ std::size_t Compiler::cari_upvalue(const std::string_view nama) {
 bool Compiler::adalah_sel(std::string_view nama) const {
     if (sel_slot_.find(std::string(nama)) != sel_slot_.end()) return true;
     return !fungsi_stack_.empty() && fungsi_stack_.back().sel_nama.count(std::string(nama)) != 0;
+}
+
+bool Compiler::adalah_sel(std::string_view nama, std::size_t slot) const {
+    if (adalah_sel(nama)) return true;
+    if (slot == std::string::npos || fungsi_stack_.empty()) return false;
+    return fungsi_stack_.back().sel_skop_slot.count(slot) != 0;
 }
 
 /// Catat nama yang diekspor sebagai **variabel** (bukan fungsi/kelas), supaya
@@ -335,6 +528,10 @@ HasilKompilasi Compiler::compile(const ast::Program* prog) {
     // sama di modul maupun di fungsi (lihat `VM::mulai_frame`).
     f.n_slot_terpakai = 1;
     f.n_slot_maks = 1;
+    // Skop pradaftar selalu dimulai dengan satu skop fungsi (indeks 0),
+    // lalu `pradaftar_tdz` menambahkan skop blok di atasnya.
+    f.pradaftar.push_back(FungsiKonteks::SkopPradaftar{});
+    f.tumpukan_pradaftar.push_back(0);
     fungsi_stack_.push_back(std::move(f));
 
     // --- Hoisting ekspor (Fase 5) -----------------------------------------
@@ -528,6 +725,10 @@ HasilKompilasi Compiler::compile_ekspresi(const ast::Node* expr) {
     f.info.ini_boleh = false;
     f.n_slot_terpakai = 1;
     f.n_slot_maks = 1;
+    // Skop pradaftar selalu dimulai dengan satu skop fungsi (indeks 0),
+    // lalu `pradaftar_tdz` menambahkan skop blok di atasnya.
+    f.pradaftar.push_back(FungsiKonteks::SkopPradaftar{});
+    f.tumpukan_pradaftar.push_back(0);
     fungsi_stack_.push_back(std::move(f));
     ekspresi(expr);
     emit(Op::RETURN);

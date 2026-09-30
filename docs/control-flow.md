@@ -303,3 +303,103 @@ lagi karena kondisi sudah gagal) -- sama seperti JavaScript.
   `kanggo (x saka ...)` tanpa `ana` bisa salah membaca pengikat loop lain.
   Pengikatan per-iterasi sendiri sudah dimodelkan (di atas).
 - `catch (e)` tidak punya TDZ.
+
+## 5. Skop blok
+
+Pengikut leksikal punya masa hidup bloknya. Dua blok boleh memakai nama yang
+sama:
+
+```jawa
+{
+    ana nilai = "kiri";
+    tulis(nilai);          // "kiri"
+}
+{
+    ana nilai = "kanan";
+    tulis(nilai);          // "kanan"
+}
+```
+
+Nama yang ada di skop **luar** tetap terlihat di dalam:
+
+```jawa
+ana luar = 1;
+{
+    ana dalam = 2;
+    // `luar` terbaca di sini
+}
+```
+
+Pengikut loop punya skop sendiri, jadi dua loop dengan nama pengikut yang sama
+satu fungsi bisa dikompilasi:
+
+```jawa
+kanggo (ana i = 0; i < 3; i = i + 1) { ... }
+kanggo (ana i = 10; i < 12; i = i + 1) { ... }   // bukan galat
+```
+
+Yang **tidak** menyusun skop baru: `yen`, `nalika`, `lakoni`, dan `coba`. Badan
+mereka sudah punya skop kalau ditulis dengan kurung kurawal, dan tanpa kurung
+kurawal memang tidak ada blok yang perlu dibatasi:
+
+```jawa
+yen (salah) ana x = 1;    // `x` di skop yang sama dengan fungsi, tidak membuat skop baru
+yen (salah) { ana x = 1; }  // `x` di skop blok
+```
+
+### Yang berada di dalam loop
+
+Pengikut yang deklarasinya ada di dalam loop memakai sel sendiri per iterasi,
+persis seperti variabel loop itu sendiri. Closure yang dibuat di dalam loop
+karena itu melihat nilai iterasinya sendiri:
+
+```jawa
+ana t = [];
+kanggo (ana n = 0; n < 3; n = n + 1) {
+    ana nilai = n * 10;      // nilai punya sel sendiri tiap iterasi
+    t.tambah(() => nilai);
+}
+tulis(t[0]());   // 0
+tulis(t[1]());   // 10
+tulis(t[2]());   // 20
+```
+
+Pengikut di level fungsi tidak butuh ini: hanya ada satu, dibuat sekali saat
+fungsi dipanggil.
+
+### Yang terjadi di luar blok
+
+Pembacaan nama yang hanya ada di skop yang sudah tertutup bukan lagi variabel
+itu. Yang terbaca adalah global dengan nama yang sama:
+
+```jawa
+{
+    ana x = 42;
+}
+tulis(x);            // nilai global `x`, yaitu `mboh` -- bukan 42
+```
+
+Ini bukan galat kompilasi, konsisten dengan cara bahasa ini memperlakukan nama
+yang tidak pernah dideklarasikan: sebagai global yang bernilai kosong.
+
+### Galat yang tetap berlaku
+
+Dua pengikut dengan nama sama di skop yang **sama** tetap galat:
+
+```jawa
+ana x = 1;
+ana x = 2;   // KleruCakupan [S401]
+```
+
+Begitu juga pembacaan sebelum deklarasi di dalam satu blok, baik di level
+modul maupun di dalam fungsi:
+
+```jawa
+{
+    tulis(v);              // zona mati-temporal
+    tetep v = 1;
+}
+```
+
+Lihat `DECISIONS.md` D-040 untuk alasannya, termasuk kenapa nomor slot tidak
+pernah dipakai ulang.

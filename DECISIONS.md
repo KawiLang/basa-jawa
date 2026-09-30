@@ -902,3 +902,76 @@ temporer sendiri. Bendera `dalam_pungkasan` mencegah `bali` di dalam
 | V-4 | Angka Jawa (siji..sanga, ronguluh, atus, sewu) | Tabel uji 0–99 lengkap + catatan sumber di sini |
 | V-5 | ~~Aksara Jawa 0–9 (U+A9D0..U+A9D9)~~ **SELESAI** | Nama Unicode diverifikasi: `JAVANESE DIGIT ZERO` .. `JAVANESE DIGIT NINE`. Dipakai `StdAksara.angka_jawa` |
 | V-6 | Tanda negatif `StdAksara.angka_jawa` | Dipakai U+A9CA (`JAVANESE PADA ADEG`, tanda baca) sebagai tanda minus. **Perlu konfirmasi** apakah lambang Jawa yang tepat adalah U+A9CA atau bentuk lain |
+
+## D-040: Pengikut leksikal punya skop blok, dan sel per-iterasi di dalam loop
+
+**Status:** diterima (tahap 9)
+
+**Konteks.** Slot kompilator dulu bersifat fungsi-wide: `FungsiKonteks::lokal`
+adalah peta datar nama ke slot, dan `pradaftar_tdz` mengisi peta itu untuk
+seluruh badan fungsi sekaligus. Dua pengikut dengan nama sama di dua blok
+berbeda saling berebut slot dan memicu `KleruCakupan [S401]`. Konsekuensi
+praktisnya besar: kode yang wajar ditulis
+
+```jawa
+kanggo (ana i = 0; i < 3; i = i + 1) { ... }
+kanggo (ana i = 0; i < 3; i = i + 1) { ... }
+```
+
+tidak bisa dikompilasi, dan setiap berkas uji harus memakai nama pengikut unik
+sepanjang file.
+
+**Keputusan.** Tiga bagian:
+
+1. **Tumpukan skop.** `FungsiKonteks` gaining `std::vector<Skop>`, dan
+   `cari_slot` mencari dari skop paling dalam ke luar. Skop baru dibuka oleh
+   blok statement, loop (`kanggo`, `kanggo ... saka`), badan tiap kasus `pilih`,
+   dan badan tiap klausa `tangkep`. `yen`/`nalika`/`lakoni`/`coba` sendiri tidak
+   membuka skop: badan mereka sudah punya skop kalau ditulis dengan kurung
+   kurawal, dan tanpa kurung kurawal memang tidak ada blok yang perlu dibatasi --
+   persis seperti ECMAScript.
+
+2. **Slot tidak pernah dipakai ulang.** Saat skop ditutup, nomor slot-nya
+   dibiarkan. Closure yang menangkap pengikut skop itu akan menunjuk slot yang
+   sama selamanya; memakai ulang nomor itu untuk skop berikutnya akan membuat
+   closure membaca variabel yang salah. Biayanya satu slot per (nama, blok),
+   yang dibatasi ukuran sumber.
+
+3. **Sel per-iterasi untuk pengikut di dalam loop.** Pengikut yang deklarasinya
+   ada di dalam loop memakai `SelObj` yang disalin tiap akhir iterasi
+   (`SEL_SALIN`), seperti variabel loop itu sendiri (D-037). Tanpa ini,
+   closure yang dibuat di dalam loop membaca satu sel yang sama di semua
+   iterasi. Penandaannya per-SLOT, bukan per-nama: satu nama bisa punya banyak
+   slot dalam satu fungsi, dan hanya blok yang ada di dalam loop yang butuh sel
+   per-iterasi.
+
+**Dua akibat yang harus ditangani.**
+
+- *Resolusi upvalue jadi per-slot, bukan per-nama.* `FungsiInfo::AmbilUpvalue`
+  sekarang membawa `slot_induk`, diisi saat rujukan ditulis -- ketika skop induk
+  masih utuh. Kalau resolusi tetap per-nama saat perakitan akhir, closure yang
+  menangkap `i` di blok pertama akan bisa mendapat slot blok kedua. Pembuatan
+  `S401` juga diperketat: deklarasi ganda di skop yang sama kini galat, bukan
+  ditoleransi pelan-pelan.
+
+- *Pra-walk harus meninggalkan jejaknya.* `pradaftar_tdz` menghitung slot untuk
+  seluruh pengikut lebih dulu supaya rujukan ke deklarasi yang belum terkompilasi
+  bisa diarahkan ke zona mati-temporal. Bentuk skop hasil pra-walk disimpan rata
+  di `FungsiKonteks::pradaftar` (dengan penunjuk ke skop induknya) dan tidak
+  pernah dibuang, sementara skop sungguhan tetap berupa tumpukan. Kalau bentuk
+  pra-walk ikut popping, rujukan ke depan di dalam satu blok ikut hilang dan
+  TDZ di dalam fungsi diam-diam berhenti berlaku.
+
+**Alternatif yang ditolak.** *Promotkan setiap pengikut blok jadi sel.* Itu
+sebenarnya yang dilakukan mesin lain dan lebih sederhana secara konsep, tapi
+mengubah bentuk bytecode semua pengikut blok -- termasuk yang tidak pernah
+menutup closure -- jadi menambah satu `SEL_BUAT` dan satu `SEL_SALIN` di mana
+mana. Pendekatan yang dipilih hanya membayar biaya itu di dalam loop, di tempat
+perbedaan semantiknya benar-benar terlihat.
+
+**Akibat yang disengaja.** Pembacaan nama yang hanya ada di skop yang sudah
+tertutup (`{ ana x = 1; } ... x`) bukan lagi variabel itu: ia jatuh ke
+global bernama sama, sama seperti nama yang tidak pernah ada. Tidak
+diperlakukan sebagai galat kompilasi karena bahasa ini sudah memperlakukan
+nama yang tidak dikenal sebagai global yang bernilai kosong, dan mengubah itu
+adalah keputusan tersendiri.

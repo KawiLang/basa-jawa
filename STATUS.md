@@ -13,14 +13,14 @@ lokal, pustaka standar lengkap, dan tooling (REPL, `bench`, `ubah`).
 
 | Metrik | Nilai |
 |---|---|
-| Baris kode C++ (`src/` + `tests/`) | 24.320 |
+| Baris kode C++ (`src/` + `tests/`) | 24.684 |
 | Opcode bytecode | 132 (`GET_IMPORT`, `SEL_ALIAS`, `SEL_BUAT`, `MAKE_REGEX`, `MAKE_TANGGAL`, `DEFINE_FIELD_INIT`, `DEFINE_STATIC`, `PARAM_HADAH`, `SEL_SALIN`, `TRY_KLAUSUL`, `INSTAN_DARI`, `COCOK_TIPE` baru) |
 | Target fuzz | 6 (`fuzz_lexer`, `fuzz_parser`, `fuzz_kompilasi`, `fuzz_vm`, `fuzz_modul`, `fuzz_regex`) |
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 4 berkas (termasuk `test_fmt`), 450 cek, 133 test |
-| Uji bahasa (`jawa tes`) | 10 berkas, 438 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, ...) |
-| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 28 formatter |
+| Uji bahasa (`jawa tes`) | 11 berkas, 467 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, skop blok, ...) |
+| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 29 formatter |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 10/10 `ctest` hijau di keempatnya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
 | Dokumentasi | 13 berkas `docs/` + 4 berkas akar |
@@ -219,8 +219,15 @@ Tiga bug kecil lain ikut tertutup:
 - **Pengikatan per-iterasi `kanggo` SELESAI (tahap 2).** `kanggo (ana i = ...)`
   dan `kanggo (ana x saka ...)` mengikat per-iterasi lewat `SelObj` +
   `SEL_SALIN` (D-037), jadi closure tiap iterasi melihat nilai iterasinya
-  sendiri. Yang **tetap** belum ada: skop blok, sehingga dua pengikat dengan
-  nama sama di loop berbeda dalam satu fungsi masih saling berebut slot.
+  sendiri.
+- **Skop blok SELESAI (tahap 9, D-040).** Pengikut leksikal punya masa hidup
+  bloknya: dua blok sibling, dua loop, atau dua kasus `pilih` boleh memakai nama
+  yang sama tanpa saling berebut slot. Pengikut di dalam loop memakai sel
+  per-iterasi seperti variabel loop. Dua pengikut dengan nama sama di skop yang
+  SAMA kini jadi galat `S401` (d dulu ditoleransi pelan-pelan, dan variabelnya
+  membeku di nilai deklarasi pertama). Pembacaan nama yang hanya ada di skop
+  yang sudah tertutup jatuh ke global -- bukan galat kompilasi, sesuai cara
+  bahasa ini memperlakukan nama yang tidak dikenal.
 - **Parameter default: `mboh` vs argumen hilang SELESAI (tahap 2).** Opcode
   `PARAM_HADAH` membaca `Frame::n_argumen` (D-036), jadi `f(mboh)` tidak lagi
   tertukar dengan `f()`.
@@ -312,7 +319,7 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 438/438 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 467/467 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

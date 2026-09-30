@@ -213,13 +213,16 @@ terusna_dalam_yen();
 pratelas(l_atas, [0, 2, 3, 99]);
 
 // `nalika` punya bentuk yang sama: satu `POP` bersama di akhir.
+// Nama pengikut di sini sengaja berbeda dari `penghitung` di atas: deklarasi
+// ganda di skop yang sama kini jadi galat `S401` (dulu pelan-pelan ditolerir
+// dan variabelnya membeku di nilai deklarasi pertama).
 ana m_atas = [];
-ana penghitung = 0;
+ana hitung_nalika = 0;
 gawe mandheg_dalam_nalika() {
-    nalika (penghitung < 4) {
-        yen (penghitung == 1) { mandheg; }
-        m_atas.tambah(penghitung);
-        penghitung = penghitung + 1;
+    nalika (hitung_nalika < 4) {
+        yen (hitung_nalika == 1) { mandheg; }
+        m_atas.tambah(hitung_nalika);
+        hitung_nalika = hitung_nalika + 1;
     }
     sesudah = 2;
 }

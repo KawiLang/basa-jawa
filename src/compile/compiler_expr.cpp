@@ -751,7 +751,7 @@ void Compiler::emit_baca_nama(std::string_view nama) {
     if (s != static_cast<std::size_t>(-1)) {
         // Pengikatan impor & variabel modul yang diekspor disimpan sebagai sel;
         // membacanya berarti membaca isi sel, bukan objek sel itu sendiri.
-        emit(adalah_sel(nama) ? Op::GET_CELL : Op::GET_LOCAL, static_cast<std::uint16_t>(s));
+        emit(adalah_sel(nama, s) ? Op::GET_CELL : Op::GET_LOCAL, static_cast<std::uint16_t>(s));
         return;
     }
     if (fn().dalam_fungsi) {
@@ -767,7 +767,7 @@ void Compiler::emit_baca_nama(std::string_view nama) {
 void Compiler::emit_tulis_nama(std::string_view nama) {
     // Efek bersih harus `v - -` untuk semua jalur; lihat `compiler.h`.
     const std::size_t s = cari_slot(nama);
-    if (s != std::string::npos && !adalah_sel(nama)) {
+    if (s != std::string::npos && !adalah_sel(nama, s)) {
         emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s));  // sudah consuming
         return;
     }
@@ -853,6 +853,13 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
 
     // Parameter occupy slot 1..n; slot 0 dicadangkan untuk `this` (agar
     // `GET_LOCAL 0` selalu berarti `this`).
+    //
+    // Parameter harus masuk skop[0] (skop fungsi), bukan hanya peta datar
+    // `lokal`: `cari_slot` mencari lewat rantai skop, jadi parameter yang
+    // hanya ada di peta datar akan terlihat "tidak ada" dan rujukannya
+    //estration dialihkan jadi upvalue -- program diam-diam membaca global
+    // yang namanya sama (atau `mboh`).
+    f.skop.emplace_back();
     std::size_t s = 1;
     for (const ast::Node* pn : n->param) {
         const auto* p = static_cast<const ast::ParamDeklarasi*>(pn);
@@ -860,7 +867,8 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
             ++s;
             continue;
         }
-        f.lokal[std::string(p->nama)] = s;
+        f.skop[0].nama_slot.emplace(std::string(p->nama), s);
+        f.lokal.emplace(std::string(p->nama), s);
         f.info.nama_param.push_back(p->nama);
         if (p->rest) f.info.variadic = true;
         ++s;
@@ -887,6 +895,10 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
         tipe_bali = static_cast<const ast::TipeAnotasi*>(n->tipe_bali)->nama;
     }
 
+    // Skop pradaftar selalu dimulai dengan satu skop fungsi (indeks 0),
+    // lalu `pradaftar_tdz` menambahkan skop blok di atasnya.
+    f.pradaftar.push_back(FungsiKonteks::SkopPradaftar{});
+    f.tumpukan_pradaftar.push_back(0);
     fungsi_stack_.push_back(std::move(f));
     FungsiKonteks& ctx = fn();
 
@@ -959,70 +971,7 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
     ctx.chunk->generator = n->generator;
     ctx.chunk->peta_baris.finalize();
 
-    // --- Resolusi upvalue (Lox) ---------------------------------------------
-    //
-    // Untuk setiap nama yang dibaca fungsi ini, cari selnya dengan naik satu
-    // tingkat demi satu tingkat dari induk langsung, lalu kembalikan encode:
-    //
-    //   `>= 0`        -> indeks lokal pada nenek moyang yang memilikinya
-    //   `-k-1`         -> upvalue ke-`k` milik nenek moyang itu
-    //   `-0x40000000`  -> tidak ada di mana pun: perlakukan sebagai global
-    //                     (`GET_UPVAL` dengan sel null)
-    //
-    // Dua detail yang menentukan benar/tidaknya hasil:
-    //
-    // 1. Hanya induk langsung boleh "menang" atas nama yang sama di modul.
-    //    Kalau semua nenek moyang dipindai dari luar ke dalam sekaligus,
-    //    bayangan (shadowing) rusak: closure membaca slot yang salah. Gejalanya
-    //    hanya muncul bila ada variabel modul yang namanya sama dengan variabel
-    //    lokal di fungsi -- program pendek tidak pernah mengalaminya, jadi
-    //    bug-nya mudah sekali tersembunyi.
-    //
-    // 2. Kalau suatu nenek moyang tidak punya nama itu sebagai lokal DAN belum
-    //    punya upvalue untuk nama itu, permintaannya HARUS didaftarkan ke
-    //    `ambil_upvalue` nenek moyang itu -- supaya nenek moyang ikut menarik
-    //    nama yang sama saat chunk-nya sendiri dirangkai. Tanpa pendaftaran itu,
-    //    fungsi yang hanya meneruskan closure (tidak pernah membaca nama itu
-    //    sendiri) gagal meneruskan nilainya dan hasilnya `mboh`.
-    constexpr std::int32_t kSentinelGlobal = -0x40000000;
-
-    // Sel untuk `nama` yang dibutuhkan fungsi `fungsi_stack_[idx]`.
-    // Encode yang dikembalikan SELALU relatif terhadap induk langsung
-    // (`fungsi_stack_[idx - 1]`), karena itulah yang dibaca opcode `CLOSURE`.
-    std::function<std::int32_t(std::size_t, std::string_view)> petakan_upvalue;
-    petakan_upvalue = [&](std::size_t idx, std::string_view nama) -> std::int32_t {
-        if (idx == 0) return kSentinelGlobal;  // modul: tidak punya induk
-        FungsiKonteks& induk = fungsi_stack_[idx - 1];
-        // (1) Lokal pada induk? Slot 0 adalah `this`, tidak bisa jadi upvalue.
-        const auto it = induk.lokal.find(std::string(nama));
-        if (it != induk.lokal.end() && it->second != 0) {
-            return static_cast<std::int32_t>(it->second);
-        }
-        // (2) Induk sudah menarik nama ini sebagai upvalue? Pakai sel itu juga,
-        //     supaya semua pemanggil berbagi satu sel.
-        for (std::size_t k = 0; k < induk.info.ambil_upvalue.size(); ++k) {
-            if (induk.info.ambil_upvalue[k].second == nama) {
-                return -static_cast<std::int32_t>(k) - 1;
-            }
-        }
-        // (3) Induk belum menariknya: daftarkan, lalu minta induk memetakannya
-        //     sendiri ke atas. Tanpa langkah ini, fungsi yang hanya MENERUSKAN
-        //     closure (tidak pernah membaca nama itu di badannya sendiri) tidak
-        //     akan menarik nilainya, dan closure yang dikembalikannya membaca
-        //     sel kosong.
-        petakan_upvalue(idx - 1, nama);  // induk ikut menarik nama yang sama
-        induk.info.ambil_upvalue.emplace_back(0, nama);
-        return -static_cast<std::int32_t>(induk.info.ambil_upvalue.size());
-    };
-
-    std::vector<std::int32_t> sumber;
-    const std::size_t ini = fungsi_stack_.size() - 1;
-    for (const auto& up : ctx.info.ambil_upvalue) {
-        sumber.push_back(petakan_upvalue(ini, up.second));
-    }
-    for (const auto& up : ctx.info.ambil_upvalue) ctx.chunk->tambah_nama_upvalue(up.second);
-    ctx.chunk->jumlah_upvalue = static_cast<std::uint8_t>(sumber.size());
-    ctx.chunk->upvalue_sumber = sumber;
+    selesaikan_upvalue(ctx);
 
     // --- Kembalikan chunk & emit CLOSURE --------------------------------
     vm::ChunkPtr anak = ctx.chunk;
@@ -1033,6 +982,87 @@ void Compiler::eks_fungsi(const ast::FungsiDeklarasi* n) {
     const std::size_t idx_anak = fn().chunk->anak.size();
     fn().chunk->anak.push_back(anak);
     emit(Op::CLOSURE, static_cast<std::uint16_t>(idx_anak));
+}
+
+// ===========================================================================
+// Resolusi upvalue (Lox)
+// ===========================================================================
+//
+// Untuk setiap nama yang dibaca sebuah fungsi, cari selnya dengan naik satu
+// tingkat demi satu tingkat dari induk langsung, lalu kembalikan encode:
+//
+//   `>= 0`        -> indeks lokal pada nenek moyang yang memilikinya
+//   `-k-1`         -> upvalue ke-`k` milik nenek moyang itu
+//   `-0x40000000`  -> tidak ada di mana pun: perlakukan sebagai global
+//                     (`GET_UPVAL` dengan sel null)
+//
+// Tiga detail yang menentukan benar/tidaknya hasil:
+//
+// 1. Hanya induk langsung boleh "menang" atas nama yang sama di modul. Kalau
+//    semua nenek moyang dipindai dari luar ke dalam sekaligus, bayangan
+//    (shadowing) rusak: closure membaca slot yang salah. Gejalanya hanya muncul
+//    bila ada variabel modul yang namanya sama dengan variabel lokal di fungsi
+//    -- program pendek tidak pernah mengalaminya.
+//
+// 2. Kalau suatu nenek moyang tidak punya nama itu sebagai lokal DAN belum punya
+//    upvalue untuk nama itu, permintaannya HARUS didaftarkan ke `ambil_upvalue`
+//    nenek moyang itu -- supaya nenek moyang ikut menarik nama yang sama saat
+//    chunk-nya sendiri dirangkai. Tanpa pendaftaran itu, fungsi yang hanya
+//    meneruskan closure (tidak pernah membaca nama itu sendiri) gagal
+//    meneruskan nilainya dan hasilnya `mboh`.
+//
+// 3. `AmbilUpvalue::slot_induk` sudah diisi saat rujukan ditulis, ketika skop
+//    induk masih utuh. Dengan skop blok satu nama bisa punya banyak slot dalam
+//    satu fungsi, jadi mencari per-nama saat perakitan akhir bisa memilih slot
+//    blok yang salah. Kalau slot diketahui, pakainya langsung; kalau tidak
+//    (rujukan muncul sebelum deklarasinya, atau lewat fungsi yang di-hoist),
+//    jatuh ke pencarian per-nama seperti biasa.
+void Compiler::selesaikan_upvalue(FungsiKonteks& ctx) {
+    constexpr std::int32_t kSentinelGlobal = -0x40000000;
+
+    // Encode yang dikembalikan SELALU relatif terhadap induk langsung
+    // (`fungsi_stack_[idx - 1]`), karena itulah yang dibaca opcode `CLOSURE`.
+    std::function<std::int32_t(std::size_t, FungsiInfo::AmbilUpvalue)> petakan_upvalue;
+    petakan_upvalue = [&](std::size_t idx, FungsiInfo::AmbilUpvalue up) -> std::int32_t {
+        if (idx == 0) return kSentinelGlobal;
+        FungsiKonteks& induk = fungsi_stack_[idx - 1];
+        // (1) Slot sudah diketahui pasti (lihat catatan 3)? Pakai itu.
+        if (up.slot_induk >= 0 && up.slot_induk != 0) return up.slot_induk;
+        // (2) Lokal pada induk? Slot 0 adalah `this`, tidak bisa jadi upvalue.
+        const auto it = induk.lokal.find(std::string(up.nama));
+        if (it != induk.lokal.end() && it->second != 0) {
+            return static_cast<std::int32_t>(it->second);
+        }
+        // (3) Induk sudah menarik nama ini sebagai upvalue? Pakai sel itu juga,
+        //     supaya semua pemanggil berbagi satu sel.
+        for (std::size_t k = 0; k < induk.info.ambil_upvalue.size(); ++k) {
+            const FungsiInfo::AmbilUpvalue& la = induk.info.ambil_upvalue[k];
+            if (la.nama != up.nama) continue;
+            // Kalau keduanya punya slot yang sudah pasti, slot harus sama --
+            // kalau tidak, dua closure menangkap dua variabel berbeda dengan nama
+            // sama dan hanya satu yang benar.
+            if (up.slot_induk >= 0 && la.slot_induk >= 0 && la.slot_induk != up.slot_induk) {
+                continue;
+            }
+            return -static_cast<std::int32_t>(k) - 1;
+        }
+        // (4) Induk belum menariknya: daftarkan, lalu minta induk memetakannya
+        //     sendiri ke atas (lihat catatan 2).
+        const std::int32_t waris = petakan_upvalue(idx - 1, FungsiInfo::AmbilUpvalue{-1, up.nama});
+        induk.info.ambil_upvalue.emplace_back(waris, up.nama);
+        return -static_cast<std::int32_t>(induk.info.ambil_upvalue.size());
+    };
+
+    std::vector<std::int32_t> sumber;
+    const std::size_t ini = fungsi_stack_.size() - 1;
+    for (const FungsiInfo::AmbilUpvalue& up : ctx.info.ambil_upvalue) {
+        sumber.push_back(petakan_upvalue(ini, up));
+    }
+    for (const FungsiInfo::AmbilUpvalue& up : ctx.info.ambil_upvalue) {
+        ctx.chunk->tambah_nama_upvalue(up.nama);
+    }
+    ctx.chunk->jumlah_upvalue = static_cast<std::uint8_t>(sumber.size());
+    ctx.chunk->upvalue_sumber = sumber;
 }
 
 void Compiler::eks_objek(const ast::ObjectLit* n) {

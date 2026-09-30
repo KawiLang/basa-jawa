@@ -68,9 +68,9 @@ gawe jumlah_teks_angka() { bali "" + 1; }
 wajib_lempar(jumlah_teks_angka, "teks + angka tanpa koersi harus galat");
 
 // --- `nalika` --------------------------------------------------------------
-ana n = 0;
-nalika (n < 3) n = n + 1;
-pratelas(n, 3);
+ana hitung_nalika = 0;
+nalika (hitung_nalika < 3) hitung_nalika = hitung_nalika + 1;
+pratelas(hitung_nalika, 3);
 
 // --- `mandheg` -------------------------------------------------------------
 // `mandheg` harus keluar dari loop SEBELUM sisa nilai body dibuang: kalau tidak,
@@ -112,20 +112,43 @@ pratelas(tangkap_klasik[0](), 0);
 pratelas(tangkap_klasik[1](), 1);
 pratelas(tangkap_klasik[2](), 2);
 
-// CATATAN: nama pengikat di sini bukan `x`/`i` yang sudah dipakai loop lain di
-// berkas ini. Slot kompilator bersifat fungsi-wide (belum ada scope blok), jadi
-// dua pengikat dengan nama sama di loop berbeda saling berebut slot -- lihat
-// STATUS.md.
+// Pengikut `kanggo` sekarang punya skop sendiri, jadi nama yang sama di loop
+// lain dalam fungsi yang sama tidak bentrok. Libur dulu nama-nama ini harus
+// unik sepanjang berkas karena slot kompilator bersifat fungsi-wide.
 ana tangkap_of = [];
 kanggo (ana huruf saka ["a", "b", "c"]) tangkap_of.tambah(() => huruf);
 pratelas(tangkap_of[0](), "a");
 pratelas(tangkap_of[1](), "b");
 pratelas(tangkap_of[2](), "c");
 
-// Nilai pengikut setelah loop tetap yang terakhir (sel terakhir tidak disalin
-// ulang karena kondisi sudah gagal).
-kanggo (ana i = 0; i < 3; i = i + 1) { }
-pratelas(i, 3);
+// Dua loop dengan nama pengikut yang sama dalam satu fungsi. Dulu ini memicu
+// `KleruCakupan [S401]`.
+ana jumlah_skop = 0;
+kanggo (ana i = 0; i < 3; i = i + 1) { jumlah_skop = jumlah_skop + i; }
+kanggo (ana i = 10; i < 12; i = i + 1) { jumlah_skop = jumlah_skop + i; }
+pratelas(jumlah_skop, 3 + 21);
+
+// Dua blok sibling dengan nama yang sama.
+{
+    ana x = "kiri";
+    pratelas(x, "kiri");
+}
+{
+    ana x = "kanan";
+    pratelas(x, "kanan");
+}
+
+// Pengikut loop TIDAK terlihat di luar loopnya: di luar itu zona
+// mati-temporal, sama seperti `let` di ECMAScript.
+// Pengikut loop tidak terlihat di luar loopnya. Di luar, `i` bukan variabel
+// loop lagi: yang terbaca adalah global bernama `i` (yang tidak ada), bukan
+// nilai iterasi terakhir. Dulu slot-nya fungsi-wide, jadi `pratelas(i, 3)`
+// masih berlaku.
+gawe baca_i_setelah_loop() {
+    kanggo (ana idx_geser = 0; idx_geser < 3; idx_geser = idx_geser + 1) { }
+    bali idx_geser;
+}
+pratelas(baca_i_setelah_loop(), mboh);
 
 // Loop tanpa closure harus berperilaku sama seperti sebelumnya.
 ana jumlah_klasik = 0;

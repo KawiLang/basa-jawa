@@ -1,0 +1,217 @@
+// Skop blok: pengikut leksikal punya masa hidup bloknya.
+//
+// SEBELUM ini, slot kompilator bersifat fungsi-wide. Dua pengikut dengan nama
+// sama di dua blok berbeda saling berebut slot dan memicu
+// `KleruCakupan [S401]`. Akibatnya setiap berkas uji harus memakai nama
+// pengikut unik sepanjang file, dan kode yang wajar ditulis --
+//
+//     kanggo (ana i = 0; ...) { ... }
+//     kanggo (ana i = 0; ...) { ... }
+//
+// -- tidak bisa dikompilasi sama sekali.
+
+// --- blok sibling -----------------------------------------------------------
+{
+    ana nilai = "blok pertama";
+    pratelas(nilai, "blok pertama");
+}
+{
+    ana nilai = "blok kedua";
+    pratelas(nilai, "blok kedua");
+}
+{
+    ana nilai = "blok ketiga";
+    pratelas(nilai, "blok ketiga");
+}
+
+// Tiga tingkat bersarang, semua memakai nama yang sama.
+{
+    ana nilai = "luar";
+    {
+        ana nilai = "tengah";
+        {
+            ana nilai = "dalem";
+            pratelas(nilai, "dalem");
+        }
+        pratelas(nilai, "tengah");
+    }
+    pratelas(nilai, "luar");
+}
+
+// --- loop dengan nama pengikut yang sama -------------------------------------
+ana akumulator = 0;
+
+kanggo (ana i = 0; i < 3; i = i + 1) { akumulator = akumulator + i; }
+pratelas(akumulator, 3);
+
+kanggo (ana i = 10; i < 12; i = i + 1) { akumulator = akumulator + i; }
+pratelas(akumulator, 24);
+
+// Bentuk `saka` juga.
+ana jumlah_karakter = 0;
+kanggo (huruf saka ["a", "b", "c"]) { jumlah_karakter = jumlah_karakter + 1; }
+kanggo (huruf saka ["w", "x", "y", "z"]) { jumlah_karakter = jumlah_karakter + 1; }
+pratelas(jumlah_karakter, 7);
+
+// Pengikut di dalam badan boleh bernama sama dengan variabel loop.
+ana campur = "";
+kanggo (ana i = 0; i < 2; i = i + 1) {
+    ana i = "Bayangan";
+    campur = campur + i;
+}
+pratelas(campur, "BayanganBayangan");
+
+// Loop di dalam blok: pengikut loop tidak bocor ke bloknya.
+{
+    ana dalam = 0;
+    kanggo (ana n = 0; n < 4; n = n + 1) { dalam = dalam + n; }
+    pratelas(dalam, 6);
+}
+
+// Loop bersarang dengan pengikut bernama sama di setiap tingkat.
+ana tabel = "";
+kanggo (ana i = 0; i < 2; i = i + 1) {
+    kanggo (ana i = 0; i < 2; i = i + 1) {
+        tabel = tabel + "x";
+    }
+}
+pratelas(tabel, "xxxx");
+
+// --- pengikut tidak bocor keluar ---------------------------------------------
+// Pembacaan di luar blok READ-only: yang dibaca adalah global bernama sama
+// (yang tidak ada), bukan nilai pengikut di dalam blok.
+gawe baca_dari_blok() {
+    {
+        ana hanya_di_blok = 42;
+    }
+    bali hanya_di_blok;
+}
+pratelas(baca_dari_blok(), mboh);
+
+// Loop lalu baca di luar: nilai iterasi terakhir tidak boleh bocor.
+gawe baca_setelah_loop() {
+    kanggo (ana idx_geser = 0; idx_geser < 3; idx_geser = idx_geser + 1) { }
+    bali idx_geser;
+}
+pratelas(baca_setelah_loop(), mboh);
+
+// --- closure menangkap pengikut blok yang benar ------------------------------
+// Dua closure dari dua blok sibling, keduanya bernama `nilai`. Kalau kompilator
+// salah memilih slot, keduanya membaca nilai yang sama.
+ana penyimpan = [];
+{
+    ana nilai = "pertama";
+    penyimpan.tambah(() => nilai);
+}
+{
+    ana nilai = "kedua";
+    penyimpan.tambah(() => nilai);
+}
+pratelas(penyimpan[0](), "pertama");
+pratelas(penyimpan[1](), "kedua");
+
+// Closure yang dibuat di dalam loop harus melihat nilai iterasinya sendiri.
+// `n_baru` memakai slot BARU tiap iterasi (badan blok dikompilasi ulang secara
+// logis tiap kali loop berjalan), jadi tiap closure menangkap variabelnya
+// sendiri. Bayangkan seandainya slotnya dipakai ulang: ketiganya akan membaca
+// nilai iterasi terakhir.
+ana per_iterasi = [];
+kanggo (ana n = 0; n < 3; n = n + 1) {
+    // Nama sengaja sama dengan variabel loop: di dalam blok, `n_baru`
+    // membayangi `n` dan hanya boleh membaca `n` yang di luar bloknya.
+    ana n_baru = n * 10;
+    per_iterasi.tambah(() => n_baru);
+}
+pratelas(per_iterasi[0](), 0);
+pratelas(per_iterasi[1](), 10);
+pratelas(per_iterasi[2](), 20);
+
+// --- `pilih`: tiap kasus punya skop sendiri ----------------------------------
+ana label_kasus = [];
+pilih (2) {
+    kasus 1: {
+        ana label = "satu";
+        label_kasus.tambah(label);
+    }
+    kasus 2: {
+        ana label = "dua";
+        label_kasus.tambah(label);
+    }
+    baku: {
+        ana label = "lain";
+        label_kasus.tambah(label);
+    }
+}
+pratelas(label_kasus, ["dua"]);
+
+// --- `coba`: tiap klausa `tangkep` punya skop sendiri -------------------------
+ana label_tangkep = [];
+coba { uncal "galat"; }
+tangkep (e) {
+    ana label = "klausul pertama";
+    label_tangkep.tambah(label);
+}
+tangkep (e) {
+    ana label = "klausul kedua";
+    label_tangkep.tambah(label);
+}
+pratelas(label_tangkep, ["klausul pertama"]);
+
+// --- `coba` di dalam loop: pengikut klausa tidak bocor ----------------------
+ana label_per_loop = [];
+kanggo (ana i = 0; i < 2; i = i + 1) {
+    coba { uncal "g"; }
+    tangkep (e) {
+        ana label = "loop";
+        label_per_loop.tambah(label);
+    }
+}
+pratelas(label_per_loop, ["loop", "loop"]);
+
+// --- skop blok di dalam fungsi ----------------------------------------------
+gawe hitung_blok() {
+    ana total = 0;
+    {
+        ana total = 100;  // bayangan, tidak menyentuh `total` luar
+    }
+    {
+        ana tambahan = 5;
+        total = total + tambahan;
+    }
+    {
+        ana tambahan = 7;
+        total = total + tambahan;
+    }
+    bali total;
+}
+pratelas(hitung_blok(), 12);
+
+// Fungsi dengan banyak blok: GRATIS memakai slot, tidak boleh monoton naik.
+gawe banyak_blok() {
+    ana hasil = 0;
+    { ana a = 1; hasil = hasil + a; }
+    { ana a = 2; hasil = hasil + a; }
+    { ana a = 3; hasil = hasil + a; }
+    { ana a = 4; hasil = hasil + a; }
+    { ana a = 5; hasil = hasil + a; }
+    bali hasil;
+}
+pratelas(banyak_blok(), 15);
+
+// --- zona mati-temporal tetap berlaku di dalam blok --------------------------
+gawe tdz_dalam_blok() {
+    {
+        bali nilai_dalam_blok;
+    }
+    tetep nilai_dalam_blok = 1;
+}
+wajib_lempar(tdz_dalam_blok, "baca sebelum deklarasi di dalam blok harus TDZ");
+
+// Setelah deklarasi, pembacaan di dalam blok yang sama harusnya jalan.
+gawe tdz_ok_dalam_blok() {
+    {
+        tetep nilai_dalam_blok2 = 7;
+        bali nilai_dalam_blok2;
+    }
+}
+pratelas(tdz_ok_dalam_blok(), 7);
