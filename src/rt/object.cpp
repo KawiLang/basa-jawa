@@ -23,6 +23,7 @@ const char* ok_name(OK k) noexcept {
         case OK::Janji: return "Janji";
         case OK::Peta: return "Peta";
         case OK::Himpunan: return "Himpunan";
+        case OK::Berkas: return "Berkas";
         case OK::Regex: return "Regex";
         case OK::Tanggal: return "Tanggal";
         case OK::Kleru: return "Kleru";

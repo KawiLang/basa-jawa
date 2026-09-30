@@ -57,6 +57,7 @@ set(JAWA_SOURCES
     src/compile/compiler_expr.cpp
     src/stdlib/stdlib.cpp
     src/stdlib/stdlib_peta.cpp
+    src/stdlib/stdlib_berkas.cpp
     src/lex/lexer.cpp
     src/parse/parser.cpp
     src/parse/parser_class.cpp

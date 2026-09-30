@@ -1023,3 +1023,96 @@ masih hidup?".
 **Catatan dari test.** `tests/tes/kelas.tes.jw` (27 assertion) sengaja
 menguji field dinamis sebagai kasus utama, bukan field yang dideklarasikan --
 kalau urutannya dibalik, uji ini akan lulus bahkan ketika bug-nya masih ada.
+## D-042 — I/O berkas: apa yang ada, dan tiga hal yang sengaja tidak ada
+
+**Status:** diterima
+
+**Latar belakang.** Sampai tahap ini Basa Jawa tidak punya cara apa pun menyentuh
+berkas: program bisa mencetak ke stdout dan membaca baris dari terminal, tapi
+tidak bisa menyimpan hasil kerjanya. `impor`/`ekspor` menutup sebagian kebutuhan
+itu -- memisahkan kode ke berkas -- tapi bukan kebutuhan *data* yang diproses
+program. Tanpa ini, satu-satunya cara menyimpan hasil kerja program Basa Jawa
+adalah memanggil `tulis` lalu menyalin keluar dari terminal, yang tidak bisa
+dijalankan tanpa pengawas manusia.
+
+**Keputusan.** Dua lapisan.
+
+*Lapis seluruh-berkas*, untuk berkas kecil -- konfigurasi, JSON, data tabular:
+
+    baca_berkas(path)       // seluruh isi sebagai teks
+    tulis_berkas(path, isi) // tulis & potong, mengembalikan jumlah byte
+    ada_berkas(path)        // boolean
+    ukuran_berkas(path)     // byte, atau -1
+    hapus_berkas(path)      // boolean
+
+*Lapis handle*, untuk berkas yang tidak muat di memori:
+
+    ana f = anyar Berkas(path, "baca");   // mode: "baca" | "tulis" | "tambah"
+    nalika (f.baca_baris()) { tulis(f.baris); }
+    f.tutup();
+
+Plus `ada_direktori`, `dadi_direktori`, `hapus_direktori` -- bukan karena
+lengkap, tapi karena tanpa `dadi_direktori` yang minimal, `tulis_berkas` hanya
+berguna untuk program yang lebih dulu sudah punya direktori, yaitu hampir tidak
+ada.
+
+Semua galat I/O bernama `KleruBerkas`, satu nama untuk semuanya, supaya
+`tangkep (e: KleruBerkas)` menangkap seluruh kelas kegagalan I/O tanpa perlu
+tahu asal-usul yang mana.
+
+**Tiga batasan yang disengaja, dan alasannya.**
+
+1. **Teks saja.** Tidak ada konversi encoding, tidak ada mode biner. Encoding
+   mana pun yang dipilih (`UTF-8`) akan salah untuk sebagian pengguna, dan
+   program yang benar-benar butuh byte mentah akan require mode biner --
+   kemungkinan, bukan jaminan. Menambah mode biner berarti menambah permukaan
+   yang harus diuji tanpa membuka satu pun kebutuhan nyata yang belum tertutup.
+
+2. **Tidak ada `tutup()` otomatis.** `BerkasObj` memegang `FILE*` libc di luar
+   heap. `GC` tidak tahu kapan sebuah `Berkas` sudah tidak dirujuk; menutup
+   gagang karena objek sedang di-`GC` akan membuat program yang masih memegang
+   `f` gagal di tengah jalan tanpa jejak. Handle yang bocor sampai proses selesai
+   lebih mudah ditemukan daripada program yang gagal secara misterius. Jadi
+   `tutup()` wajib, dan pola `coba`/`pungkasan` menjadi idiom standarnya.
+
+3. **Path relatif ke direktori kerja proses**, bukan ke lokasi skrip. Persis
+   seperti `fopen()` di C dan `open()` di Python. Relatif ke lokasi skrip
+   terdengar lebih enak sampai batas tertentu: program yang menulis path relatif akan
+   menulis ke tempat berbeda tergantung dari mana dijalankan, dan `jawa run a.jw`
+   dari dua direktori berbeda menghasilkan dua set data berbeda tanpa galat.
+
+**Dua keputusan kecil yang muncul dari pengujian.**
+
+- **`baca_baris()` mengembalikan boolean, bukan hanya mengisi `.baris`.** Bentuk
+  `nalika (f.baca_baris())` jauh lebih enak dibaca daripada
+  `nalika (!f.akhir) { f.baca_baris(); ... }`, dan boolean itu sendiri adalah
+  jawaban "ada baris lagi?". Properti `.akhir` tetap ada untuk pemeriksa yang
+  butuh tahu tanpa harus memanggil apa pun.
+
+- **`.baris` di-reset ke teks kosong saat habis**, bukan dibiarkan berisi nilai
+  baris sebelumnya. Program yang salah membaca `.baris` setelah `salah` akan
+  diam-diam memakai isi lama kalau tidak di-reset -- dan itu persis kelas bug
+  yang paling sulit ditemukan belakangan.
+
+**Alternatif yang ditolak.** *`baca_berkas`/`tulis_berkas` saja, tanpa objek
+handle.* Lebih sederhana dan cukup untuk banyak program, tapi membuat setiap
+program besar mengimplementasikan sendiri buffer baris -- dan buffer baris yang
+diimplementasikan sendiri nyaris tidak pernah menangani `\r\n`, baris terakhir
+tanpa newline, atau UTF-8 di batas baca. Menyediakan keduanya berarti program
+yang besar tidak perlu mengulang kesalahan yang sama.
+
+**Bug yang ditemukan & diperbaiki saat pengerjaannya** -- semuanya ketahuan
+karena ada berkas uji, bukan karena perlu dijelaskan:
+
+- `anyaar Berkas(path, "ngawur")` dijawab "mode kudu teks, dudu teks".
+  Pengecekannya `is_obyek()` dan bukan "adalah teks", jadi teks yang salah ketik
+  ikut ditolak sebagai bukan-teks. Pesannya menyesatkan: masalahnya mode-nya
+  tidak dikenal, bukan tipenya salah.
+- `ada_berkas("/tmp")` membalas `bener`. Di Linux `fopen("/tmp", "rb")`
+  **berhasil**; yang gagal adalah `fread`-nya (EISDIR). Satu pemeriksaan
+  `fopen` tidak cukup, dan tanpa `stat` dua jawaban yang saling bertentangan
+  muncul untuk pertanyaan yang sama.
+- Helper-nya bernama `Bukan_direktori` tapi isinya `return S_ISDIR(...) != 0` --
+  nama dan logikanya berlawanan, jadi `ada_berkas` keluar terbalik. Tidak ada
+  yang menangkapnya karena kedua bentuknya sama-sama "terlihat masuk akal".
+  Sekarang namanya `adalah_direktori` dan menyebut apa yang dikembalikan.

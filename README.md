@@ -36,7 +36,7 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | `jawa repl` | selesai — REPL dengan pengikut yang bertahan antar baris (`docs/repl.md`) |
 | Regex `/pola/flag` | selesai — backtracking, kelompok tangkap & bernama, anggaran langkah anti-ReDoS (`docs/regex.md`) |
 | `Tanggal` | selesai — kalender proleptis Gregorian, UTC saja, tanpa zona waktu (`docs/tanggal.md`) |
-| Regex runtime, `Tanggal`, berkas, proses | belum |
+| Regex runtime, `Tanggal`, I/O berkas | sudah (`docs/stdlib.md`) |
 
 ## Membangun
 

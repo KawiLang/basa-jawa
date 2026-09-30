@@ -1054,6 +1054,7 @@ void pasang_semua(VM& vm) {
 
     // --- Peta, Himpunan, Janji.all/race/selesai/tolak (lihat stdlib_peta.cpp) ---
     pasang_peta(vm);
+    pasang_berkas(vm);
 
     // --- prototype Dhaptar & Teks (method bawaan) ---
     const std::uint8_t ARR = static_cast<std::uint8_t>(OK::Array);

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <span>
@@ -49,6 +50,7 @@ class GolonganInstance;
 class JanjiObj;
 class PetaObj;
 class HimpunanObj;
+class BerkasObj;
 class RegexObj;
 class TanggalObj;
 class KleruObj;
@@ -81,6 +83,7 @@ enum class OK : uint8_t {
     Janji,
     Peta,
     Himpunan,
+    Berkas,      ///< aliran berkas terbuka (`anyaar Berkas(...)`)
     Regex,
     Tanggal,
     Kleru,
@@ -581,6 +584,37 @@ public:
     static constexpr OK kKind = OK::Himpunan;
     PetaObj isi;
     Value prototipe = Value::mboh();
+};
+
+/// Aliran berkas yang sedang dibuka (`anyaar Berkas(...)`).
+///
+/// Berbeda dari `PetaObj`/`HimpunanObj`, objek ini memegang sumber daya di luar
+/// heap: pegangan `FILE*` milik libc. Karena itu `tutup()` wajib dipanggil --
+/// kalau tidak, pegangan itu bocor sampai proses selesai.yang close otomatisnya
+/// sengaja TIDAK ditambahkan: `GC` tidak tahu kapan berkas sudah tidak
+/// dirujuk, dan menutup gagang karena objek sedang diGC bisa membuat program
+/// yang masih menyimpan `f` gagal di tengah jalan tanpa jejak.
+class BerkasObj : public Obj {
+public:
+    static constexpr OK kKind = OK::Berkas;
+
+    /// Mode handle. Dipakai untuk pesan galat yang tepat & untuk menolak
+    /// operasi yang memang tidak mungkin, mis. `baca_baris()` pada mode tulis.
+    enum class Mode : std::uint8_t {
+        Baca = 0,   ///< "baca"   -- baca saja
+        Tulis = 1,  ///< "tulis"  -- truncate lalu tulis
+        Tambah = 2, ///< "tambah" -- tulis di ujung tanpa menghapus isi
+    };
+
+    std::FILE* handle = nullptr;  ///< nullptr setelah ditutup
+    std::string nama;             ///< path seperti diberikan pemanggil
+    Mode mode = Mode::Baca;
+    Value baris = Value::mboh();  ///< isi baris terakhir dari `baca_baris()`
+    bool akhir = true;            ///< ada baris lagi? (true = sudah habis)
+    bool ditutup = false;         ///< sudah lewat `tutup()`?
+
+    [[nodiscard]] bool bisa_baca() const noexcept { return mode == Mode::Baca; }
+    [[nodiscard]] bool bisa_tulis() const noexcept { return mode != Mode::Baca; }
 };
 
 // ---------------------------------------------------------------------------

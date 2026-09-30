@@ -19,8 +19,8 @@ lokal, pustaka standar lengkap, dan tooling (`bench`, `ubah`, LSP).
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 4 berkas (termasuk `test_fmt`), 450 cek, 133 test |
-| Uji bahasa (`jawa tes`) | 12 berkas, 494 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, skop blok, field class, ...) |
-| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 30 formatter + 12 REPL |
+| Uji bahasa (`jawa tes`) | 13 berkas, 558 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, skop blok, field class, I/O berkas, ...) |
+| Uji emas | 16 contoh keluaran persis (13 acuan + 3 modul) + 11 front-end + 32 formatter + 12 REPL |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 11/11 `ctest` hijau di keempatnya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
 | Dokumentasi | 13 berkas `docs/` + 4 berkas akar |
@@ -143,10 +143,13 @@ Yang **hanya ada sebagian**, dan sebaiknya dibaca sebagai batasan nyata:
 
 Sudah ditambahkan pada tahap 6-7: `Peta` (11 method, termasuk iterasi `kanggo ... saka`
 yang menghasilkan pasangan), `Himpunan` (7 method, iterable), dan
-`Janji.all`/`race`/`selesai`/`tolak`/`anySelesai`.
+`Janji.all`/`race`/`selesai`/`tolak`/`anySelesai`. Pada tahap 12: I/O berkas
+(`Berkas` + 6 method, `baca_berkas`/`tulis_berkas`/`ada_berkas`/`ukuran_berkas`/
+`hapus_berkas`, dan `ada_direktori`/`dadi_direktori`/`hapus_direktori`), blocking
+& sinkron.
 
-Belum: berkas, proses, I/O async, `Janji.bungkus`, dan format tanggal bebas
-selain ISO-8601.
+Belum: proses, I/O async, `Janji.bungkus`, dan format tanggal bebas selain
+ISO-8601.
 Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
 
 ### 4. Lima bug yang ditemukan lewat uji tahap 7 (SEMUA sudah diperbaiki)
@@ -318,8 +321,8 @@ dengan paralel penuh, `cc1plus` untuk `stdlib.cpp` dibunuh OOM. Build release
 aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
-mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 494/494 assertion `jawa tes` lulus.
+mode nilai 16-byte**; 16/16 contoh emas cocok termasuk mode `--gc-stress`; 11/11
+contoh acuan ter-parse bersih; 558/558 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

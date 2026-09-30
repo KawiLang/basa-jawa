@@ -1,0 +1,12 @@
+kata di belum-ada.txt : 0
+ada?                  : false
+isi per baris:
+  - baris pertama
+  - baris kedua
+  - baris ketiga tanpa newline
+ukuran sekarang        : 66 byte
+lima karakter pertama  : baris
+ditolak               : Berkas "alat-contoh/buang.txt" dibuka ing mode nulis, ora bisa baca_baris().
+jumlah baris           : 3
+hapus direktori (ada isi): false -> masih ada? true
+hapus direktori (kosong): true -> masih ada? false

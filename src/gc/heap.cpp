@@ -310,6 +310,12 @@ void Heap::tandai_anak(Obj* o, Worklist& wl) {
             }
             break;
         }
+        case rt::OK::Berkas: {
+            // Hanya `baris` yang bisa pegang objek heap. `nama` & `handle`
+            // bukan objek GC.
+            mark(static_cast<rt::BerkasObj*>(o)->baris);
+            break;
+        }
         case rt::OK::Kleru: {
             mark(static_cast<rt::KleruObj*>(o)->sebab);
             break;

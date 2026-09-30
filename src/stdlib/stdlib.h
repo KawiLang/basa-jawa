@@ -44,6 +44,9 @@ void pasang_semua(VM& vm);
 /// supaya implementasinya bisa hidup di berkas sendiri (`stdlib_peta.cpp`).
 void pasang_peta(VM& vm);
 
+/// I/O berkas: global `Berkas`, `baca_berkas`, ... (lihat `stdlib_berkas.cpp`).
+void pasang_berkas(VM& vm);
+
 /// Daftarkan fungsi native sebagai global.
 void daftarkan(VM& vm, std::string_view nama, std::size_t n_param, bool variadic, rt::NativeFn fn);
 /// Daftarkan nilai konstan sebagai global.

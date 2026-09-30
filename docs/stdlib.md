@@ -128,6 +128,137 @@ menunggu ms sungguhan (loop acara deterministik — lihat `docs/async.md`), jadi
 `Janji.all` pada Janji dari timer selesai pada urutan timer pertama, bukan
 setelah waktu sebenarnya berlalu.
 
+## I/O berkas
+
+Dua lapisan, supaya dua kebutuhan berbeda tidak saling memaksa. Yang pertama
+enak untuk berkas kecil (konfigurasi, JSON, data tabular); yang kedua untuk
+berkas yang tidak muat di memori.
+
+```
+baca_berkas("d.txt")            // seluruh isi sebagai teks, sekali panggil
+tulis_berkas("d.txt", isi)      // tulis seluruh isi, truncate dulu
+ada_berkas("h.txt")             // boolean
+ukuran_berkas("d.txt")          // byte, atau -1 kalau tidak ada
+hapus_berkas("d.txt")           // boolean
+
+ana f = anyar Berkas("besar.txt", "baca");
+nalika (f.baca_baris()) { tulis(f.baris); }
+f.tutup();
+```
+
+### Fungsi global
+
+| Fungsi | Bentuk | Hasil |
+|---|---|---|
+| `baca_berkas` | `baca_berkas("d.txt")` | Seluruh isi sebagai teks. Melempar `KleruBerkas` kalau tidak bisa dibuka. |
+| `tulis_berkas` | `tulis_berkas("d.txt", isi)` | Menulis & memotong. Mengembalikan jumlah **byte** yang ditulis. |
+| `ada_berkas` | `ada_berkas("d.txt")` | `bener` kalau ada **dan bisa dibaca**. Direktori dijawab `salah`. |
+| `ukuran_berkas` | `ukuran_berkas("d.txt")` | Ukuran byte, atau `-1` kalau tidak ada. |
+| `hapus_berkas` | `hapus_berkas("d.txt")` | `bener` kalau benar-benar terhapus. |
+
+### Direktori
+
+| Fungsi | Hasil |
+|---|---|
+| `ada_direktori(path)` | Lawannya `ada_berkas`: direktori dijawab `bener`, berkas dijawab `salah`. |
+| `dadi_direktori(path)` | Buat satu direktori. **Idempoten** — `bener` kalau ada sesudah pemanggilan, termasuk kalau sudah ada sebelumnya. Induknya harus sudah ada. |
+| `hapus_direktori(path)` | Hapus direktori **kosong**. `salah` kalau belum kosong. |
+
+`dadi_direktori` sengaja tidak membuat rantai `a/b/c` sendirian: memecah path di
+setiap `/` berarti banyak `mkdir`, yang di filesystem lambat berarti banyak
+syscall sia-sia. `hapus_direktori` sengaja menolak direktori berisi -- menghapus
+isi tanpa diminta adalah kerusakan yang tidak bisa dibatalkan.
+
+### Objek `Berkas`
+
+`anyaar Berkas(path, mode)` membuka satu handle. Mode: `"baca"` (default),
+`"tulis"` (truncate), `"tambah"` (tulis di ujung). Mode yang tidak dikenal
+ditolak dengan pesan yang menyebutkan mode yang tersedia.
+
+| Method | Keterangan |
+|---|---|
+| `f.baca()` | Sisa isi sebagai teks. |
+| `f.baca(n)` | Paling banyak `n` **karakter** UTF-8, dipotong di batas karakter. |
+| `f.baca_baris()` | Baca satu baris ke `f.baris`; `bener` kalau ada baris terbaca, `salah` kalau habis. |
+| `f.tulis(teks)` | Tulis teks lalu newline. |
+| `f.tulis_nol(teks)` | Tulis teks tanpa newline. |
+| `f.flush()` | Pastikan isi yang ditulis sudah sampai ke sistem berkas. |
+| `f.tutup()` | Tutup handle. Aman dipanggil berkali-kali. |
+
+Bentuk `nalika`-nya langsung memakai nilai balik `baca_baris()`, tanpa
+memeriksa `.akhir` tiap iterasi:
+
+```
+ana f = anyar Berkas("data.txt", "baca");
+nalika (f.baca_baris()) { tulis(f.baris); }
+f.tutup();
+```
+
+Properti baca-saja: `f.nama`, `f.mode`, `f.baris`, `f.akhir`, `f.ditutup`,
+`f.bisa_baca`, `f.bisa_tulis`.
+
+`f.baris` berisi teks kosong setelah habis -- bukan nilai baris sebelumnya, jadi
+program yang salah membaca `.baris` setelah `salah` tidak diam-diam memakai isi
+lama.
+
+### Galat
+
+Semua galat I/O bernama `KleruBerkas`, jadi bisa menangkap semuanya sekaligus:
+
+```
+coba {
+    baili baca_berkas("data.txt");
+} tangkep (e: KleruBerkas) {
+    tulis("gagal: ", e.pesan);
+}
+```
+
+Galat yang dilempar: berkas tidak bisa dibuka; mode tidak dikenal; operasi yang
+tidak mungkin untuk mode itu (`baca_baris()` pada mode tulis); memakai handle
+yang sudah ditutup; argumen yang harus teks tapi bukan.
+
+Operasi yang **tidak** melempar, karena "tidak ada" adalah jawaban yang wajar
+bukan kondisi galat: `ada_berkas`, `ukuran_berkas` (`-1`), `hapus_berkas`
+(`salah`), `tutup()` kedua kali.
+
+### Pola `pungkasan`
+
+Handle harus ditutup manual, jadi pola `coba`/`pungkasan` dipakai terus-menerus:
+
+```
+gawe jumlah_baris(sumber) {
+    ana total = 0;
+    ana f = anyar Berkas(sumber, "baca");
+    coba {
+        nalika (f.baca_baris()) { total = total + 1; }
+    } pungkasan {
+        f.tutup();
+    }
+    bali total;
+}
+```
+
+`anyar Berkas` yang gagal **tidak** mengembalikan objek tanpa handle -- galatnya
+diteruskan supaya `coba` di sekitar pemanggilannya yang menangkap.
+
+### Tiga batasan yang disengaja
+
+1. **Teks saja.** Isi dibaca & ditulis sebagai byte UTF-8 apa adanya; tidak ada
+   konversi encoding dan tidak ada mode biner. `baca(n)` menghitung `n` dalam
+   *karakter*, bukan byte.
+2. **Tidak ada `tutup()` otomatis.** `GC` tidak tahu kapan sebuah `Berkas` sudah
+   tidak dirujuk, dan menutup gagang karena objek sedang di-`GC` bisa membuat
+   program yang masih memegang `f` gagal di tengah jalan tanpa jejak. Handle yang
+   bocor sampai proses selesai lebih mudah ditemukan daripada program yang
+   gagal secara misterius.
+3. **Path relatif ke direktori kerja proses**, persis seperti `fopen()` di C
+   atau `open()` di Python -- **bukan** relatif ke lokasi skrip. Tidak ada
+   mekanisme yang mengubah direktori kerja, jadi program yang menulis relatif
+   selalu menulis ke tempat yang sama untuk semua pemanggil.
+
+Semua I/O ini blocking & sinkron: satu panggilan `baca` menahan seluruh program
+sampai selesai.
+
 ## Dhaptar (method bawaan)
 
 | Method | Bentuk | Keterangan |
@@ -271,7 +402,8 @@ Sebutkan eksplisit agar tidak disalahpahami sebagai "hilang":
 - Regex: lookahead/lookbehind, backreference, kuantifier possessif, `\p{...}`,
   mode `n`, dan pencocokan berbasis titik kode (`u` belum berarti apa-apa --
   mesinnya byte-oriented).
-- Akses berkas, proses, jaringan. Semua I/O masih blocking dan sinkron.
+- Akses **proses** (menjalankan perintah) dan jaringan. Akses berkas sudah ada
+  (`Berkas`, `baca_berkas`, `dadi_direktori`, ...) dan blocking/sinkron.
 - Janji: `Janji.bungkus` (yang `all`/`race`/`selesai`/`tolak`/`anySelesai`
   sudah ada).
 - Jam nyata: `Wektu.tundha` hanya mengurutkan, tidak menunggu.

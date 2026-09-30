@@ -180,6 +180,26 @@ Value VM::ambil_properti(Obj* o, Value kunci) {
                 cur = objek(h->prototipe);
                 continue;
             }
+            case OK::Berkas: {
+                auto* b = static_cast<rt::BerkasObj*>(cur);
+                const std::string_view nama = sv(kunci);
+                // Properti baca-saja; semuanya mencerminkan keadaan handle.
+                if (nama == "nama") return Value::obyek(rt::buat_teks(heap_, b->nama));
+                if (nama == "baris") return b->baris;
+                if (nama == "akhir") return Value::boolean(b->akhir);
+                if (nama == "ditutup") return Value::boolean(b->ditutup);
+                if (nama == "bisa_baca") return Value::boolean(b->bisa_baca());
+                if (nama == "bisa_tulis") return Value::boolean(b->bisa_tulis());
+                if (nama == "mode") {
+                    const char* m = b->mode == rt::BerkasObj::Mode::Baca      ? "baca"
+                                    : b->mode == rt::BerkasObj::Mode::Tulis  ? "tulis"
+                                                                           : "tambah";
+                    return Value::obyek(rt::buat_teks(heap_, m));
+                }
+                const Value f = stdlib::cari_metode_builtin(*this, nama, static_cast<std::uint8_t>(OK::Berkas));
+                if (f.is_obyek()) return f;
+                return Value::mboh();
+            }
             case OK::Regex:
             case OK::Tanggal: {
                 if (kunci.is_obyek()) {

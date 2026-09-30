@@ -1,0 +1,325 @@
+// I/O berkas: `Berkas` + fungsi global.
+//
+// Semua berkas uji ini hidup di direktori `uji-berkas-` di relatif terhadap
+// direktori kerja proses, dan dihapus dulu & terakhir supaya berkas uji bisa
+// dijalankan berulang kali tanpa saling menabrak.
+//
+// Catatan untuk yang memperbarui berkas ini: direktori kerja proses saat
+// `jawa tes` berjalan adalah direktori build, bukan root repo.
+
+// --- global fungsi: seluruh isi ---------------------------------------------
+ana dir = "uji-berkas-coba";
+
+// Direktori uji dibuat dulu (idempoten, jadi aman dijalankan berulang kali).
+// Kalau tidak, assertion soal "tidak ada" akan membaca sisa Percobaan lalu.
+dadi_direktori(dir);
+pratelas(ada_direktori(dir), bener);
+pratelas(ada_berkas(dir), salah);  // direktori bukan berkas
+
+tulis_berkas(dir + "/a.txt", "halo\ndunia");
+pratelas(ada_berkas(dir + "/a.txt"), bener);
+pratelas(baca_berkas(dir + "/a.txt"), "halo\ndunia");
+pratelas(ukuran_berkas(dir + "/a.txt"), 10);
+
+// Menulis ulang menimpa, bukan menambah.
+tulis_berkas(dir + "/a.txt", "siji");
+pratelas(baca_berkas(dir + "/a.txt"), "siji");
+pratelas(ukuran_berkas(dir + "/a.txt"), 4);
+
+// Tulis kosong: berkas jadi ada tapi nol byte. `ukuran_berkas` harus membedakan
+// ini dari "tidak ada" -- keduanya jawaban yang sangat berbeda.
+tulis_berkas(dir + "/kosong.txt", "");
+pratelas(ada_berkas(dir + "/kosong.txt"), bener);
+pratelas(ukuran_berkas(dir + "/kosong.txt"), 0);
+pratelas(baca_berkas(dir + "/kosong.txt"), "");
+
+// Tidak ada: `salah`, bukan lemparan. Kehilangan berkas adalah jawaban yang
+// wajar untuk program yang memeriksa, bukan kondisi galat.
+pratelas(ada_berkas(dir + "/nope.txt"), salah);
+pratelas(ukuran_berkas(dir + "/nope.txt"), -1);
+pratelas(hapus_berkas(dir + "/nope.txt"), salah);
+
+pratelas(hapus_berkas(dir + "/a.txt"), bener);
+pratelas(hapus_berkas(dir + "/a.txt"), salah);
+pratelas(ada_berkas(dir + "/a.txt"), salah);
+
+// Path yang bukan teks dibalas `salah`/`-1`, bukan lemparan -- lebih berguna
+// daripada `baca_berkas(42)` yang gagal dengan pesan panjang.
+pratelas(ada_berkas(42), salah);
+pratelas(ukuran_berkas(42), -1);
+
+// --- Berkas: tulis ----------------------------------------------------------
+{
+    ana f = anyar Berkas(dir + "/b.txt", "tulis");
+    pratelas(jenis(f), "berkas");
+    pratelas(f.nama, dir + "/b.txt");
+    pratelas(f.mode, "tulis");
+    pratelas(f.bisa_tulis, bener);
+    pratelas(f.bisa_baca, salah);
+    pratelas(f.ditutup, salah);
+
+    f.tulis("baris satu");
+    f.tulis("baris dua");
+    f.tulis_nol("tanpa akhir");
+    f.tutup();
+    pratelas(f.ditutup, bener);
+}
+
+// --- Berkas: baca ------------------------------------------------------------
+{
+    ana g = anyar Berkas(dir + "/b.txt", "baca");
+    pratelas(g.mode, "baca");
+    pratelas(g.bisa_baca, bener);
+
+    // `baca_baris()` mengembalikan boolean, jadi bentuk `nalika`-nya langsung
+    // `nalika (f.baca_baris())` tanpa inspecting `.akhir` per iterasi.
+    ana hasil = [];
+    nalika (g.baca_baris()) {
+        hasil.tambah(g.baris);
+    }
+    pratelas(hasil, ["baris satu", "baris dua", "tanpa akhir"]);
+    pratelas(g.akhir, bener);
+    // Setelah habis, `baris` berisi teks kosong -- bukan nilai lama, supaya
+    // program yang salah membaca `g.baris` setelah `salah` tidak diam-diam
+    // memakai isi baris sebelumnya.
+    pratelas(g.baris, "");
+    g.tutup();
+}
+
+// Menutup dua kali bukan galat: `pungkasan` sering memanggil `tutup()` pada
+// kode yang mungkin sudah menutup sendiri.
+{
+    ana g = anyar Berkas(dir + "/b.txt", "baca");
+    g.tutup();
+    g.tutup();
+    pratelas(g.ditutup, bener);
+}
+
+// --- mode tambah: menulis di ujung tanpa memotong ---------------------------
+tulis_berkas(dir + "/log.txt", "awal\n");
+{
+    ana a = anyar Berkas(dir + "/log.txt", "tambah");
+    a.tulis("tambahan");
+    a.tutup();
+}
+{
+    ana a = anyar Berkas(dir + "/log.txt", "tambah");
+    a.tulis("lagi");
+    a.tutup();
+}
+pratelas(baca_berkas(dir + "/log.txt"), "awal\ntambahan\nlagi\n");
+
+// --- baris kosong & tanpa newline di akhir ------------------------------------
+tulis_berkas(dir + "/campur.txt", "a\n\nb");
+{
+    ana k = anyar Berkas(dir + "/campur.txt", "baca");
+    ana hasil = [];
+    nalika (k.baca_baris()) {
+        hasil.tambah(k.baris);
+    }
+    // Baris kosong di tengah harus muncul sebagai baris kosong -- kalau dilewati,
+    // jumlah kolom pada berkas yang memang kosong tidak bisa dihitung.
+    pratelas(hasil, ["a", "", "b"]);
+    k.tutup();
+}
+
+// Berkas kosong menghasilkan nol iterasi, bukan satu baris kosong.
+tulis_berkas(dir + "/zero.txt", "");
+{
+    ana k = anyar Berkas(dir + "/zero.txt", "baca");
+    pratelas(k.baca_baris(), salah);
+    k.tutup();
+}
+
+// --- CRLF ---------------------------------------------------------------------
+// Berkas yang ditulis di Windows lalu dibaca di Linux akan punya satu `\r` di
+// tiap baris kalau tidak dibuang.
+tulis_berkas(dir + "/crlf.txt", "satu\r\ndua\r\n");
+{
+    ana c = anyar Berkas(dir + "/crlf.txt", "baca");
+    ana hasil = [];
+    nalika (c.baca_baris()) {
+        hasil.tambah(c.baris);
+    }
+    pratelas(hasil, ["satu", "dua"]);
+    c.tutup();
+}
+
+// --- `baca(n)` memotong di batas karakter --------------------------------------
+tulis_berkas(dir + "/u.txt", "abcde\u{1F600}fgh");
+{
+    ana u = anyar Berkas(dir + "/u.txt", "baca");
+    // 5 karakter: `n` jatuh sebelum emoji, jadi hasilnya persis "abcde".
+    pratelas(u.baca(5), "abcde");
+    // Sisa termasuk emoji utuh -- kalau pemotongan dihitung per byte, sisanya
+    // akan diawali byte UTF-8 yang belum lengkap.
+    pratelas(u.baca(), "\u{1F600}fgh");
+    u.tutup();
+}
+
+// --- galat yang bisa ditangkap -------------------------------------------------
+ana wagal = gawe() {
+    coba {
+        bali baca_berkas(dir + "/nope.txt");
+    } tangkep (e: KleruBerkas) {
+        bali "kleru-berkas";
+    } tangkep (lain) {
+        bali "lain";
+    }
+};
+pratelas(wagal(), "kleru-berkas");
+
+// Galat lain harus tetap naik ke `coba` di luar -- jangan ditelan.
+ana jebakan = gawe() {
+    coba {
+        bali baca_berkas(dir + "/nope.txt");
+    } tangkep (e: KleruJenis) {
+        bali "kleru-jenis";
+    }
+};
+coba {
+    jebakan();
+    pratelas(bener, salah);  // tidak akan sampai sini
+} tangkep (e: KleruBerkas) {
+    // mencakup pengujian bahwa galat benar-benar naik
+}
+
+// Mode yang tidak dikenal harus menolak dengan menyebut mode yang tersedia.
+coba {
+    anyar Berkas(dir + "/x.txt", "ngawur");
+    pratelas(bener, salah);
+} tangkep (e: KleruBerkas) {
+    pratelas(e.pesan.termasuk("ngawur"), bener);
+    pratelas(e.pesan.termasuk("tambah"), bener);  // Daftar galatnya menyebut opsi yang benar.
+}
+
+// Operasi yang memang tidak mungkin untuk mode-nya ditolak, bukan diam-diam
+// gagal.
+{
+    ana f = anyar Berkas(dir + "/b.txt", "tulis");
+    coba {
+        f.baca_baris();
+        pratelas(bener, salah);
+    } tangkep (e: KleruBerkas) {
+        pratelas(e.pesan.termasuk("mode nulis"), bener);
+    }
+    f.tutup();
+}
+{
+    ana g = anyar Berkas(dir + "/b.txt", "baca");
+    coba {
+        g.tulis("x");
+        pratelas(bener, salah);
+    } tangkep (e: KleruBerkas) {
+        pratelas(e.pesan.termasuk("mode maca"), bener);
+    }
+    g.tutup();
+}
+
+// Pakai setelah ditutup: galat, bukan `mboh` diam-diam.
+{
+    ana g = anyar Berkas(dir + "/b.txt", "baca");
+    g.tutup();
+    coba {
+        g.baca_baris();
+        pratelas(bener, salah);
+    } tangkep (e: KleruBerkas) {
+        pratelas(e.pesan.termasuk("ditutup"), bener);
+    }
+}
+
+// Argumen yang harus teks tapi bukan.
+coba {
+    tulis_berkas(dir + "/y.txt", 42);
+    pratelas(bener, salah);
+} tangkep (e: KleruBerkas) {
+    pratelas(e.pesan.termasuk("teks"), bener);
+}
+
+// `anyaar` gagal total kalau berkasnya tidak bisa dibuka -- tidak mengembalikan
+// objek tanpa handle, karena itu cuma memindahkan galat ke pemanggilan
+// berikutnya yang jauh dari titik kesalahan.
+coba {
+    anyar Berkas(dir + "/tidak-ada-untuk-dibuka.txt", "baca");
+    pratelas(bener, salah);
+} tangkep (e: KleruBerkas) {
+    pratelas(e.pesan.termasuk("mbuka"), bener);
+}
+
+// --- `tutup` di `pungkasan` -----------------------------------------------------
+// Pola yang paling sering muncul di kode dunia nyata: kalau ada galat di tengah
+// baca, handle harus tetap tertutup.
+// Berkusanya sendiri: blok uji "Operasi yang tidak mungkin" di atas membuka
+// `b.txt` dengan mode "tulis" -- yang memotong isinya -- jadi kalau berkas ini
+// masih memakai `b.txt`, loop di bawah nol iterasi dan assertion-nya gagal
+// tanpa alasan yang menunjuk ke sebabnya.
+tulis_berkas(dir + "/baris.txt", "satu\ndua\ntiga");
+ana baris_n = 0;
+coba {
+    ana f = anyar Berkas(dir + "/baris.txt", "baca");
+    coba {
+        nalika (f.baca_baris()) {
+            baris_n = baris_n + 1;
+        }
+    } pungkasan {
+        f.tutup();
+    }
+    pratelas(f.ditutup, bener);
+} tangkep (lain) {
+    pratelas(bener, salah);
+}
+pratelas(baris_n, 3);
+
+// --- directory: bukan berkas ------------------------------------------------------
+// Di Linux `fopen("/tmp", "rb")` BERHASIL; yang gagal adalah `fread`-nya. Kalau
+// `ada_berkas` cuma memakai `fopen`, direktori akan dijawab "ada" lalu
+// `baca_berkas` langsung galat -- dua jawaban yang kontradiksi.
+pratelas(ada_berkas("/tmp"), salah);
+pratelas(ada_berkas("/"), salah);
+coba {
+    baca_berkas("/tmp");
+    pratelas(bener, salah);
+} tangkep (e: KleruBerkas) {
+    pratelas(bener, bener);
+}
+
+// --- direktori -----------------------------------------------------------------------
+{
+    // Sekuens penuh: buat, cek, isi, coba hapus yang masih berisi (harus ditolak),
+    // kosongkan, lalu hapus.
+    pratelas(hapus_direktori(dir + "/sub"), salah);    // belum ada
+    pratelas(ada_direktori(dir + "/sub"), salah);
+    pratelas(dadi_direktori(dir + "/sub"), bener);
+    pratelas(dadi_direktori(dir + "/sub"), bener);    // idempoten
+    pratelas(ada_direktori(dir + "/sub"), bener);
+    pratelas(ada_berkas(dir + "/sub"), salah);
+
+    tulis_berkas(dir + "/sub/isi.txt", "x");
+    pratelas(hapus_direktori(dir + "/sub"), salah);   // belum kosong -> ditolak
+    pratelas(ada_direktori(dir + "/sub"), bener);     // dan tetap ada
+
+    hapus_berkas(dir + "/sub/isi.txt");
+    pratelas(hapus_direktori(dir + "/sub"), bener);
+    pratelas(ada_direktori(dir + "/sub"), salah);
+}
+
+// Induk yang belum ada ditolak dengan pesan, bukan membuat direktori secara diam.
+coba {
+    dadi_direktori("tidak-ada-induk-12345/sub");
+    pratelas(bener, salah);
+} tangkep (e: KleruBerkas) {
+    pratelas(e.pesan.termasuk("nggawe"), bener);
+}
+
+// --- membersihkan -----------------------------------------------------------------
+hapus_berkas(dir + "/b.txt");
+hapus_berkas(dir + "/log.txt");
+hapus_berkas(dir + "/campur.txt");
+hapus_berkas(dir + "/zero.txt");
+hapus_berkas(dir + "/u.txt");
+hapus_berkas(dir + "/crlf.txt");
+hapus_berkas(dir + "/baris.txt");
+hapus_berkas(dir + "/kosong.txt");
+pratelas(ada_berkas(dir + "/b.txt"), salah);
+pratelas(hapus_direktori(dir), bener);
+pratelas(ada_direktori(dir), salah);

@@ -1,0 +1,93 @@
+// I/O berkas: baca, tulis, dantangani galat dengan `coba`/`tangkep`.
+//
+// Berkas uji yang hidup di direktori sementara yang sama dengan program ini,
+// lalu dibersihkan di akhir -- contoh ini menulis ke disk sungguhan, jadi
+// harus bisa dijalankan berulang kali tanpa menumpuk.
+
+// --- bersiap -----------------------------------------------------------------
+ana dir = "alat-contoh";
+dadi_direktori(dir);  // idempoten: aman kalau sudah ada
+
+// --- hitung kata pada berkas yang belum ada ----------------------------------
+gawe hitung_kata(sumber) {
+    coba {
+        ana isi = baca_berkas(sumber);
+        ana hasil = 0;
+        nalika (isi.termasuk(" ")) {
+            isi = isi.ganti(" ", "");
+            hasil = hasil + 1;
+        }
+        bali hasil + 1;  // kata terakhir tidak diikuti spasi
+    } tangkep (e: KleruBerkas) {
+        bali 0;  // tidak ada = tidak ada kata
+    }
+}
+tulis("kata di belum-ada.txt :", hitung_kata(dir + "/belum-ada.txt"));
+tulis("ada?                  :", ada_berkas(dir + "/belum-ada.txt"));
+
+// --- tulis beberapa baris ------------------------------------------------------
+ana berkas = anyar Berkas(dir + "/catatan.txt", "tulis");
+berkas.tulis("baris pertama");
+berkas.tulis("baris kedua");
+berkas.tulis_nol("baris ketiga tanpa newline");
+berkas.tutup();
+
+// --- baca kembali per baris -----------------------------------------------------
+tulis("isi per baris:");
+ana pemaca = anyar Berkas(dir + "/catatan.txt", "baca");
+nalika (pemaca.baca_baris()) {
+    tulis("  -", pemaca.baris);
+}
+pemaca.tutup();
+
+// --- tambah tanpa memotong ------------------------------------------------------
+ana penambah = anyar Berkas(dir + "/catatan.txt", "tambah");
+penambah.tulis("baris keempat");
+penambah.tutup();
+tulis("ukuran sekarang        :", ukuran_berkas(dir + "/catatan.txt"), "byte");
+
+// --- `baca(n)` untuk sebagian awal ----------------------------------------------
+// Handle baru: `pemaca` sudah ditutup di atas, dan memakai handle yang sudah
+// ditutup adalah galat -- disengaja, bukan sekadar dibiarkan lewat.
+{
+    ana sebagian = anyar Berkas(dir + "/catatan.txt", "baca");
+    tulis("lima karakter pertama  :", JSON.gawe_teks(sebagian.baca(5)));
+    sebagian.tutup();
+}
+
+// --- salah mode: ditolak, bukan diam-diam gagal ---------------------------------
+coba {
+    // Berkas BUANGAN, bukan `catatan.txt`: mode "tulis" memotong isi berkas,
+    // jadi kalau yang dipakai `catatan.txt`, contoh di bawahnya akan membaca
+    // berkas kosong tanpa penjelasan.
+    ana salah_mode = anyar Berkas(dir + "/buang.txt", "tulis");
+    salah_mode.baca_baris();
+    salah_mode.tutup();
+} tangkep (e: KleruBerkas) {
+    tulis("ditolak               :", e.pesan);
+}
+
+// --- pola `pungkasan`: handle selalu tertutup, walau ada galat di tengah ------
+gawe jumlah_baris(sumber) {
+    ana total = 0;
+    ana f = anyar Berkas(sumber, "baca");
+    coba {
+        nalika (f.baca_baris()) {
+            total = total + 1;
+        }
+    } pungkasan {
+        f.tutup();
+    }
+    bali total;
+}
+tulis("jumlah baris           :", jumlah_baris(dir + "/catatan.txt"));
+
+// --- direktori -------------------------------------------------------------------
+// --- membersihkan -----------------------------------------------------------------
+// `hapus_direktori` hanya menghapus direktori KOSONG. Direktori yang masih berisi
+// sengaja ditolak: menghapus isi tanpa diminta adalah kerusakan yang tidak bisa
+// dibatalkan.
+hapus_berkas(dir + "/buang.txt");
+tulis("hapus direktori (ada isi):", hapus_direktori(dir), "-> masih ada?", ada_direktori(dir));
+hapus_berkas(dir + "/catatan.txt");
+tulis("hapus direktori (kosong):", hapus_direktori(dir), "-> masih ada?", ada_direktori(dir));
