@@ -67,6 +67,7 @@ set(JAWA_SOURCES
     src/cli/main.cpp
     src/cli/tes.cpp
     src/cli/fmt.cpp
+    src/cli/repl.cpp
 )
 
 add_library(jawa STATIC ${JAWA_SOURCES})
@@ -193,6 +194,11 @@ if(JAWA_BUILD_TESTS)
         add_test(NAME golden.cek_contoh
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cek_contoh.py)
         set_tests_properties(golden.cek_contoh PROPERTIES TIMEOUT 300)
+
+        # `jawa repl` interaktif: dijalankan dengan masukan terkontrol.
+        add_test(NAME golden.cek_repl
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cek_repl.py)
+        set_tests_properties(golden.cek_repl PROPERTIES TIMEOUT 600)
 
         # `jawa fmt` harus idempoten dan tidak mengubah perilaku. Idempoten
         # adalah syarat `--tulis` berguna: kalau tidak, setiap commit

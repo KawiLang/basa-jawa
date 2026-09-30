@@ -33,6 +33,7 @@ daftar **jelas** apa yang sudah selesai dan apa yang belum.
 | async/await + loop acara | selesai (deterministik, tanpa fiber — `docs/async.md`) |
 | `jawa tes` | selesai — kerangka uji level bahasa (`docs/testing.md`) |
 | `jawa fmt` | selesai — indentasi & jarak; dijamin tidak mengubah bentuk program (`docs/fmt.md`) |
+| `jawa repl` | selesai — REPL dengan pengikut yang bertahan antar baris (`docs/repl.md`) |
 | Regex `/pola/flag` | selesai — backtracking, kelompok tangkap & bernama, anggaran langkah anti-ReDoS (`docs/regex.md`) |
 | `Tanggal` | selesai — kalender proleptis Gregorian, UTC saja, tanpa zona waktu (`docs/tanggal.md`) |
 | Regex runtime, `Tanggal`, berkas, proses | belum |
@@ -70,6 +71,7 @@ build/release/jawa token -e 'tulis(1)'     # daftar token
 build/release/jawa ast -e 'gawe f() {}'    # cetak AST
 build/release/jawa tes tests/tes/          # jalankan berkas uji
 build/release/jawa fmt --cek examples/*.jw  # periksa perlu diformat atau tidak
+build/release/jawa repl                    # REPL interaktif
 build/release/jawa bytecode -e 'tulis(1)'  # cetak bytecode
 build/release/jawa versi
 build/release/jawa bantuan
@@ -167,6 +169,7 @@ tests/          unit + golden
 | [`docs/tanggal.md`](docs/tanggal.md) | kalender UTC, ISO-8601, komponen, aritmetika, batasannya |
 | [`docs/testing.md`](docs/testing.md) | kerangka `jawa tes` |
 | [`docs/fmt.md`](docs/fmt.md) | `jawa fmt` |
+| [`docs/repl.md`](docs/repl.md) | `jawa repl` |
 | [`docs/control-flow.md`](docs/control-flow.md) | `yen`/`nalika`/`kanggo`/`pilih`/`coba` |
 | [`docs/fuzzing.md`](docs/fuzzing.md) | target fuzz, cara menjalankan, bug yang ditemukan |
 | [`DECISIONS.md`](DECISIONS.md) | keputusan desain & penyimpangan dari spesifikasi |

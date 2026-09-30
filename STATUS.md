@@ -7,7 +7,7 @@ Ringkas: front-end **dan** runtime sudah berjalan. **12 dari 12** contoh acuan
 Bagian 11 menghasilkan keluaran yang persis, termasuk `asinkron.jw`
 (`async`/`await`), `modul/*.jw` (ES module, dengan *live binding*), dan
 `generator.jw`. Yang belum: hidden class, kalender non-Gregorian, zona waktu
-lokal, pustaka standar lengkap, dan tooling (REPL, `bench`, `ubah`).
+lokal, pustaka standar lengkap, dan tooling (`bench`, `ubah`, LSP).
 
 ## Angka
 
@@ -20,8 +20,8 @@ lokal, pustaka standar lengkap, dan tooling (REPL, `bench`, `ubah`).
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 4 berkas (termasuk `test_fmt`), 450 cek, 133 test |
 | Uji bahasa (`jawa tes`) | 11 berkas, 467 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, skop blok, ...) |
-| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 29 formatter |
-| Build | Release, ASan, UBSan, dan mode nilai 16-byte — 10/10 `ctest` hijau di keempatnya; preset `fuzz` — 6/6 `ctest` hijau |
+| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 29 formatter + 12 REPL |
+| Build | Release, ASan, UBSan, dan mode nilai 16-byte — 11/11 `ctest` hijau di keempatnya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
 | Dokumentasi | 13 berkas `docs/` + 4 berkas akar |
 
@@ -244,11 +244,11 @@ Tiga bug kecil lain ikut tertutup:
 - `AksesProperti` pada `Instance` mencari field secara linear.
 - Error runtime tidak membawa jejak stack sumber (hanya nama fungsi).
 - Batas instruksi 16-bit: fungsi dengan > 65535 instruksi tidak didukung.
-- Tanpa debugger, tanpa REPL, tanpa LSP, tanpa `jawa ubah` (refactor), tanpa
-  `jawa bench`, tanpa embedding API (`include/` belum ada --
-  `CMakeLists.txt` sudah menyiapkan `install(DIRECTORY include/)` tapi
-  direktorinya belum dibuat). `jawa tes` dan `jawa fmt` **sudah ada**
-  (`docs/testing.md`, `docs/fmt.md`).
+- Tanpa debugger, tanpa LSP, tanpa `jawa ubah` (refactor), tanpa `jawa bench`,
+  tanpa embedding API (`include/` belum ada -- `CMakeLists.txt` sudah menyiapkan
+  `install(DIRECTORY include/)` tapi direktorinya belum dibuat). `jawa tes`,
+  `jawa fmt`, dan `jawa repl` **sudah ada** (`docs/testing.md`, `docs/fmt.md`,
+  `docs/repl.md`).
 - Tidak ada korpus crash fuzzing yang tersimpan, dan `fuzz_parser` belum
   memeriksa rentang setiap node anak (butuh penelusur AST per-jenis-node).
   Lihat `docs/fuzzing.md`.

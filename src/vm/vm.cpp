@@ -298,6 +298,15 @@ ArrayObj* VM::prototipe_dhaptar() {
 // ===========================================================================
 
 void VM::daftarkan_modul(std::string_view nama, std::string_view path, std::string_view sumber) {
+    // Idempoten: nama yang sama memakai record yang sudah ada (sumbernya
+    // diperbarui). REPL menjalankan semua barisnya dengan nama modul yang sama,
+    // dan record baru setiap baris akan membuat pengikut dari baris lalu hilang
+    // bersama tabel global record itu -- dan `modul_store_` tumbuh tanpa batas.
+    if (const auto it = modul_.find(std::string(nama)); it != modul_.end() && it->second != nullptr) {
+        it->second->path = std::string(path);
+        it->second->sumber = std::string(sumber);
+        return;
+    }
     ModuleRecord m;
     m.nama = nama;
     m.path = path;
@@ -316,7 +325,15 @@ Value VM::ambil_global(std::string_view nama) {
     if (modul_aktif != nullptr) {
         auto it = modul_aktif->global.find(std::string(nama));
         if (it != modul_aktif->global.end()) return it->second;
-        // prototype chain: walk up module? (modul tunggal untuk sekarang)
+    }
+    // Modul yang TIDAK aktif. REPL menjalankan tiap baris sebagai modul baru,
+    // jadi `modul_aktif` sudah `nullptr` di antara baris -- padahal pengikut
+    // yang ditulis baris lalu harus tetap terbaca. Tanpa pencarian ini, `ana x = 1`
+    // di REPL langsung hilang setelah barisnya selesai, dan `x` di baris
+    // berikutnya akan terbaca `mboh`.
+    for (const ModuleRecord& m : modul_store_) {
+        const auto it = m.global.find(std::string(nama));
+        if (it != m.global.end()) return it->second;
     }
     return stdlib::ambil_global(*this, nama);
 }

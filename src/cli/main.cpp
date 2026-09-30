@@ -16,6 +16,7 @@
 
 #include "cli/cli.h"
 #include "cli/fmt.h"
+#include "cli/repl.h"
 #include "cli/tes.h"
 #include "lex/lexer.h"
 #include "parse/ast.h"
@@ -112,6 +113,7 @@ void cetak_bantuan() {
         "  jawa ast   berkas.jw              Cetak AST\n"
         "  jawa tes   berkas|dir            Jalankan berkas uji (.tes.jw)\n"
         "  jawa fmt   berkas.jw             Rapi indentasi & jarak (--cek utawa --tulis)\n"
+        "  jawa repl                        Lingkup baca-evaluasi-cetak\n"
         "  jawa versi                        Cetak versi\n"
         "  jawa bantuan                      Cetak bantuan ini\n"
         "\n"
@@ -377,6 +379,125 @@ int perintah_bytecode(const std::string& kode, bool warna) {
     return Sukses;
 }
 
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// `jawa repl`
+// ---------------------------------------------------------------------------
+//
+// Menyimpan SATU `VM` selama sesi. Setiap baris dikompilasi sebagai modul baru
+// dengan `Compiler::set_repl(true)`, jadi pengikut frame modul menjadi global
+// dan bertahan antar baris (lihat `Compiler::set_repl`).
+int perintah_repl(const vm::VMOptions& opsi, bool warna, bool interaktif) {
+    std::unique_ptr<vm::VM> mesin = std::make_unique<vm::VM>(opsi);
+    std::size_t n_evaluasi = 0;
+
+    const Evaluator evaluasi = [&](std::string_view baris) -> HasilRepl {
+        HasilRepl h;
+        if (baris.empty()) return h;
+
+        // --- perintah REPL (diawali `:`) ---
+        if (baris.front() == ':') {
+            const std::size_t spasi = baris.find_first_of(" \t");
+            const std::string_view kata = baris.substr(0, spasi);
+            std::string_view sisa = spasi == std::string_view::npos ? std::string_view{}
+                                                                    : baris.substr(spasi + 1);
+            while (!sisa.empty() && std::isspace(static_cast<unsigned char>(sisa.front()))) {
+                sisa.remove_prefix(1);
+            }
+            if (kata == ":nilai") {
+                if (sisa.empty()) {
+                    std::fprintf(stderr, "KleruCLI [C020] `:nilai` butuh nama, contoh `:nilai x`.\n");
+                    h.ada_galat = true;
+                    return h;
+                }
+                const std::string_view n = sisa;
+                // Nama global dibaca dari tabel global VM: itu tempat `ana`
+                // mode REPL dan setiap builtin mendarat.
+                const rt::Value v = mesin->ambil_global(n);
+                std::printf("%.*s = %s\n", static_cast<int>(n.size()), n.data(),
+                            rt::nilai_ke_teks(*mesin, v).c_str());
+                return h;
+            }
+            if (kata == ":sampah") {
+                const gc::GcStats& st = mesin->heap().statistik();
+                std::printf("alokasi=%zu objek=%zu byte_aktif=%zu koleksi=%zu\n", st.total_alokasi,
+                            st.jumlah_objek, st.bytes_aktif, st.gc_koleksi);
+                return h;
+            }
+            if (kata == ":reset") {
+                mesin = std::make_unique<vm::VM>(opsi);
+                std::printf("state direset\n");
+                return h;
+            }
+            std::fprintf(stderr, "KleruCLI [C021] Perintah REPL ora weruh: %.*s\n",
+                         static_cast<int>(kata.size()), kata.data());
+            std::fputs("Coba `:bantuan` kanggo ndeleng dhaptar perintah.\n", stderr);
+            h.ada_galat = true;
+            return h;
+        }
+
+        // --- kode biasa ---
+        // Tidak ada pembungkusan sumber: pencetakan nilai ekspresi dilakukan
+        // kompilator lewat `Compiler::set_repl` (lihat `statement(EkspresiStmt)`).
+        const std::string sumber{baris};
+        ++n_evaluasi;
+        h.dievaluasi = true;
+
+        // Nama modul TETAP sama untuk semua baris, supaya `daftarkan_modul`
+        // tidak menambah record baru setiap baris dan pengikut yang ditulis
+        // baris lalu tetap hidup di record yang sama. Nama yang berbeda akan
+        // membuat setiap baris punya tabel global sendiri yang langsung dibuang.
+        const std::string nama = "<repl>";
+        support::DiagnosticBag bag{20};
+        support::Arena arena;
+        lex::TokenList token;
+        lex::Lexer lx(sumber, nama, ".", lex::LexOptions{opsi.strict_titik_koma, opsi.strict_krama});
+        lx.lex_semua(token);
+        bag.gabung(lx.bag());
+        if (bag.ada_galat()) {
+            cetak_diagnostik(bag, warna);
+            h.ada_galat = true;
+            return h;
+        }
+        parse::Parser parser(token, arena, bag, nama);
+        const ast::NodePtr program = parser.parse_program();
+        if (program == nullptr || bag.ada_galat()) {
+            cetak_diagnostik(bag, warna);
+            h.ada_galat = true;
+            return h;
+        }
+        compile::Compiler kompiler(mesin->heap(), bag, nama);
+        kompiler.set_repl(true);
+        const compile::HasilKompilasi hasil = kompiler.compile(static_cast<const ast::Program*>(program));
+        cetak_diagnostik(bag, warna);
+        if (bag.ada_galat() || hasil.modul == nullptr) {
+            h.ada_galat = true;
+            return h;
+        }
+        // Semua chunk harus di-root selama eksekusi: `jalankan_sumber` melakukan
+        // ini untuk program utuh, dan REPL yang menjalankan banyak modul di satu
+        // VM harus mengulanginya sendiri.
+        for (const vm::ChunkPtr& c : hasil.semua) mesin->root_chunk(c);
+        std::fflush(stdout);
+        if (mesin->jalankan_modul(hasil.modul, hasil.semua, nama, sumber) != vm::Status::Selesai) {
+            h.ada_galat = true;
+        }
+        return h;
+    };
+
+    const std::function<std::optional<std::string>()> baca = [&]() -> std::optional<std::string> {
+        std::string b;
+        if (!std::getline(std::cin, b)) return std::nullopt;
+        // Buang sisa carriage return (berkas di Windows).
+        while (!b.empty() && (b.back() == '\r' || b.back() == '\n')) b.pop_back();
+        return b;
+    };
+
+    const int gagal = jalankan_repl(baca, interaktif, std::cout, std::cerr, evaluasi);
+    std::fflush(stdout);
+    return gagal == 0 ? Sukses : GalatProgram;
+}
+
 int perintah_berkas(const std::string& perintah, const std::string& path, bool warna) {
     std::string kode;
     int rc = Sukses;
@@ -575,6 +696,16 @@ int jalankan(int argc, char** argv) {
     }
     if (perintah == "fmt") {
         return perintah_fmt(posisial, warna);
+    }
+    if (perintah == "repl") {
+        // Terminal? Kalau tidak, stdin ditungry baca sampai habis tanpa prompt --
+        // supaya `jawa repl < skrip.jw` dan ujinya bisa dipakai.
+#if defined(_WIN32)
+        const bool interaktif = false;
+#else
+        const bool interaktif = isatty(fileno(stdin)) != 0;
+#endif
+        return perintah_repl(opsi, warna, interaktif);
     }
     if (perintah == "run") {
         if (ada_e) {

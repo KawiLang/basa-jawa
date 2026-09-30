@@ -237,6 +237,20 @@ public:
     /// Jalankan program dari sumber (kompilasi internal).
     Status jalankan_sumber(std::string_view sumber, std::string_view nama_berkas, std::string_view dir = ".");
 
+    /// Jalankan modul yang SUDAH dikompilasi, di VM ini.
+    ///
+    /// Dipakai REPL: setiap baris dikompilasi terpisah lalu dievaluasi di VM yang
+    /// sama, supaya global yang dibuat baris sebelumnya masih ada. Kompilasi
+    /// happening di luar, jadi `modul` harus sudah ter-root lewat `semua`
+    /// (daftar semua chunk, termasuk modul) -- pemanggil yang menyusunnya
+    /// menyalin semua chunk ke `chunk_akar_` REPL sebelum memanggil ini.
+    Status jalankan_modul(ChunkPtr modul, const std::vector<ChunkPtr>& semua,
+                          std::string_view nama_berkas, std::string_view sumber);
+
+    /// Root-kan daftar chunk selama program berjalan. Dipakai REPL, yang
+    /// menjalankan banyak modul di satu VM.
+    void root_chunk(ChunkPtr c) { chunk_akar_.push_back(std::move(c)); }
+
     /// Jalankan closure yang sudah dikompilasi.
     Status jalankan(ClosureObj* entry, int n_argumen = 0);
 

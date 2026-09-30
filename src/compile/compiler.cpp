@@ -88,6 +88,14 @@ void Compiler::diagnosa(const char* kode, std::string pesan, SourceRange r, std:
     bag_.add_galat(std::move(d));
 }
 
+bool Compiler::simpan_global_repl() const {
+    // Hanya frame modul mode REPL. Di dalam fungsi, pengikut tetap slot: slot
+    // dibuat ulang tiap pemanggilan, jadi tidak perlu bertahan antar baris --
+    // dan mengubahnya jadi global akan membuat rekursi serta closure jauh lebih
+    // lambat.
+    return repl_ && !fn().dalam_fungsi;
+}
+
 void Compiler::diagnosa_di(const char* kode, std::string pesan, std::string saran) {
     SourceRange r;
     if (!fn().chunk->kode.empty()) r.selesai.baris = fn().chunk->kode.back().baris;
@@ -367,6 +375,10 @@ void Compiler::pradaftar_tdz(const ast::Node* n, int kedalaman) {
     if (kedalaman > 64) return;  // pengaman untuk AST tak wajar
     // Fungsi anak punya badan sendiri; jangan rekursi ke dalamnya.
     if (n->kind == NK::FungsiDeklarasi) return;
+    // Mode REPL: pengikut frame modul adalah global, tidak punya slot, jadi
+    // tidak ada zona mati-temporal yang bisa dipra-daftarkan. Body fungsi tetap
+    // punya slot seperti biasa.
+    if (repl_ && !fn().dalam_fungsi) return;
     FungsiKonteks& f = fn();
     // Tumpukan lokal: skop pradaftar yang sedang aktif. Tumpukan `f.skop` TIDAK
     // dipakai di sini -- yang dibangun di sini adalah bentuk akhir yang harus

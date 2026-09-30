@@ -84,6 +84,19 @@ public:
     /// Daftarkan fungsi global (dipakai CLI untuk `tulis` dlsb).
     void daftarkan_global(const std::string& nama, Value v) { builtin_global_[nama] = v; }
 
+    /// Aktifkan mode REPL.
+    ///
+    /// Dalam mode ini pengikut di frame MODUL dikompilasi menjadi global, bukan
+    /// slot. Alasannya bentuk module dievaluasi ulang setiap kali pengguna
+    /// mengetik baris baru, dan slot module ikut hilang bersama frame-nya --
+    /// sehingga `ana x = 1` lalu `x` di baris berikutnya tidak akan menemukan
+    /// apa pun. Global milik VM justru bertahan antar-evaluasi.
+    ///
+    /// Body fungsi TIDAK terpengaruh: di sana pengikut tetap slot seperti
+    /// biasanya (dan zona mati-temporal tetap berlaku).
+    void set_repl(bool aktif) noexcept { repl_ = aktif; }
+    [[nodiscard]] bool repl() const noexcept { return repl_; }
+
 private:
     /// Satu tingkat skop leksikal: pengikat yang diperkenalkan di satu blok.
     struct Skop {
@@ -225,6 +238,9 @@ private:
     std::size_t cari_upvalue(const std::string_view nama);
     void diagnosa(const char* kode, std::string pesan, SourceRange r, std::string saran = {});
     void diagnosa_di(const char* kode, std::string pesan, std::string saran = {});
+    /// `true` bila pengikut di frame modul harus disimpan sebagai global
+    /// (mode REPL) alih-alih sebagai slot. Lihat `set_repl`.
+    [[nodiscard]] bool simpan_global_repl() const;
     [[nodiscard]] std::uint32_t baris_sekarang() const;
 
     // --- statement ---
@@ -344,6 +360,9 @@ private:
     std::string_view nama_berkas_;
     std::deque<FungsiKonteks> fungsi_stack_;  // alamat stabil
     std::unordered_map<std::string, Value> builtin_global_;
+    /// Mode REPL: pengikut frame modul menjadi global, bukan slot.
+    /// Lihat `set_repl`.
+    bool repl_ = false;
     std::unordered_map<std::string, std::size_t> global_slot_;
     std::vector<std::string_view> global_nama_;
     std::vector<vm::ChunkPtr> semua_chunk_;

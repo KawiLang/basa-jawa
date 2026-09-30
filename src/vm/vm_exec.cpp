@@ -58,10 +58,15 @@ Status VM::jalankan_sumber(std::string_view sumber, std::string_view nama_berkas
         return Status::Galat;
     }
 
+    return jalankan_modul(hasil.modul, hasil.semua, nama_berkas, sumber);
+}
+
+Status VM::jalankan_modul(ChunkPtr modul, const std::vector<ChunkPtr>& semua, std::string_view nama_berkas,
+                          std::string_view sumber) {
     // Bentuk objek fungsi + closure modul.
     FungsiObj* fn = heap_.alokasi<FungsiObj>();
     fn->h.kind = OK::Fungsi;
-    fn->kode = hasil.modul;
+    fn->kode = modul;
     fn->nama = "<modul>";
 
     auto* clo = heap_.alokasi<ClosureObj>();
@@ -87,7 +92,7 @@ Status VM::jalankan_sumber(std::string_view sumber, std::string_view nama_berkas
     }
     // Semua chunk (modul utama + fungsi anak) di-root selama program berjalan;
     // lihat `VM::chunk_akar_`.
-    for (const ChunkPtr& c : hasil.semua) chunk_akar_.push_back(c);
+    for (const ChunkPtr& c : semua) chunk_akar_.push_back(c);
     heap_.bersihkan_akar_sementara();
     pos_berkas_ = std::string(nama_berkas);
 

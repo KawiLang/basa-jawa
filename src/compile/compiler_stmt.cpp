@@ -20,6 +20,26 @@ using vm::Op;
 // Statement
 // ===========================================================================
 
+namespace {
+
+/// `true` kalau `e` adalah panggilan `tulis(...)`, mis. `tulis(1)`.
+///
+///Dipakai REPL untuk tidak mencetak nilai ekspresi dua kali: `tulis(1)`
+/// sudah mencetak sendiri, jadi pencetakan otomatis dilewati. Yang diperiksa
+/// hanya callee yang langsung berupa pengenal `tulis`; bentuk lain
+/// (`Teks.tulis(...)`, `f = tulis; f(1)`) tidak dikenali dan hasilnya cetak
+/// ganda -- lebih baik daripada tidak mencetak sama sekali.
+bool panggilan_tulis(const ast::Node* e) {
+    if (e == nullptr || e->kind != ast::NK::Panggilan) return false;
+    const auto* p = static_cast<const ast::Panggilan*>(e);
+    const ast::Node* callee = p->callee;
+    return callee != nullptr && callee->kind == ast::NK::RefIdent &&
+           static_cast<const ast::RefIdent*>(callee)->nama == "tulis";
+}
+
+}  // namespace
+
+
 void Compiler::statement(const ast::Node* n) { statement(n, false); }
 
 void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
@@ -31,7 +51,29 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
     tandai_baris(n->range.mulai.baris);
     switch (n->kind) {
         case NK::EkspresiStmt: {
-            ekspresi(static_cast<const ast::EkspresiStmt*>(n)->ekspresi);
+            const ast::Node* e = static_cast<const ast::EkspresiStmt*>(n)->ekspresi;
+            if (repl_ && !fn().dalam_fungsi && fn().skop.size() <= 1) {
+                // REPL: nilai ekspresi di frame modul dicetak. Dilakukan di sini,
+                // bukan dengan membungkus sumber jadi `tulis(<ekspresi>)`, karena
+                // pembungkusannya butuh daftar kata kunci -- dan daftar itu
+                // selalu tertinggal satu kata (`anyaar` sempat terlewat), lalu
+                // ekspresi yang sebenarnya bukan ekspresi ikut dibungkus dan
+                // gagal diurai.
+                //
+                // Panggilan `tulis(...)` dikecualikan: kalau tidak, `tulis(1)`
+                // akan mencetak dua kali.
+                if (!panggilan_tulis(e)) {
+                    emit(Op::MBOH);
+                    emit(Op::GET_GLOBAL,
+                         static_cast<std::uint16_t>(
+                             tambah_nama(Value::obyek(rt::buat_teks(heap_, "tulis")))));
+                    ekspresi(e);
+                    emit(Op::CALL, 1);
+                    emit(Op::POP);
+                    return;
+                }
+            }
+            ekspresi(e);
             emit(Op::POP);
             return;
         }
@@ -56,6 +98,20 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
             // deklarasinya dievaluasi adalah galat (bukan `undefined`).
             // Slot ditandai dulu, lalu ip deklarasi dicatat setelah statement ini
             // selesai dikompilasi.
+            // Mode REPL: pengikut frame modul jadi global supaya bertahan
+            // antar baris (lihat `Compiler::set_repl`).
+            if (simpan_global_repl() && !d->destruktur && !d->jeneng.empty() &&
+                d->deklarator_lain.empty()) {
+                if (d->nilai != nullptr) {
+                    ekspresi(d->nilai);
+                } else {
+                    emit(Op::MBOH);
+                }
+                emit(Op::SET_GLOBAL, static_cast<std::uint16_t>(
+                                         tambah_nama(Value::obyek(rt::buat_teks(heap_, d->jeneng)))));
+                emit(Op::POP);
+                return;
+            }
             std::vector<std::size_t> tdz_baru;
             if (d->destruktur) {
                 ekspresi(d->nilai);
@@ -732,6 +788,14 @@ void Compiler::stmt_golongan(const ast::GolonganDeklarasi* n) {
 
     if (!n->nama.empty()) {
         emit(Op::GET_LOCAL, static_cast<std::uint16_t>(s_kelas));
+        if (simpan_global_repl()) {
+            // Mode REPL: nama class harus bertahan antar baris (lihat
+            // `Compiler::set_repl`).
+            emit(Op::SET_GLOBAL, static_cast<std::uint16_t>(
+                                     tambah_nama(Value::obyek(rt::buat_teks(heap_, n->nama)))));
+            emit(Op::POP);
+            return;
+        }
         const std::size_t g = slot_baru(n->nama);
         emit(Op::DEF_LOCAL, static_cast<std::uint16_t>(g));
     }
@@ -971,6 +1035,16 @@ void Compiler::deklarasi_fungsi(const ast::FungsiDeklarasi* n, bool eksport) {
     if (n == nullptr || n->nama.empty()) {
         // Fungsi anonymous pada posisi statement: evaluasi lalu buang.
         eks_fungsi(n);
+        emit(Op::POP);
+        return;
+    }
+    // Mode REPL: fungsi di frame modul disimpan sebagai global supaya baris
+    // berikutnya bisa memanggilnya. Tanpa ini, `gawe f() {}` di satu baris dan
+    // pemanggilannya di baris lain tidak akan menemukan apa pun.
+    if (simpan_global_repl()) {
+        eks_fungsi(n);
+        emit(Op::SET_GLOBAL,
+             static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, n->nama)))));
         emit(Op::POP);
         return;
     }
