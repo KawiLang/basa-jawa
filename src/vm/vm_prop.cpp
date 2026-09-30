@@ -402,9 +402,9 @@ void VM::set_index_value(Value obj, Value kunci, Value nilai) {
                 return;
             }
         }
-        // Field baru: tambahkan slot secara dinamis (field tanpa
-        // deklarasi eksplisit, mis. `iki.x = 1`).
-        inst->nama_slot.push_back(std::string(nama));
+        // Field baru: tambahkan slot secara dinamis (field tanpa deklarasi
+        // eksplisit, mis. `iki.x = 1`).
+        inst->nama_slot.emplace_back(nama);
         inst->slot.push_back(nilai);
     } else if (o->h.kind == OK::Golongan) {
         // Penugasan statis (`Kelas.x = v`): perbarui atau tambah entri statis.
@@ -416,7 +416,7 @@ void VM::set_index_value(Value obj, Value kunci, Value nilai) {
                 return;
             }
         }
-        kls->nama_statis.push_back(std::string(nama));
+        kls->nama_statis.emplace_back(nama);
         kls->nilai_statis.push_back(nilai);
     }
 }

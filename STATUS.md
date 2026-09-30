@@ -19,8 +19,8 @@ lokal, pustaka standar lengkap, dan tooling (`bench`, `ubah`, LSP).
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 4 berkas (termasuk `test_fmt`), 450 cek, 133 test |
-| Uji bahasa (`jawa tes`) | 11 berkas, 467 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, skop blok, ...) |
-| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 29 formatter + 12 REPL |
+| Uji bahasa (`jawa tes`) | 12 berkas, 494 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, skop blok, field class, ...) |
+| Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end + 30 formatter + 12 REPL |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 11/11 `ctest` hijau di keempatnya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
 | Dokumentasi | 13 berkas `docs/` + 4 berkas akar |
@@ -319,7 +319,7 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 467/467 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 494/494 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

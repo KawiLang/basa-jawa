@@ -1,0 +1,137 @@
+// Field class: deklarasi, dinamis, dan statis.
+//
+// Dua bug yang sama bentuknya ada di sini. Nama field class disimpan sebagai
+// `std::string_view`, tapi ada jalur yang mengisinya dari `std::string` yang
+// baru dibuat (bukan dari pool konstanta chunk yang memang stabil). View itu
+// menunjuk ke objek sementara yang sudah dihancurkan di akhir statement, jadi
+// pembacaan field berikutnya dibandingkan dengan memori bebas -- hasilnya
+// selalu `mboh`, dan gejalanya jauh dari penyebabnya:
+//
+//     golongan Kucing { wiwit(nama) { iki.nama = nama; } }
+//     ana k = anyar Kucing("Budi");
+//     tulis(k.nama);   // undefined -- padahal penugasannya jelas jalan
+//
+// Field yang punya deklarasi eksplisit (`nama = ""`) tidak terpengaruh, karena
+// namanya memang datang dari pool konstanta chunk. Itu sebabnya bug ini
+// bertahan lama: kelas uji yang sudah ada hampir selalu mendeklarasikan
+// field-nya.
+
+// --- field dinamis: ditambahkan runtime, tanpa deklarasi ---------------------
+golongan Dinamis {}
+{
+    ana d = anyar Dinamis();
+    d.x = 1;
+    d.y = "dua";
+    d.z = [3];
+    pratelas(d.x, 1);
+    pratelas(d.y, "dua");
+    pratelas(d.z, [3]);
+}
+
+// Ditulis ulang: slot yang sama harus diperbarui, bukan menambah slot baru.
+{
+    ana d = anyar Dinamis();
+    d.x = 1;
+    d.x = 9;
+    pratelas(d.x, 9);
+    d.y = "a";
+    d.y = "b";
+    pratelas(d.y, "b");
+}
+
+// Field dinamis dibaca dari dalam method harus sama dengan yang ditulis dari
+// luar -- keduanya mencari di `nama_slot` yang sama.
+{
+    ana d = anyar Dinamis();
+    d.nilai = 42;
+    d.ambil = gawe() { bali iki.nilai; };
+    pratelas(d.ambil(), 42);
+}
+
+// Nama field dinamis yang panjang & non-ASCII, supaya tidak lolos kalau
+// penyalinannyaberdasarkan pointer yang kebetulan kebaca benar.
+{
+    ana d = anyar Dinamis();
+    d.anjing = 1;
+    d.anjing_kecil = 2;
+    pratelas(d.anjing, 1);
+    pratelas(d.anjing_kecil, 2);
+}
+
+// --- field dinamis lewat konstruktor ----------------------------------------
+golongan Kucing {
+    wiwit(nama) {
+        iki.nama = nama;
+    }
+    speak() { bali "Meow " + iki.nama; }
+}
+{
+    ana k = anyar Kucing("Budi");
+    pratelas(k.nama, "Budi");
+    pratelas(k.speak(), "Meow Budi");
+}
+{
+    // Dua instans berbeda tidak boleh saling menimpa field.
+    ana a = anyar Kucing("Satu");
+    ana b = anyar Kucing("Dua");
+    pratelas(a.nama, "Satu");
+    pratelas(b.nama, "Dua");
+}
+
+// --- field dinamis di kelas turunan -----------------------------------------
+golongan Turunan turunan Dinamis {}
+{
+    ana t = anyar Turunan();
+    t.p = "nilai";
+    pratelas(t.p, "nilai");
+}
+
+// Field yang DIDEKLARASIKAN tetap seperti sebelumnya (jalur yang tidak pernah
+// rusak) -- uji ini sebagai pembanding, bukan sekadar jaring pengaman.
+golongan Deklaratif {
+    nama = "";
+    hitung = 0;
+    wiwit(n) { iki.nama = n; }
+}
+{
+    ana k = anyar Deklaratif("Budi");
+    pratelas(k.nama, "Budi");
+    pratelas(k.hitung, 0);
+    k.hitung = 7;
+    pratelas(k.hitung, 7);
+    pratelas(k.nama, "Budi");
+}
+
+// --- field & method statis --------------------------------------------------
+golongan Statis {
+    statis penghitung = 0;
+    statis VERSION = "1.0";
+    statis statis_tambah(a, b) { bali a + b; }
+}
+{
+    pratelas(Statis.penghitung, 0);
+    Statis.penghitung = 5;
+    pratelas(Statis.penghitung, 5);
+    Statis.penghitung = 5;   // tetep sama
+    pratelas(Statis.penghitung, 5);
+    pratelas(Statis.VERSION, "1.0");
+    pratelas(Statis.statis_tambah(2, 3), 5);
+}
+
+// Field statis yang ditambah runtime: `Kelas.nama_baru = <v>` tanpa deklarasi.
+{
+    Statis.baru = "tambahan";
+    pratelas(Statis.baru, "tambahan");
+    Statis.baru = "diubah";
+    pratelas(Statis.baru, "diubah");
+    // Field statis lain tidak tersentuh.
+    pratelas(Statis.penghitung, 5);
+    pratelas(Statis.VERSION, "1.0");
+}
+
+// Field statis dibaca dari instans juga harus jalan.
+{
+    ana s = anyar Statis();
+    Statis.lewat_instans = 3;
+    pratelas(s.lewat_instans, 3);
+}

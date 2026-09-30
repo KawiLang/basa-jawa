@@ -565,7 +565,7 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                                             } else if (ins.b == 1) {
                         // Method/field statis disimpan terpisah dari field instance
                         // supaya `inst.x` tidak salah membaca slot statis.
-                        kls->nama_statis.push_back(nama);
+                        kls->nama_statis.emplace_back(nama);
                         kls->nilai_statis.push_back(fnv);
                     } else if (Obj* p = objek(kls->prototipe); p != nullptr && p->h.kind == OK::Obyek) {
                         static_cast<ObyekObj*>(p)->define(heap_, c->nama_properti[ins.a], fnv, rt::AttrWritable);
@@ -611,7 +611,7 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                         }
                     }
                     if (!ada) {
-                        kls->nama_field.push_back(kunci);
+                        kls->nama_field.emplace_back(kunci);
                         kls->field_statis.push_back(Value::mboh());
                     }
                 }
@@ -644,7 +644,7 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                         }
                     }
                     if (!ada) {
-                        kls->nama_statis.push_back(nama);
+                        kls->nama_statis.emplace_back(nama);
                         kls->nilai_statis.push_back(nilai);
                     }
                 }

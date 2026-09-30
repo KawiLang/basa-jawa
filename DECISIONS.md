@@ -975,3 +975,51 @@ global bernama sama, sama seperti nama yang tidak pernah ada. Tidak
 diperlakukan sebagai galat kompilasi karena bahasa ini sudah memperlakukan
 nama yang tidak dikenal sebagai global yang bernilai kosong, dan mengubah itu
 adalah keputusan tersendiri.
+
+## D-041 — Nama field class dimiliki sendiri (`std::string`), bukan `string_view`
+
+**Status:** diterima
+
+**Latar belakang.** `InstanceObj::nama_slot` dan `ClassObj::nama_statis` awalnya
+`std::vector<std::string_view>`. Ada jalur yang mengisinya dari `std::string`
+yang baru dibuat, bukan dari pool konstanta `Chunk`:
+
+```cpp
+inst->nama_slot.push_back(std::string(nama));   // nama: string_view
+kls->nama_statis.push_back(std::string(nama));  // nama: string_view
+```
+
+`std::string` yang dibuat di sini adalah objek sementara yang musnah di akhir
+statement. `string_view` yang tersimpan menunjuk ke memori itu -- jadi setiap
+pembacaan field berikutnya membandingkan nama dengan isi memori bebas. Gejalanya
+jauh dari penyebabnya:
+
+```jawa
+golongan Kucing { wiwit(nama) { iki.nama = nama; } }
+ana k = anyar Kucing("Budi");
+tulis(k.nama);   // undefined -- padahal penugasannya jelas jalan
+```
+
+Field yang punya deklarasi eksplisit (`nama = ""`) tidak pernah terpengaruh,
+karena namanya memang datang dari pool konstanta chunk yang memang stabil. Itu
+sebabnya bug ini bertahan lama: kelas uji yang sudah hampir selalu mendeklarasikan
+field-nya, dan jalur yang rusak justru jalur yang dipakai kode dunia nyata --
+`iki.x = 1` pada class yang tidak mendeklarasikan field.
+
+**Keputusan.** Keempat container nama yang bisa menerima nama dari luar pool
+konstanta chunk menjadi pemilik string-nya sendiri: `InstanceObj::nama_slot`,
+`ClassObj::nama_statis`, dan `ClassObj::nama_field`. Yang tetap `string_view`
+adalah yang murni debug atau yang jelas berasal dari chunk --
+`FungsiObj::nama_param`, `FungsiObj::upvalue_name`, `KleruObj::jeneng`/`berkas`
+(keduanya di-intern lewat `VM::singsan`).
+
+**Kenapa tidak repairing di sisi penulisan saja.** Bisa saja `set_index_value`
+menyalin nama ke arena yang lebih panjang umur. Tapi itu menyisakan dua jenis
+nama dalam satu container dengan dua umur hidup berbeda, dan pembacaan berikutnya
+tetap harus tahu mana yang mana. Sekali jadi dimiliki sendiri, semua jalur
+penulisan & pembacaan seragam dan tidak ada lagi pertanyaan "apakah view ini
+masih hidup?".
+
+**Catatan dari test.** `tests/tes/kelas.tes.jw` (27 assertion) sengaja
+menguji field dinamis sebagai kasus utama, bukan field yang dideklarasikan --
+kalau urutannya dibalik, uji ini akan lulus bahkan ketika bug-nya masih ada.

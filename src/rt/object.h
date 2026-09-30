@@ -440,10 +440,16 @@ public:
     /// Dijalankan di `NEW` sebelum konstruktor, dari induk ke anak.
     Value inisial_field = Value::mboh();
     std::vector<Value> field_statis;  ///< nilai field instance (indeks sama dgn nama_field)
-    std::vector<std::string_view> nama_field;
+    /// Nama field instance. `std::string`, bukan `std::string_view`: lihat
+    /// catatan panjang di `InstanceObj::nama_slot` -- nama yang ditambahkan
+    /// saat runtime tidak selalu datang dari pool konstanta chunk.
+    std::vector<std::string> nama_field;
     /// Method & field statis (`statis` pada deklarasi class).
     std::vector<Value> nilai_statis;
-    std::vector<std::string_view> nama_statis;
+    /// Sama seperti `nama_field`: pemilik string-nya sendiri. Field statis bisa
+    /// ditambahkan saat runtime lewat `Kelas.x = 1` (lihat `set_index_value`),
+    /// dan nama itu bukan view ke pool konstanta chunk.
+    std::vector<std::string> nama_statis;
     /// Slot privat: objek privat per class (supaya nama sama antar class tidak bentrok).
     Value privat = Value::mboh();
     std::string_view module_asal;
@@ -454,7 +460,14 @@ public:
     static constexpr OK kKind = OK::Instance;
     ClassObj* kelas = nullptr;
     std::vector<Value> slot;   ///< field instance
-    std::vector<std::string_view> nama_slot;
+    /// Nama field instance. **Memiliki string-nya sendiri** (`std::string`,
+    /// bukan `std::string_view`): field yang ditambah saat runtime
+    /// (`iki.x = 1` pada class tanpa deklarasi field) namanya bukan view
+    /// ke pool konstanta chunk, melainkan string yang baru dibuat. Kalau
+    /// disimpan sebagai view, view itu menunjuk ke objek sementara yang sudah
+    /// dihancurkan di akhir statement -- dan pembacaan field berikutnya
+    /// dibandingkan dengan memori bebas, jadi hasilnya selalu `mboh`.
+    std::vector<std::string> nama_slot;
     Value prototipe = Value::mboh();
     Shape* shape = nullptr;
 };

@@ -519,7 +519,9 @@ rt::InstanceObj* VM::instans_baru(rt::ClassObj* kls) {
     inst->kelas = kls;
     inst->prototipe = kls->prototipe;
     inst->slot.assign(kls->nama_field.size(), Value::mboh());
-    inst->nama_slot = kls->nama_field;
+    // `nama_field` menyimpan view ke pool nama chunk (stabil), tapi `nama_slot`
+    // milik instance harus menyalin sendiri: lihat catatan di `InstanceObj`.
+    inst->nama_slot.assign(kls->nama_field.begin(), kls->nama_field.end());
     return inst;
 }
 
