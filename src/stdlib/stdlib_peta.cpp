@@ -320,6 +320,62 @@ Value janji_all(VM& vm, Value /*this*/, std::vector<Value>& args) { return janji
 
 Value janji_race(VM& vm, Value /*this*/, std::vector<Value>& args) { return janji_gabung(vm, args, false); }
 
+/// `Janji.anySelesai([...])`: seperti `all`, tapi TIDAK PERNAH ditolak.
+///
+/// Setiap slot hasilnya dibungkus: `{nilai: ...}` kalau Janjinya selesai, atau
+/// `{galat: ...}` kalau ditolak. Berguna saat beberapa Janji boleh gagal tapi
+/// program tetap mau berjalan setelah semuanya selesai.
+Value janji_semua_selesai(VM& vm, Value /*this*/, std::vector<Value>& args) {
+    JanjiObj* hasil = vm.buat_janji();
+    const Value hasil_v = Value::obyek(hasil);
+    ArrayObj* daftar = nullptr;
+    if (!args.empty()) {
+        if (rt::Obj* o = args[0].is_obyek() ? static_cast<rt::Obj*>(args[0].mutable_pointer()) : nullptr;
+            o != nullptr && o->h.kind == OK::Array) {
+            daftar = static_cast<ArrayObj*>(o);
+        }
+    }
+    const std::size_t n = daftar == nullptr ? 0 : daftar->panjang;
+    ArrayObj* kumpulan = kosong(vm, n);
+    std::size_t belum = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        JanjiObj* j = janji_dari_peta(daftar->elemen[i]);
+        if (j == nullptr) {
+            ObyekObj* bungkus = vm.buat_obyek();
+            bungkus->define(vm.heap(), Value::obyek(rt::buat_teks(vm.heap(), "nilai")),
+                            daftar->elemen[i], rt::AttrDefault);
+            kumpulan->elemen[i] = Value::obyek(bungkus);
+            continue;
+        }
+        if (j->status == rt::JanjiStatus::Menunggu) {
+            ++belum;
+            continue;
+        }
+        const bool ditolak = j->status == rt::JanjiStatus::Gagal;
+        ObyekObj* bungkus = vm.buat_obyek();
+        bungkus->define(vm.heap(), Value::obyek(rt::buat_teks(vm.heap(), ditolak ? "galat" : "nilai")),
+                        j->hasil, rt::AttrDefault);
+        kumpulan->elemen[i] = Value::obyek(bungkus);
+    }
+    if (belum == 0) {
+        vm.selesaikan_janji(hasil, Value::obyek(kumpulan), false);
+        return hasil_v;
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        JanjiObj* j = janji_dari_peta(daftar->elemen[i]);
+        if (j == nullptr || j->status != rt::JanjiStatus::Menunggu) continue;
+        JanjiObj::Then th;
+        th.kumpulan_tujuan = hasil;
+        th.kumpulan = kumpulan;
+        th.nama_indeks = i;
+        th.sisa_kumpul = belum;
+        th.kumpul_semua = true;
+        th.kumpulan_tolak_ditahan = true;
+        j->then_daftar.push_back(th);
+    }
+    return hasil_v;
+}
+
 /// `Janji.selesai(v)` -- Janji yang langsung selesai. Berguna untuk menulis
 /// fungsi `mengko` tanpa `enteni` di dalamnya.
 Value janji_selesai(VM& vm, Value /*this*/, std::vector<Value>& args) {
@@ -370,6 +426,7 @@ void pasang_peta(VM& vm) {
     ObyekObj* janji = buat_namespace(vm, "Janji");
     pasang_objek_metode(vm, janji, "all", 1, janji_all);
     pasang_objek_metode(vm, janji, "race", 1, janji_race);
+    pasang_objek_metode(vm, janji, "anySelesai", 1, janji_semua_selesai);
     pasang_objek_metode(vm, janji, "selesai", 1, janji_selesai);
     pasang_objek_metode(vm, janji, "tolak", 1, janji_tolak);
     daftarkan_nilai(vm, "Janji", Value::obyek(janji));

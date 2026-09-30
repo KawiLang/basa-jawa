@@ -19,7 +19,7 @@ lokal, pustaka standar lengkap, dan tooling (REPL, `fmt`, `bench`).
 | Kata kunci (baris tabel) | 52 (72 ejaan ngoko+krama) |
 | Pesan diagnostik | 90 berkode + pesan galat runtime |
 | Uji unit | 3 berkas, 152 cek, 81 test |
-| Uji bahasa (`jawa tes`) | 9 berkas, 397 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, ...) |
+| Uji bahasa (`jawa tes`) | 10 berkas, 438 assertion (regex, `Tanggal`, live binding modul, field kelas, pengikatan per-iterasi, `coba`/`tangkep`, `pilih`, `cocog`, ...) |
 | Uji emas | 15 contoh keluaran persis (12 acuan + 3 modul) + 11 front-end |
 | Build | Release, ASan, UBSan, dan mode nilai 16-byte — 8/8 `ctest` hijau di ketiganya; preset `fuzz` — 6/6 `ctest` hijau |
 | Campaign fuzz terakhir | 330.000 kasus `fuzz_regex` (11 benih) + 3.000 kasus x 6 target lewat `fuzz_jalankan.py` — 0 crash |
@@ -141,14 +141,58 @@ Yang **hanya ada sebagian**, dan sebaiknya dibaca sebagai batasan nyata:
   ada daylight saving, tidak ada kalender selain Gregorian (Rejrah/Saka dan
   Hijriah tidak ada).
 
-Sudah ditambahkan pada tahap 6: `Peta` (11 method), `Himpunan` (7 method), dan
-`Janji.all`/`race`/`selesai`/`tolak`.
+Sudah ditambahkan pada tahap 6-7: `Peta` (11 method, termasuk iterasi `kanggo ... saka`
+yang menghasilkan pasangan), `Himpunan` (7 method, iterable), dan
+`Janji.all`/`race`/`selesai`/`tolak`/`anySelesai`.
 
-Belum: berkas, proses, I/O async, `Janji.anySelesai`/`bungkus`, dan format
-tanggal bebas selain ISO-8601.
+Belum: berkas, proses, I/O async, `Janji.bungkus`, dan format tanggal bebas
+selain ISO-8601.
 Lihat `docs/stdlib.md`, `docs/regex.md`, `docs/tanggal.md`, `docs/async.md`.
 
-### 4. Bagian lain yang belum
+### 4. Lima bug yang ditemukan lewat uji tahap 7 (SEMUA sudah diperbaiki)
+
+Tahap 7 menambah `tests/tes/upvalue.tes.jw`. Semuanya **bug stack**, bukan bug
+nilai: program sering tetap "jalan", hanya dengan hasil yang salah atau berhenti
+lebih awal. Uji lama tidak menangkapnya karena semua yang terpengaruh berada
+di dalam badan fungsi atau loop bersarang -- dua bentuk yang belum pernah diuji.
+
+1. **`emit_tulis_nama_statement` tidak konsisten antar opcode.** `SET_LOCAL`
+   consuming (`v - >`), tapi `SET_CELL`, `SET_UPVAL`, dan `SET_GLOBAL`
+   menyisakan nilainya (`v - > v`). `POP` ditambahkan hanya untuk `SET_GLOBAL`,
+   jadi jalur upvalue/sel menumpuk satu nilai per penugasan.
+2. **`DUP` ganda di jalur upvalue/global.** Penugasan adalah ekspresi
+   (`x = 1` bernilai 1), jadi pemanggil menambahkan `DUP`. Padahal `SET_UPVAL`
+   sudah menyisakan nilai -- hasilnya satu nilai lebih per penugasan. Sekarang
+   `emit_tulis_nama` dijamin efek bersih `v - -` untuk semua jalur.
+3. **Jalur keluar `kanggo ... saka` kurang satu `POP`.** `ITER_NEXT` mendorong
+   hasil DAN flag; `JUMP_IF_FALSE` hanya mengintip. Jadi ada 4 nilai di stack
+   (flag, hasil, indeks, iterable) dan hanya 3 yang dibuang. Sisanya menutupi
+   nilai `ITER_NEXT` milik loop **luar**, jadi loop bersarang hanya menghasilkan
+   separuh iterasi: `kanggo (a saka [1,2]) { kanggo (b saka [1,2]) { ... } }`
+   memberi 2 baris, bukan 4.
+4. **`mandheg`/`terusna` melewati `POP` kondisi `yen`/`nalika`.** Kedua statement
+   itu menaruh satu `POP` di akhir yang dipakai kedua jalur, jadi nilai kondisi
+   tetap di stack sepanjang badan. `mandheg` melompatinya, dan `POP` di jalur
+   keluar loop memakan nilai yang salah.
+5. **`coba_arrow` memakan `{` dua kali.** `makan(Tok::LBrace)` sudah mengonsumsi
+   `{`, lalu `parse_blok()` memanggil `aspek_ke_close(Tok::LBrace)` yang juga
+   mengonsumsi. Akibatnya statement pertama di badan arrow selalu gagal:
+   `(v) => { kanggo (...) { ... } }` menghasilkan `Ngarep-arep "{" nanging nemu
+   "kanggo"`. Arrow dengan badan blok praktis tidak bisa dipakai.
+
+Tiga bug kecil lain ikut tertutup:
+
+- **`kasus _:` pada `pilih`** dibaca sebagai perbandingan dengan variabel `_`,
+  bukan wildcard, jadi `pilih` diam-diam tidak menjalankan body apa pun.
+- **`Peta`/`Himpunan` tidak bisa diiterasi** dengan `kanggo ... saka`
+  (`ITER_NEXT` tidak punya cabangnya), dan entri yang sudah dihapus membuat
+  iterasi berhenti di tengah, bukan dilewati.
+- **Janji turunan `.then` bisa tersapu GC.** `Then::asli` tidak di-root setelah
+  `then_daftar` dikosongkan, dan `panggil` di dalam `jalankan_mikrotugas` bisa
+  memicu koleksi. (ASan: heap-use-after-free; hanya muncul di bawah
+  `--gc-stress`.)
+
+### 5. Bagian lain yang belum
 
 - **`cocog` bertipe SELESAI (tahap 5).** `kasus n: Tipe => ...` sekarang benar
   diuji: nama builtin (`teks`, `angka`, `dhaptar`, `peta`, ...) lewat opcode
@@ -267,7 +311,7 @@ aman dengan paralel penuh.
 
 Hasil terakhir yang tercatat: **8/8 `ctest` hijau di Release, ASan, UBSan, dan
 mode nilai 16-byte**; 15/15 contoh emas cocok termasuk mode `--gc-stress`; 11/11
-contoh acuan ter-parse bersih; 397/397 assertion `jawa tes` lulus.
+contoh acuan ter-parse bersih; 438/438 assertion `jawa tes` lulus.
 
 ## Pelajaran rekayasa
 

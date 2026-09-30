@@ -96,6 +96,16 @@ saja; kunci tekstual dan numerik **tidak** tertukar (`peta[1]` bukan `peta["1"]`
 Pembacaan langsung juga jalan: `peta["a"]` sama dengan `peta.get("a")`, dan
 `peta["a"] = 1` sama dengan `peta.set("a", 1)`.
 
+Keduanya bisa diiterasi dengan `kanggo ... saka` (dan `kanggo ... saben`/spread):
+
+```jawa
+kanggo (pasangan saka peta) tulis(pasangan[0], " = ", pasangan[1]);
+// ["a", 1]
+
+kanggo (x saka himpunan) tulis(x);
+// 1, 2, 3
+```
+
 ## `Janji` (method statis)
 
 | Fungsi | Hasil |
@@ -104,6 +114,7 @@ Pembacaan langsung juga jalan: `peta["a"]` sama dengan `peta.get("a")`, dan
 | `Janji.race([...])` | Janji yang selesai pada Janji **pertama** yang selesai. |
 | `Janji.selesai(v)` | Janji yang sudah selesai dengan nilai `v` — berguna untuk menulis fungsi `mengko` tanpa `enteni`. |
 | `Janji.tolak(e)` | Janji yang sudah ditolak. |
+| `Janji.anySelesai([...])` | Seperti `all`, tapi **tidak pernah ditolak**. Tiap slot dibungkus: `{nilai: ...}` atau `{galat: ...}`. |
 
 Nilai biasa (bukan Janji) di dalam iterable diperlakukan sebagai Janji yang
 sudah selesai, sama seperti ECMAScript. Iterable kosong: `all` langsung selesai
@@ -261,8 +272,8 @@ Sebutkan eksplisit agar tidak disalahpahami sebagai "hilang":
   mode `n`, dan pencocokan berbasis titik kode (`u` belum berarti apa-apa --
   mesinnya byte-oriented).
 - Akses berkas, proses, jaringan. Semua I/O masih blocking dan sinkron.
-- Janji: `Janji.anySelesai` & `Janji.bungkus` (yang `all`/`race`/`selesai`/
-  `tolak` sudah ada).
+- Janji: `Janji.bungkus` (yang `all`/`race`/`selesai`/`tolak`/`anySelesai`
+  sudah ada).
 - Jam nyata: `Wektu.tundha` hanya mengurutkan, tidak menunggu.
 - `Intl`, `Buffer`.
 - Inspector, `Proxy`, `Reflect`.

@@ -89,13 +89,26 @@ void VM::selesaikan_janji(rt::JanjiObj* j, Value nilai, bool ditolak) {
         if (th.kumpulan_tujuan != nullptr) {
             // Entri penggumpalan (`Janji.all`/`Janji.race`), bukan handler.
             if (th.kumpul_semua) {
-                if (ditolak) {
+                if (ditolak && !th.kumpulan_tolak_ditahan) {
                     // Satu penolakan sudah cukup: Janji gabungan langsung ditolak.
                     selesaikan_janji(th.kumpulan_tujuan, nilai, true);
                     continue;
                 }
                 if (th.kumpulan != nullptr && th.nama_indeks < th.kumpulan->panjang) {
-                    th.kumpulan->elemen[th.nama_indeks] = nilai;
+                    if (th.kumpulan_tolak_ditahan) {
+                        // `anySelesai`: SETIAP slot dibungkus -- yang ditolak
+                        // jadi data (`{galat: ...}`), bukan kegagalan. Jalur
+                        // sinkron di `janji_semua_selesai` melakukan pembungkusan
+                        // yang sama; kalau hanya salah satu yang membungkus,
+                        // bentuk hasilnya berbeda tergantung apakah Janjinya
+                        // sudah selesai saat pendaftaran atau belum.
+                        ObyekObj* bungkus = buat_obyek();
+                        bungkus->define(heap_, Value::obyek(buat_teks(ditolak ? "galat" : "nilai")),
+                                        nilai, rt::AttrDefault);
+                        th.kumpulan->elemen[th.nama_indeks] = Value::obyek(bungkus);
+                    } else {
+                        th.kumpulan->elemen[th.nama_indeks] = nilai;
+                    }
                 }
                 if (j->then_daftar[i].sisa_kumpul > 0) --j->then_daftar[i].sisa_kumpul;
                 if (j->then_daftar[i].sisa_kumpul == 0) {
@@ -259,7 +272,15 @@ bool VM::jalankan_mikrotugas() {
         }
         if (!t.fungsi.is_obyek()) continue;
         std::vector<Value> args{t.nilai};
+        // Janji turunan (`Then::asli`) harus tetap hidup selama handler berjalan.
+        // Setelah `selesaikan_janji` mengosongkan `then_daftar` milik Janji
+        // asal, tidak ada lagi yang meng-root-nya -- sedangkan `panggil` bisa
+        // memicu GC. Tanpa akar di sini Janji turunannya tersapu di tengah
+        // pemanggilan, dan pembacaan `t.turunan` di bawah memakai memori bebas
+        // (ASan: heap-use-after-free di `jalankan_mikrotugas`).
+        heap_.akar_scope_push(t.turunan);
         const Value hasil = panggil(t.fungsi, rt::Value::mboh(), args);
+        heap_.akar_scope_pop();
         if (galat_.ada) return false;
         if (t.turunan.is_obyek()) {
             if (auto* tur = static_cast<rt::JanjiObj*>(t.turunan.mutable_pointer());

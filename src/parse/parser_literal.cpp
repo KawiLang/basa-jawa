@@ -114,7 +114,7 @@ NodePtr Parser::parse_primary() {
                 fn->param.push_back(par);
                 idx_ += 2;
                 lewati_asi();
-                if (makan(Tok::LBrace)) {
+                if (cek(Tok::LBrace)) {
                     fn->awak = parse_blok();
                 } else {
                     fn->ekspresi_badan = true;

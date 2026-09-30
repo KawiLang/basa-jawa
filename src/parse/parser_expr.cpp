@@ -90,7 +90,7 @@ bool Parser::coba_arrow(NodePtr& keluar) {
     }
     lewati_asi();
     // badan
-    if (makan(Tok::LBrace)) {
+    if (cek(Tok::LBrace)) {
         fn->awak = parse_blok();
     } else {
         fn->ekspresi_badan = true;
@@ -149,7 +149,7 @@ NodePtr Parser::parse_assignment() {
             par->nama = saat().teks;
             fn->param.push_back(par);
             idx_ += 2;
-            if (makan(Tok::LBrace)) {
+            if (cek(Tok::LBrace)) {
                 fn->awak = parse_blok();
             } else {
                 fn->ekspresi_badan = true;
@@ -176,7 +176,7 @@ NodePtr Parser::parse_assignment() {
                 par->nama = saat().teks;
                 fn->param.push_back(par);
                 idx_ += 2;
-                if (makan(Tok::LBrace)) {
+                if (cek(Tok::LBrace)) {
                     fn->awak = parse_blok();
                 } else {
                     fn->ekspresi_badan = true;
@@ -204,7 +204,7 @@ NodePtr Parser::parse_assignment() {
         fn->param.push_back(par);
         idx_ += 2;
         lewati_asi();
-        if (makan(Tok::LBrace)) {
+        if (cek(Tok::LBrace)) {
             fn->awak = parse_blok();
         } else {
             fn->ekspresi_badan = true;

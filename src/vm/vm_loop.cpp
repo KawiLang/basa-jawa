@@ -689,6 +689,10 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                 Obj* o = objek(iter);
                 bool ada = false;
                 Value hasil = Value::mboh();
+                // Indeks untuk langkah `ITER_NEXT` berikutnya. opened
+                // `Peta`/`Himpunan` mengaturnya sendiri karena melompati entri
+                // yang sudah dihapus.
+                std::size_t langkah_baru = static_cast<std::size_t>(idx.as_number()) + 1;
                 if (o != nullptr && o->h.kind == OK::Generator) {
                     // Generator: satu langkah = satu `metokake`. Indeks di stack
                     // tidak dipakai; kontinuasi yang menentukan posisi. Ini yang
@@ -723,6 +727,38 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                         hasil = Value::obyek(rt::buat_teks(heap_, rt::potong_code_point(s, i, i + 1)));
                         ada = true;
                     }
+                } else if (o != nullptr && o->h.kind == OK::Peta) {
+                    // `for (pasangan saka peta)` menghasilkan pasangan
+                    // [kunci, nilai], seperti `for..of` atas `Map` di JS.
+                    //
+                    // Entri yang dihapus DISKIP ke depan, bukan dihentikan: kalau
+                    // hanya diperiksa satu entri per langkah, satu `hapus` di
+                    // tengah dhaptar membuat iterasi berhenti di situ -- sisa
+                    // entri tidak pernah dilihat.
+                    auto* p = static_cast<rt::PetaObj*>(o);
+                    std::size_t i = static_cast<std::size_t>(idx.as_number());
+                    while (i < p->entri.size() && p->entri[i].dihapus) ++i;
+                    if (i < p->entri.size()) {
+                        // Indeks lanjut dari entri yang DIKEMBERIKAN, bukan dari
+                        // `idx` -- kalau tidak, entri hidup kedua Yield dua kali.
+                        langkah_baru = i + 1;
+                        ArrayObj* pasangan = buat_dhaptar(2);
+                        pasangan->panjang = 2;
+                        pasangan->elemen[0] = p->entri[i].kunci;
+                        pasangan->elemen[1] = p->entri[i].nilai;
+                        hasil = Value::obyek(pasangan);
+                        ada = true;
+                    }
+                } else if (o != nullptr && o->h.kind == OK::Himpunan) {
+                    // `for (x saka himpunan)` menghasilkan para anggotanya.
+                    auto* h = static_cast<rt::HimpunanObj*>(o);
+                    std::size_t i = static_cast<std::size_t>(idx.as_number());
+                    while (i < h->isi.entri.size() && h->isi.entri[i].dihapus) ++i;
+                    if (i < h->isi.entri.size()) {
+                        langkah_baru = i + 1;
+                        hasil = h->isi.entri[i].kunci;
+                        ada = true;
+                    }
                 } else if (o != nullptr) {
                     const Value daftar =
                         ambil_properti(o, rt::Value::obyek(rt::buat_teks(heap_, "nilai")));
@@ -743,7 +779,7 @@ Status VM::jalankan_loop(const std::size_t kedalaman_awal) {
                     }
                 }
                 if (ada) {
-                    stack_[stack_.size() - 1] = Value::angka_int32(static_cast<std::int32_t>(idx.as_number() + 1));
+                    stack_[stack_.size() - 1] = Value::angka_int32(static_cast<std::int32_t>(langkah_baru));
                 }
                 dorong(hasil);
                 dorong(Value::boolean(ada));

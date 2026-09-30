@@ -111,6 +111,13 @@ Dua hal yang mudah salah dan sudah dikomentari di `Compiler::stmt_pilih`:
 
 ## 2. `coba` / `tangkep` / `pungkasan`
 
+### Wildcard pada `pilih`
+
+`kasus _:` adalah wildcard: cocok dengan nilai apa pun dan **menghentikan**
+pencarian, tepat seperti `baku` di ECMAScript. Klausula setelahnya tidak
+dijalankan. (Perhatikan: `cocog` juga memakai `_` sebagai wildcard, tapi di
+sana `_` adalah klausul terakhir karena tidak ada `baku` terpisah.)
+
 ### Klausula `tangkep` bertipe
 
 Satu `coba` boleh punya banyak klausula `tangkep`, masing-masing memilih

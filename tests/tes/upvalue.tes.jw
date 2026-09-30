@@ -1,0 +1,326 @@
+// Penugasan ke nama yang BUKAN lokal di dalam badan fungsi.
+//
+// BUG LAMA: `emit_tulis_nama_statement` menambah `POP` hanya untuk `SET_GLOBAL`,
+// padahal `SET_UPVAL` dan `SET_CELL` juga menyisakan nilainya di stack
+// (`v - > v`). Satu nilai tambahan tertinggal di setiap statement penugasan.
+//
+// Gejalanya bukan "nilai salah", tapi stack yang perlahan rusak. Yang paling
+// jelas: loop yang menugaskan ke variabel luar. `kanggo (a saka [1,2,3]) { x = a; }`
+// di dalam badan fungsi hanya mengiterasi SATU kali -- nilai iterasi pertama
+// menimpa slot yang dibaca `ITER_NEXT`, jadi loop langsung berhenti. Di luar
+// fungsi (jalur `SET_GLOBAL`) loop-nya benar, sehingga bug ini tidak pernah
+// terlihat oleh uji lama.
+//
+// BUG kedua (parser): `coba_arrow` memakai `makan(Tok::LBrace)` yang sudah
+// MEMAKAN `{`, lalu memanggil `parse_blok()` yang memanggil
+// `aspek_ke_close(Tok::LBrace)` -- yang juga memakan. Akibatnya `{`-nya dimakan
+// dua kali dan statement pertama di badan arrow selalu gagal: `(v) => { kanggo
+// (...) { ... } }` menghasilkan "Ngarep-arep "{" nanging nemu "kanggo"".
+
+// --- penugasan ke upvalue dari loop -----------------------------------------
+ana kumpulan = "";
+gawe kumpulkan_semua() {
+    kanggo (a saka [1, 2, 3]) { kumpulan = kumpulan + Teks(a); }
+}
+kumpulkan_semua();
+pratelas(kumpulan, "123");
+
+// Loop klasik ke upvalue (bukan hanya `saka`).
+ana jumlah = 0;
+gawe tambah_semua() {
+    kanggo (ana i = 0; i < 4; i = i + 1) { jumlah = jumlah + i; }
+}
+tambah_semua();
+pratelas(jumlah, 6);
+
+// Penugasan ke upvalue di luar loop. Kalau ada `POP` berlebih atau kurang,
+// statement berikutnya membaca nilai yang salah -- bukan langsung error.
+ana kata = "";
+ana penghitung = 0;
+gawe campur() {
+    kata = "awal";
+    kata = kata + "-ichi";
+    penghitung = 1;
+    penghitung = penghitung + 1;
+    penghitung = penghitung + 1;
+}
+campur();
+pratelas(kata, "awal-ichi");
+pratelas(penghitung, 3);
+
+// Nilai upvalue yang ditulis harus terlihat di luar, termasuk setelah loop.
+ana penanda = 0;
+gawe tandai() {
+    kanggo (a saka [7, 8]) { penanda = a; }
+}
+tandai();
+pratelas(penanda, 8);
+
+// Loop bersarang: dua tingkat penugasan ke upvalue di dalam loop.
+//
+// BUG KETIGA: jalur keluar `kanggo ... saka` membuang hanya 3 dari 4 nilai di
+// stack. `ITER_NEXT` mendorong hasil DAN flag, dan `JUMP_IF_FALSE` hanya
+// mengintip -- jadi ada 4 nilai (flag, hasil, indeks, iterable) dan hanya 3
+// yang dibuang. Sisa `iterable` menutupi nilai `ITER_NEXT` milik loop LUAR,
+// sehingga loop luar berhenti setelah satu iterasi. Tidak terlihat di module
+// atau fungsi terluar karena frame langsung `RETURN_UNDEF`, tapi
+// `kanggo (a saka [1,2]) { kanggo (b saka [1,2]) { ... } }` hanya menghasilkan
+// 2 baris, bukan 4.
+ana matriks = "";
+gawe isi_matriks() {
+    kanggo (baris saka [1, 2]) {
+        kanggo (kolom saka [1, 2]) {
+            matriks = matriks + Teks(baris) + Teks(kolom) + " ";
+        }
+    }
+}
+isi_matriks();
+pratelas(matriks, "11 12 21 22 ");
+
+// Loop bersarang tanpa upvalue: memverifikasi perbaikan yang sama.
+ana pasangan_daftar = [];
+gawe semua_pasangan() {
+    kanggo (a saka [1, 2]) {
+        kanggo (b saka [1, 2]) {
+            pasangan_daftar.tambah(a * 10 + b);
+        }
+    }
+}
+semua_pasangan();
+pratelas(pasangan_daftar, [11, 12, 21, 22]);
+
+// Tiga tingkat: sisa iterable harus benar-benar hilang di setiap keluar loop.
+ana tega = "";
+gawe tiga_tingkat() {
+    kanggo (a saka [1, 2]) {
+        kanggo (b saka [1, 2]) {
+            kanggo (c saka [1, 2]) {
+                tega = tega + Teks(a) + Teks(b) + Teks(c) + " ";
+            }
+        }
+    }
+}
+tiga_tingkat();
+pratelas(tega, "111 112 121 122 211 212 221 222 ");
+
+// `mandheg` pada loop dalam harus keluar HANYA dari loop dalam.
+ana berhenti_tegas = [];
+gawe berhenti_dalam() {
+    kanggo (a saka [1, 2, 3]) {
+        kanggo (b saka [1, 2, 3]) {
+            yen (b == 2) { mandheg; }
+            berhenti_tegas.tambah(a * 10 + b);
+        }
+        yen (a == 2) { mandheg; }
+    }
+}
+berhenti_dalam();
+pratelas(berhenti_tegas, [11, 21]);
+
+// Loop dalam yang selesai normal, lalu loop luar jalan lagi.
+ana hitung = 0;
+gawe lanjut_setelah() {
+    kanggo (a saka [1, 2, 3]) {
+        kanggo (b saka [1, 2]) { hitung = hitung + 1; }
+        hitung = hitung + 10;
+    }
+}
+lanjut_setelah();
+pratelas(hitung, 36);
+
+// Statement SETELAH loop bersarang: kalau ada sisa di stack, statement ini
+// membaca nilai yang salah.
+ana penanda2 = 0;
+gawe setelah_nested() {
+    kanggo (a saka [1, 2]) { kanggo (b saka [1, 2]) { } }
+    penanda2 = 42;
+}
+setelah_nested();
+pratelas(penanda2, 42);
+
+// --- badan arrow dengan statement ------------------------------------------
+gawe panggil(f) { f([1, 2, 3]); }
+panggil((v) => {
+    kanggo (a saka v) {
+        yen (a > 1) { tulis("besar ", a); }
+        yen (liya) { tulis("kecil ", a); }
+    }
+});
+
+ana kumpulkan_ke_atas = "";
+panggil((v) => {
+    kanggo (a saka v) { kumpulkan_ke_atas = kumpulkan_ke_atas + Teks(a); }
+});
+pratelas(kumpulkan_ke_atas, "123");
+
+// Statement biasa sebagai statement pertama & kedua di badan arrow.
+panggil((v) => {
+    ana jumlah_kecil = 0;
+    kanggo (a saka v) { yen (a < 3) { jumlah_kecil = jumlah_kecil + a; } }
+    tulis("kecil total ", jumlah_kecil);
+});
+
+// Arrow dengan satu parameter tanpa kurung, badan blok.
+panggil(v => { tulis("panjang ", v.panjang); });
+
+// `mandheg` di dalam badan arrow: lompatan harus keluar dari loop, bukan dari
+// badan fungsi.
+panggil((v) => {
+    kanggo (a saka v) {
+        yen (a == 2) { mandheg; }
+        tulis("nilai ", a);
+    }
+});
+
+// Arrow dengan `coba`/`tangkep` sebagai statement pertama.
+panggil((v) => {
+    coba { nalika (salah) { lempar "ora"; } } tangkep (e) { tulis("tertangkap"); }
+});
+
+// Arrow tanpa blok (ekspresi tunggal) tetap jalan.
+panggil((v) => { tulis("jumlah ", v.dawa); });
+
+// --- `mandheg`/`terusna` di dalam `yen` ---------------------------------------
+// BUG KELIMA: `yen` menaruh SATU `POP` di akhir yang dipakai kedua jalur, jadi
+// nilai kondisinya tetap di stack sepanjang badan. `mandheg` melompati `POP`
+// itu, dan `POP` pada jalur keluar loop lalu memakan nilai yang salah -- satu
+// nilai kondisi tertinggal untuk statement berikutnya.
+ana k_atas = [];
+ana sesudah = 0;
+gawe mandheg_dalam_yen() {
+    kanggo (ana i = 0; i < 4; i = i + 1) {
+        yen (i == 1) { mandheg; }
+        k_atas.tambah(i);
+    }
+    // Statement setelah loop: nilai kondisi yang tertinggal akan merusak
+    // penugasan di sini kalau bug masih ada.
+    sesudah = 1;
+}
+mandheg_dalam_yen();
+pratelas(k_atas, [0]);
+pratelas(sesudah, 1);
+
+// `terusna` di dalam `yen`: melompat ke uji kondisi tanpa sisa kondisi.
+ana l_atas = [];
+gawe terusna_dalam_yen() {
+    kanggo (ana i = 0; i < 4; i = i + 1) {
+        yen (i == 1) { terusna; }
+        l_atas.tambah(i);
+    }
+    l_atas.tambah(99);
+}
+terusna_dalam_yen();
+pratelas(l_atas, [0, 2, 3, 99]);
+
+// `nalika` punya bentuk yang sama: satu `POP` bersama di akhir.
+ana m_atas = [];
+ana penghitung = 0;
+gawe mandheg_dalam_nalika() {
+    nalika (penghitung < 4) {
+        yen (penghitung == 1) { mandheg; }
+        m_atas.tambah(penghitung);
+        penghitung = penghitung + 1;
+    }
+    sesudah = 2;
+}
+mandheg_dalam_nalika();
+pratelas(m_atas, [0]);
+pratelas(sesudah, 2);
+
+// `yen` bersarang: dua kondisi tertunda sekaligus, `mandheg` harus membuang
+// keduanya.
+ana dalam = [];
+gawe mandheg_nested_yen() {
+    kanggo (ana i = 0; i < 4; i = i + 1) {
+        yen (i > 0) {
+            yen (i == 2) { mandheg; }
+            dalam.tambah(i);
+        }
+    }
+}
+mandheg_nested_yen();
+pratelas(dalam, [1]);
+
+// Loop `saka` juga harus terkena perbaikan yang sama.
+ana s_atas = [];
+gawe mandheg_saka_yen() {
+    kanggo (a saka [1, 2, 3, 4]) {
+        yen (a == 2) { mandheg; }
+        s_atas.tambah(a);
+    }
+    s_atas.tambah(99);
+}
+mandheg_saka_yen();
+pratelas(s_atas, [1, 99]);
+
+// `mandheg` di dalam loop TIDAK di dalam `yen` tidak boleh membuang nilai
+// EXTRA: kalau implementasinya berlebihan, nilai yang harusnya tetap di stack
+// ikut hilang dan statement setelah loop salah.
+ana tanpa_yen = [];
+gawe mandheg_tanpa_yen() {
+    kanggo (a saka [1, 2, 3, 4]) {
+        tanpa_yen.tambah(a);
+        yen (a == 3) { mandheg; }
+    }
+    tanpa_yen.tambah(99);
+}
+mandheg_tanpa_yen();
+pratelas(tanpa_yen, [1, 2, 3, 99]);
+
+// `pilih` di dalam loop: `mandheg`/`terusna` harus menembus `pilih`, dan
+// wildcard `kasus _:` harus cocok dengan apa pun.
+//
+// BUG KETIMA (parser): `kasus _:` dibaca sebagai perbandingan dengan variabel
+// `_` (yang biasanya `mboh`), bukan sebagai wildcard. Akibatnya `pilih` diam-
+// diam tidak menjalankan body apa pun dan tidak memberi galat.
+ana pilih_atas = [];
+gawe mandheg_dalam_pilih() {
+    kanggo (ana i = 0; i < 4; i = i + 1) {
+        pilih (i) {
+            kasus 1: mandheg;
+            kasus _: pilih_atas.tambah(i);
+        }
+    }
+    pilih_atas.tambah(99);
+}
+mandheg_dalam_pilih();
+pratelas(pilih_atas, [0, 99]);
+
+gawe terusna_dalam_pilih() {
+    kanggo (ana i = 0; i < 4; i = i + 1) {
+        pilih (i) {
+            kasus 1: terusna;
+            kasus _: pilih_atas.tambah(i);
+        }
+    }
+}
+pilih_atas = [];
+terusna_dalam_pilih();
+pratelas(pilih_atas, [0, 2, 3]);
+
+// Wildcard tanpa loop: harus mencocokkan nilai apa pun.
+ana label = "";
+pilih ("apa saja") {
+    kasus 1: label = "satu";
+    kasus _: label = "wildcard";
+}
+pratelas(label, "wildcard");
+
+// Wildcard di tengah daftar behaves seperti `baku` di ECMAScript: begitu
+// cocok, pencarian BERHENTI -- kasus setelahnya tidak dijalankan.
+ana urutan_kasus = [];
+pilih (99) {
+    kasus 1: urutan_kasus.tambah("satu");
+    kasus _: urutan_kasus.tambah("wildcard");
+    kasus 99: urutan_kasus.tambah("sembilan puluh sembilan");
+}
+pratelas(urutan_kasus, ["wildcard"]);
+
+// Kasus setelah wildcard tidak pernah berjalan -- sama seperti `baku` di
+// tengah. Ini perilaku yang diharapkan, jadi diuji eksplisit supaya tidak
+// berubah diam-diam.
+pilih (99) {
+    kasus _: urutan_kasus.tambah("wildcard-lagi");
+    kasus 99: urutan_kasus.tambah("tidak akan jalan");
+}
+pratelas(urutan_kasus, ["wildcard", "wildcard-lagi"]);

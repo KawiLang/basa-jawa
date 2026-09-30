@@ -135,6 +135,9 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
                 emit(Op::JUMP, 0);
                 return;
             }
+            // Buang nilai kondisi `yen`/`nalika` yang masih tertunda; `POP`
+            // di akhir statement itu dilewati oleh lompatan ini.
+            for (std::size_t i = 0; i < fn().loop.back().kondisi_tertunda; ++i) emit(Op::POP);
             fn().loop.back().patch_mandheg.push_back(emit(Op::JUMP, 0));
             return;
         }
@@ -145,6 +148,7 @@ void Compiler::statement(const ast::Node* n, bool sudah_hoist) {
                 emit(Op::JUMP, 0);
                 return;
             }
+            for (std::size_t i = 0; i < fn().loop.back().kondisi_tertunda; ++i) emit(Op::POP);
             fn().loop.back().patch_terusna.push_back(emit(Op::JUMP, 0));
             return;
         }
@@ -187,10 +191,14 @@ void Compiler::stmt_yen(const ast::YenStmt* n) {
     // lagi karena jalur salah mendarat di instruksi yang sama.
     ekspresi(n->kondisi);
     const std::size_t lompat_lanjut = emit(Op::JUMP_IF_FALSE, 0);
+    // Nilai kondisi tetap di stack sampai `POP` di akhir statement ini, jadi
+    // `mandheg`/`terusna` di dalam badan harus ikut mengetahuinya.
+    for (FungsiKonteks::Loop& l : fn().loop) ++l.kondisi_tertunda;
     stmt_awak(n->lalu);
     const std::size_t lompat_akhir = emit(Op::JUMP, 0);
     patch(lompat_lanjut, fn().chunk->ukuran_kode());
     if (n->ada_liyane) statement(n->liyane);
+    for (FungsiKonteks::Loop& l : fn().loop) --l.kondisi_tertunda;
     patch(lompat_akhir, fn().chunk->ukuran_kode());
     emit(Op::POP);
 }
@@ -204,8 +212,11 @@ void Compiler::stmt_nalika(const ast::NalikaStmt* n) {
     // Target `terusna` = awal body (setelah uji kondisi).
     FungsiKonteks::Loop loop;
     loop.terusna_tujuan = fn().chunk->ukuran_kode();
+    loop.kondisi_tertunda = 1;  // nilai kondisi menunggu `POP` di akhir
     fn().loop.push_back(std::move(loop));
+    for (std::size_t i = 0; i + 1 < fn().loop.size(); ++i) ++fn().loop[i].kondisi_tertunda;
     stmt_awak(n->awak);
+    for (std::size_t i = 0; i + 1 < fn().loop.size(); ++i) --fn().loop[i].kondisi_tertunda;
     const FungsiKonteks::Loop Loop = fn().loop.back();
     fn().loop.pop_back();
     emit(Op::JUMP, static_cast<std::uint16_t>(mulai));
@@ -400,9 +411,18 @@ void Compiler::stmt_kanggo_of(const ast::KanggoOfStmt* n) {
     fn().loop.pop_back();
 
     emit(Op::JUMP, static_cast<std::uint16_t>(mulai));
-    // Jalur keluar normal: `ITER_NEXT` menyisakan nilai `mboh` yang belum
-    // dipakai, jadi masih ada 3 nilai di stack: nilai, indeks, iterable.
+    // Jalur keluar normal. `ITER_NEXT` mendorong DUA nilai (hasil + flag) dan
+    // `JUMP_IF_FALSE` hanya MENGINTIP flag-nya, jadi saat lompatan diambil
+    // stack berisi 4 nilai: flag, hasil, indeks, iterable.
+    //
+    // BUG LAMA: hanya 3 yang dibuang, jadi `iterable` leftover. Di module atau
+    // fungsi terluar sisa itu tidak terlihat (frame langsung `RETURN_UNDEF`),
+    // tapi pada loop BERSARANG leftover itu menutupi nilai `ITER_NEXT` milik
+    // loop luar -- sehingga loop luar berhenti setelah satu iterasi:
+    // `kanggo (a saka [1,2]) { kanggo (b saka [1,2]) { ... } }` menghasilkan 2
+    // baris, bukan 4.
     patch(keluar, fn().chunk->ukuran_kode());
+    emit(Op::POP);  // flag hasil
     emit(Op::POP);  // nilai sisa
     const std::size_t keluar_bersih = fn().chunk->ukuran_kode();
     // Jalur `mandheg`: nilai iterasi SUDAH dikuras `DEF_LOCAL`/`SET_LOCAL`

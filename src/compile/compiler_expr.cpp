@@ -765,31 +765,27 @@ void Compiler::emit_baca_nama(std::string_view nama) {
 }
 
 void Compiler::emit_tulis_nama(std::string_view nama) {
+    // Efek bersih harus `v - -` untuk semua jalur; lihat `compiler.h`.
     const std::size_t s = cari_slot(nama);
-    if (s != static_cast<std::size_t>(-1)) {
-        emit(adalah_sel(nama) ? Op::SET_CELL : Op::SET_LOCAL, static_cast<std::uint16_t>(s));
+    if (s != std::string::npos && !adalah_sel(nama)) {
+        emit(Op::SET_LOCAL, static_cast<std::uint16_t>(s));  // sudah consuming
         return;
     }
-    if (fn().dalam_fungsi) {
+    if (s != std::string::npos) {
+        emit(Op::SET_CELL, static_cast<std::uint16_t>(s));
+    } else if (fn().dalam_fungsi) {
         emit(Op::SET_UPVAL, static_cast<std::uint16_t>(cari_upvalue(nama)));
-        return;
+    } else {
+        emit(Op::SET_GLOBAL,
+             static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, nama)))));
     }
-    emit(Op::SET_GLOBAL, static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, nama)))));
+    emit(Op::POP);
 }
 
 void Compiler::emit_tulis_nama_statement(std::string_view nama) {
-    const std::size_t s = cari_slot(nama);
-    if (s != static_cast<std::size_t>(-1)) {
-        emit(adalah_sel(nama) ? Op::SET_CELL : Op::SET_LOCAL, static_cast<std::uint16_t>(s));
-        return;
-    }
-    if (fn().dalam_fungsi) {
-        emit(Op::SET_UPVAL, static_cast<std::uint16_t>(cari_upvalue(nama)));
-        return;
-    }
-    // SET_GLOBAL menyisakan nilainya (penugasan = ekspresi), jadi buang.
-    emit(Op::SET_GLOBAL, static_cast<std::uint16_t>(tambah_nama(Value::obyek(rt::buat_teks(heap_, nama)))));
-    emit(Op::POP);
+    // `emit_tulis_nama` sudah memakai efek bersih `v - -` untuk semua jalur,
+    // jadi bentuk statement tidak menambah apa pun.
+    emit_tulis_nama(nama);
 }
 
 void Compiler::eks_biner(const ast::BinerExpr* n) {

@@ -122,5 +122,92 @@ Janji.race([Janji.selesai("pertama"), Janji.selesai("kedua")])
 // Janji yang sudah ditolak: gabungan langsung ditolak.
 Janji.race([Janji.tolak("rusak")]).tangkep((e) => pratelas(e, "rusak"));
 
-// --- Garis akhir -------------------------------------------------------------
-pratelas(1 + 1, 2);
+// --- iterasi -----------------------------------------------------------------
+// `ITER_NEXT` sebelumnya hanya mengenal Dhaptar, Teks, dan objek dengan
+// `nilai`, jadi `kanggo (x saka peta)` menghasilkan nol iterasi -- tanpa galat.
+ana peta_iterasi = anyar Peta();
+peta_iterasi.set("a", 1);
+peta_iterasi.set("b", 2);
+
+ana pasangan_daftar = [];
+kanggo (pasangan saka peta_iterasi) {
+    pasangan_daftar.tambah(pasangan[0] + Teks(pasangan[1]));
+}
+pratelas(pasangan_daftar, ["a1", "b2"]);
+
+// Entri yang dihapus dilewati, dan urutan sisip dipertahankan.
+peta_iterasi.set("c", 3);
+peta_iterasi.hapus("b");
+pasangan_daftar = [];
+kanggo (pasangan saka peta_iterasi) {
+    pasangan_daftar.tambah(pasangan[0]);
+}
+pratelas(pasangan_daftar, ["a", "c"]);
+
+// Peta kosong: nol iterasi.
+ana peta_kosong_iterasi = [];
+kanggo (pasangan saka anyar Peta()) { peta_kosong_iterasi.tambah(pasangan); }
+pratelas(peta_kosong_iterasi, []);
+
+// Himpunan iterable: hasilnya para anggotanya (bukan pasangan).
+ana himpunan_iterasi = anyar Himpunan(["x", "y", "z", "x"]);
+ana anggota_daftar = [];
+kanggo (x saka himpunan_iterasi) { anggota_daftar.tambah(x); }
+pratelas(anggota_daftar, ["x", "y", "z"]);
+
+// Nilai kunci non-teks ikut terbaca apa adanya (tanpa koersi ke teks).
+ana peta_angka = anyar Peta();
+peta_angka.set(1, "satu");
+peta_angka.set(bener, "ya");
+ana kunci_apa_adanya = [];
+kanggo (pasangan saka peta_angka) { kunci_apa_adanya.tambah(jenis(pasangan[0])); }
+pratelas(kunci_apa_adanya, ["angka", "boole"]);
+
+// Iterasi di dalam fungsi: menutup jalur upvalue sekaligus.
+ana himpunan_dalam_fungsi = anyar Himpunan([1, 2, 3]);
+ana jumlah = 0;
+gawe jumlahkan() {
+    kanggo (x saka himpunan_dalam_fungsi) { jumlah = jumlah + x; }
+}
+jumlahkan();
+pratelas(jumlah, 6);
+
+// Loop bersarang di atas `Peta`.
+ana tabel = anyar Peta();
+tabel.set("k1", [1, 2]);
+tabel.set("k2", [3]);
+ana jumlah_sel = 0;
+gawe jumlahkan_sel() {
+    kanggo (pasangan saka tabel) {
+        kanggo (isi saka pasangan[1]) { jumlah_sel = jumlah_sel + isi; }
+    }
+}
+jumlahkan_sel();
+pratelas(jumlah_sel, 6);
+
+// --- Janji.anySelesai --------------------------------------------------------
+// Seperti `all`, tapi tidak pernah ditolak: tiap slot dibungkus jadi
+// `{nilai: ...}` atau `{galat: ...}`. Berguna saat beberapa Janji boleh gagal
+// tapi program tetap mau berjalan.
+Janji.anySelesai([Janji.selesai(1), Janji.tolak("rusak"), 3]).then((v) => {
+    pratelas(v.panjang, 3);
+    pratelas(v[0].nilai, 1);
+    pratelas(v[1].galat, "rusak");
+    pratelas(v[2].nilai, 3);
+});
+
+// Yang semuanya ditolak: Janji gabungan tetap SELESAI, bukan ditolak.
+Janji.anySelesai([Janji.tolak("a"), Janji.tolak("b")]).then((v) => {
+    pratelas(v.panjang, 2);
+    pratelas(v[0].galat, "a");
+    pratelas(v[1].galat, "b");
+});
+
+// Iterable kosong.
+Janji.anySelesai([]).then((v) => pratelas(v, []));
+
+// Dua Janji yang benar-benar pending: harus menunggu keduanya.
+Janji.anySelesai([Wektu.tundha(10), Janji.selesai("langsung")]).then((v) => {
+    pratelas(v[0].nilai, mboh);
+    pratelas(v[1].nilai, "langsung");
+});

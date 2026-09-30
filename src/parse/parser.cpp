@@ -521,9 +521,16 @@ NodePtr Parser::parse_pilih() {
             // `kasus warna:` (variabel) ikut tertukar sebagai class.
             if (cek(Tok::LBracket) || cek(Tok::LBrace)) {
                 k->pola = parse_pola();
-            } else if (cek(Tok::Ident) && cek(1, Tok::Colon) && saat().teks[0] >= 'A' && saat().teks[0] <= 'Z') {
+            } else if (cek(Tok::Ident) && cek(1, Tok::Colon) && saat().teks[0] >= 'A' &&
+                       saat().teks[0] <= 'Z') {
                 k->nama_kelas = saat().teks;
                 ++idx_;
+            } else if (cek(Tok::Ident) && saat().teks == "_") {
+                // `kasus _:` = wildcard: cocok dengan nilai apa pun. Tanpa ini
+                // `_` dibaca sebagai variabel (yang biasanya `mboh`), jadi
+                // kasusnya tidak pernah cocok -- dan `pilih` diam-diam tidak
+                // menjalankan body apa pun.
+                k->pola = parse_pola();
             } else {
                 k->test = parse_ekspresi();
             }

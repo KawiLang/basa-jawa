@@ -486,6 +486,9 @@ public:
         std::size_t sisa_kumpul = 0;
         /// `true` untuk `Janji.all` (tunggu semua), `false` untuk `Janji.race`.
         bool kumpul_semua = true;
+        /// `Janji.anySelesai`: entri penolakan tidak menolak Janji gabungan;
+        /// Instead isinya dibungkus jadi `{galat: ...}` pada slotnya.
+        bool kumpulan_tolak_ditahan = false;
     };
     std::vector<Then> then_daftar;
     std::vector<Value> tangkap_daftar;   ///< .tangkep

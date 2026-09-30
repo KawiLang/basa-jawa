@@ -99,6 +99,15 @@ private:
             std::size_t terusna_tujuan = 0;   ///< ip awal iterasi berikutnya
             std::vector<std::size_t> patch_mandheg;
             std::vector<std::size_t> patch_terusna;
+            /// Jumlah nilai kondisi yang masih tertunda di stack.
+            ///
+            /// `yen`/`nalika` menaruh SATU `POP` di akhir yang dipakai kedua
+            /// jalur, jadi nilai kondisinya tetap di stack sepanjang badan.
+            /// `mandheg`/`terusna` di dalam badan itu melompati `POP` tersebut,
+            /// jadi harus membuang kondisinya lebih dulu -- kalau tidak, `POP`
+            /// pada jalur keluar loop memakan nilai yang salah dan satu nilai
+            /// tertinggal untuk statement berikutnya.
+            std::size_t kondisi_tertunda = 0;
         };
         std::vector<Loop> loop;
         /// Badan `pungkasan` dari `coba` yang sedang dikompilasi, atau `nullptr`.
@@ -211,10 +220,18 @@ private:
     /// Baca nama: lokal -> upvalue -> global (satu helper, konsisten di semua
     /// konteks sehingga rekursi & closure memakai jalur yang sama).
     void emit_baca_nama(std::string_view nama);
-    /// Tulis nama: lokal -> upvalue -> global.
+    /// Tulis nama: lokal -> upvalue -> global. Nilai yang ditulis HARUS ada di
+    /// puncak stack, dan efek bersihnya `v - -` (tidak menyisakan apa pun).
+    ///
+    /// Bentuk ini dipilih karena opcode tidak seragam: `SET_LOCAL` consuming
+    /// (`v - >`), tapi `SET_CELL`, `SET_UPVAL`, dan `SET_GLOBAL` menyisakan
+    /// nilainya (`v - > v`, penugasan = ekspresi). Kalau pemanggil menambahkan
+    /// `DUP` sendiri, jalur upvalue/global menumpuk satu nilai setiap
+    /// penugasan -- loop yang menugaskan ke variabel luar langsung berhenti
+    /// setelah iterasi pertama karena nilai iterasi menimpa slot `ITER_NEXT`.
     void emit_tulis_nama(std::string_view nama);
-    /// Seperti `emit_tulis_nama`, tetapi untuk konteks yang nilai di stack
-    /// harus hilang (statement biasa). Untuk global kita tambahkan `POP`.
+    /// Seperti `emit_tulis_nama`, ditambah `POP` — untuk statement biasa yang
+    /// nilai penugasannya harus hilang.
     void emit_tulis_nama_statement(std::string_view nama);
 
     // --- optimise ---
